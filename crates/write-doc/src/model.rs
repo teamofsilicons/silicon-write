@@ -32,6 +32,9 @@ pub mod names {
     pub const INLINE_MATH: &str = "inlineMath";
     pub const FOOTNOTE: &str = "footnote";
     pub const DOC_LINK: &str = "docLink";
+    pub const INLINE_IMAGE: &str = "inlineImage";
+    pub const SUBSCRIPT: &str = "subscript";
+    pub const SUPERSCRIPT: &str = "superscript";
 
     pub const BOLD: &str = "bold";
     pub const ITALIC: &str = "italic";
@@ -111,6 +114,8 @@ pub struct TableRow {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TableCell {
     pub header: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<String>,
     pub colspan: u32,
     pub rowspan: u32,
     pub blocks: Vec<Block>,
@@ -120,6 +125,7 @@ impl Default for TableCell {
     fn default() -> Self {
         TableCell {
             header: false,
+            align: None,
             colspan: 1,
             rowspan: 1,
             blocks: vec![Block::empty_paragraph()],
@@ -136,7 +142,18 @@ pub enum Inline {
     /// A footnote, kept where it is referenced. `content` is Markdown inline text.
     Footnote { content: String },
     /// A `[[link]]` to another doc, by its title.
-    DocLink { title: String },
+    DocLink {
+        title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        alias: Option<String>,
+    },
+    Image {
+        src: String,
+        alt: Option<String>,
+        title: Option<String>,
+        link: Option<String>,
+        link_title: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -153,6 +170,12 @@ pub struct Marks {
     pub code: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_title: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub subscript: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub superscript: bool,
     /// Text colour (the editor's `textStyle` mark).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
@@ -345,7 +368,8 @@ fn inline_plain(content: &[Inline], out: &mut String) {
             Inline::HardBreak => out.push('\n'),
             Inline::InlineMath { latex } => out.push_str(latex),
             Inline::Footnote { .. } => {}
-            Inline::DocLink { title } => out.push_str(title),
+            Inline::DocLink { title, alias } => out.push_str(alias.as_deref().unwrap_or(title)),
+            Inline::Image { alt, .. } => out.push_str(alt.as_deref().unwrap_or("")),
         }
     }
 }
@@ -373,6 +397,7 @@ impl Inline {
             Inline::InlineMath { .. } => Some(names::INLINE_MATH),
             Inline::Footnote { .. } => Some(names::FOOTNOTE),
             Inline::DocLink { .. } => Some(names::DOC_LINK),
+            Inline::Image { .. } => Some(names::INLINE_IMAGE),
         }
     }
 }
@@ -512,7 +537,7 @@ impl Doc {
         let mut blocks = self.blocks.clone();
         map_inlines(&mut blocks, &mut |content| {
             for inline in content.iter() {
-                if let Inline::DocLink { title } = inline
+                if let Inline::DocLink { title, .. } = inline
                     && !titles.contains(title) {
                         titles.push(title.clone());
                     }
