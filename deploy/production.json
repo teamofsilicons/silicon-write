@@ -1,0 +1,140 @@
+{
+  "recorded_at": "2026-10-17T10:12:44.183527+00:00",
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "provider": "vercel",
+    "project": "silicon-write-web",
+    "deployment_id": "dpl_BdMJLb72koq8fwhqzovAVsH9r3Y6",
+    "public_https": true,
+    "public_routes_verified": [
+      "/",
+      "/docs",
+      "/robots.txt",
+      "/llms.txt"
+    ],
+    "interactive_production_browser_verified": false,
+    "browser_verification_limit": "Local Mac Unbound resolver caches NXDOMAIN for newly created domains; public authoritative DNS and TLS are verified using per-request public DNS pinning."
+  },
+  "api": {
+    "url": "https://api.write.teamofsilicons.com",
+    "revision": "9fd5907322fa2ee4757cf6a79d647868a917510c",
+    "archive_sha256": "ead674736da8a0c9836361ca60a1520bacae7a9deb18c730cc87551b512a0489",
+    "install_ssm_command": "c65fa125-dcc2-4dc8-8934-a8f2008a87cd",
+    "readiness": true,
+    "private_document_journey": [
+      "ordinary device sign-in authorizes production API",
+      "private document created and anonymous access denied",
+      "edit saved and fresh read persisted",
+      "comment anchors to selected quote",
+      "private asset upload download and document reference",
+      "docx export through production converter",
+      "pdf export through production converter",
+      "PDF import original download and editable conversion",
+      "Word export reimport retains content"
+    ],
+    "export_files": {
+      "docx": {
+        "bytes": 11184,
+        "sha256": "f0391520648830f11b9294c3b0fe6113ccc4d4be61c7ddc80219e2f4ad57bcf9"
+      },
+      "pdf": {
+        "bytes": 12861,
+        "sha256": "dbf3e9aac6d6d608257df882e3885467766351e554050421ff4e7cad74110118"
+      }
+    },
+    "installed_converter_probe_ssm": "b7617265-7259-4667-b862-22a1a88e21cd",
+    "converter_probe_passed": true,
+    "live_collaboration": {
+      "started_at": "2026-10-17T10:12:25.098Z",
+      "document": "d_rX7efZMt87shfDocpiJJ",
+      "transport": "Two independent Node y-websocket clients, broadcast channel disabled; real production WSS",
+      "tls": "Verified certificate and SNI for api.write.teamofsilicons.com; per-connection lookup uses its verified public IP",
+      "checks": [
+        "two authenticated owner clients synced",
+        "client A inserted paragraph; client B received exact content",
+        "client B edited paragraph; client A received exact content",
+        "HTTPS Markdown persisted both edits and sequence advanced",
+        "fresh third client reconnected and received persisted content"
+      ],
+      "start_seq": 5,
+      "end_seq": 7,
+      "completed_at": "2026-10-17T10:12:32.170Z",
+      "passed": true
+    },
+    "authenticated_cli_checks": {
+      "checks": [
+        "signed-in status",
+        "document read",
+        "anchored comments"
+      ],
+      "passed": true,
+      "transport": "Bounded local CONNECT tunnel pins the verified public API IP; CLI validates end-to-end TLS and hostname. No system DNS or TLS configuration changed."
+    }
+  },
+  "infrastructure": {
+    "aws_account": "234951665042",
+    "region": "us-east-2",
+    "stack": "silicon-write-production",
+    "instance_id": "i-0797508582b5e8d9e",
+    "elastic_ip": "3.146.142.123",
+    "backup_bucket": "silicon-write-production-backups-qgkxwl8wkwl0",
+    "encrypted_and_versioned": true,
+    "public_bucket_access": false,
+    "admin_transport": "ssm",
+    "public_ports": [
+      80,
+      443
+    ],
+    "runtime_secret_name": "silicon-write/production/runtime"
+  },
+  "dns": {
+    "provider": "namecheap",
+    "web_cname": "7365698a83a53afa.vercel-dns-017.com",
+    "api_address": "3.146.142.123",
+    "unrelated_records_preserved": 138,
+    "mail_mode_preserved": true
+  },
+  "identity_and_cli_receipt": "identity-release-20261017.json",
+  "local_validation": {
+    "deployment_tests": 12,
+    "rust_workspace_tests": 110,
+    "cli_tests": 268,
+    "web_unit_tests": 55,
+    "browser_cases": 88,
+    "typecheck": true,
+    "lint": true,
+    "web_build": true,
+    "clippy": true
+  },
+  "limitations": [
+    "Interactive production browser journey pending local DNS cache refresh.",
+    "Invitation sender authorization and mail delivery unverified; no test email sent.",
+    "Notification types and proof issuance verified; no notifications sent."
+  ],
+  "secrets_included": false,
+  "backup_verification": {
+    "source": "S3 download with hash verification before isolated restore",
+    "backup": "verification-8b441c53fe2047b2-20261017T101251Z",
+    "sha256": {
+      "database.dump": "bf44eccf2f44b24fcf5c5f2789270401c8826fdcbf5d638cfce6e80aa2301aad",
+      "files.tar.gz": "52093657554a666d480626be3a26099e2020bd98459a91e36b0711dd037219dd"
+    },
+    "restore_ssm_command": "64490544-a2fa-4fce-b3f6-07df32f8d244",
+    "counts": {
+      "docs": 3,
+      "assets": 3,
+      "migrations": 3
+    },
+    "all_asset_files_present": true,
+    "asset_sizes_and_original_links_verified": true,
+    "temporary_database_removed": true,
+    "hourly_timer_active_and_enabled": true,
+    "api_and_caddy_active_and_enabled": true
+  },
+  "verification_fixtures": {
+    "created": 3,
+    "moved_to_trash": 3,
+    "permanently_deleted": false,
+    "existing_user_documents_changed": false
+  }
+}
