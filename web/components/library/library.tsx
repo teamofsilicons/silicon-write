@@ -156,6 +156,9 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
       ]
     : null;
 
+  // Keep copies beside the source when this library location is writable. A copy of a
+  // read-only shared doc goes to the copier's own library.
+  const copyFolder = (doc: Doc) => folder && atLeast(folder.role, "editor") ? folder.id : doc.owner.uuid === me ? doc.folder_id : null;
   const folders = data?.folders ?? [];
   const docs = data?.docs ?? [];
   const empty = !isLoading && !folders.length && !docs.length;
@@ -259,7 +262,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                   <DropdownMenuItem icon={<Share2 size={16} />} onSelect={() => setDialog({ kind: "share", type: "docs", id: d.id, title: d.title })}>Share</DropdownMenuItem>
                   {atLeast(d.role, "editor") ? <DropdownMenuItem icon={<Pencil size={16} />} onSelect={() => setDialog({ kind: "rename", item: { type: "doc", doc: d } })}>Rename</DropdownMenuItem> : null}
                   {atLeast(d.role, "editor") ? <DropdownMenuItem icon={<FolderInput size={16} />} onSelect={() => setDialog({ kind: "move", item: { type: "doc", doc: d } })}>Move</DropdownMenuItem> : null}
-                  <DropdownMenuItem icon={<FilePlus2 size={16} />} onSelect={() => void act("The copy wasn't made", () => api.post(`/v1/docs/${seg(d.id)}/copy`, {}), "Copied")}>Make a copy</DropdownMenuItem>
+                  <DropdownMenuItem icon={<FilePlus2 size={16} />} onSelect={() => void act("The copy wasn't made", () => api.post(`/v1/docs/${seg(d.id)}/copy`, { folder_id: copyFolder(d) }), "Copied")}>Make a copy</DropdownMenuItem>
                   {d.role === "owner" ? (
                     <>
                       <DropdownMenuSeparator />
