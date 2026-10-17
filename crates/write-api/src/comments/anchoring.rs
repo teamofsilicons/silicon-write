@@ -3,11 +3,15 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use write_doc::history::{StoredUpdate, changes::Changes};
+use write_doc::model::{Suggestion, SuggestionKind};
 use write_doc::ydoc;
 use yrs::updates::decoder::Decode;
 use yrs::{ID, ReadTxn, Text, Transact, Update, XmlFragment, XmlOut};
 
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(super) struct Range {
@@ -58,6 +62,7 @@ struct Block {
     from: usize,
     to: usize,
     text: String,
+    suggestion: Option<Suggestion>,
 }
 
 fn blocks<T: ReadTxn>(txn: &T, fragment: &yrs::XmlFragmentRef, map: &ydoc::TextMap) -> Vec<Block> {
@@ -68,6 +73,7 @@ fn blocks<T: ReadTxn>(txn: &T, fragment: &yrs::XmlFragmentRef, map: &ydoc::TextM
             let XmlOut::Element(el) = node else {
                 return None;
             };
+            let suggestion = ydoc::node_suggestion(txn, &el);
             let yrs::BranchID::Nested(id) = XmlOut::Element(el).id() else {
                 return None;
             };
@@ -77,9 +83,98 @@ fn blocks<T: ReadTxn>(txn: &T, fragment: &yrs::XmlFragmentRef, map: &ydoc::TextM
                 from,
                 to,
                 text: map.slice(from, to),
+                suggestion,
             })
         })
         .collect()
+}
+
+/// A structural review keeps the already-created Insert nodes and removes the Delete nodes.
+/// Follow only that exact proposal's identities, and only when its text is unchanged. Joining
+/// the block text without separators permits a paragraph split/join while preserving offsets.
+fn accepted_ranges(
+    old: &Source,
+    before: &[Block],
+    after: &[Block],
+    changes: &Changes,
+    seq: i64,
+) -> Option<Vec<(usize, usize)>> {
+    let original = before.iter().find(|b| b.id == old.id)?;
+    // An unresolved selection may describe text deleted earlier within this same node.
+    // A later review must not apply those stale offsets to the surviving words.
+    if original.text != old.text || old.to > original.to - original.from {
+        return None;
+    }
+    let suggestion = original.suggestion.as_ref()?;
+    if suggestion.kind != SuggestionKind::Delete {
+        return None;
+    }
+    let same = |b: &&Block| {
+        b.suggestion
+            .as_ref()
+            .is_some_and(|s| s.id == suggestion.id && s.author == suggestion.author)
+    };
+    let group: Vec<_> = before.iter().filter(same).collect();
+    let first = before.iter().position(|b| same(&b))?;
+    let last = before.iter().rposition(|b| same(&b))?;
+    if last - first + 1 != group.len() {
+        return None;
+    }
+    let deleted: Vec<_> = group
+        .iter()
+        .copied()
+        .filter(|b| b.suggestion.as_ref().unwrap().kind == SuggestionKind::Delete)
+        .collect();
+    let inserted: Vec<_> = group
+        .iter()
+        .copied()
+        .filter(|b| b.suggestion.as_ref().unwrap().kind == SuggestionKind::Insert)
+        .collect();
+    if inserted.is_empty()
+        || deleted.iter().any(|b| {
+            after.iter().any(|a| a.id == b.id)
+                || !changes
+                    .deleter(&b.id)
+                    .is_some_and(|i| changes.list[i].seq == seq)
+        })
+        || after.iter().any(|b| same(&b))
+    {
+        return None;
+    }
+    let targets: Vec<_> = inserted
+        .iter()
+        .map(|b| {
+            after
+                .iter()
+                .find(|a| a.id == b.id && a.suggestion.is_none() && a.text == b.text)
+        })
+        .collect::<Option<_>>()?;
+    // The same nodes must still occur in proposal order.
+    if targets.windows(2).any(|pair| {
+        let left = after.iter().position(|b| b.id == pair[0].id).unwrap();
+        after.get(left + 1).is_none_or(|b| b.id != pair[1].id)
+    }) || deleted.iter().map(|b| b.text.as_str()).collect::<String>()
+        != targets.iter().map(|b| b.text.as_str()).collect::<String>()
+    {
+        return None;
+    }
+    let prefix: usize = deleted
+        .iter()
+        .take_while(|b| b.id != old.id)
+        .map(|b| b.to - b.from)
+        .sum();
+    let (start, end) = (prefix + old.from, prefix + old.to);
+    let mut offset = 0;
+    let mut result = Vec::new();
+    for target in targets {
+        let length = target.to - target.from;
+        let (a, b) = (start.max(offset), end.min(offset + length));
+        if a < b {
+            result.push((target.from + a - offset, target.from + b - offset));
+        }
+        offset += length;
+    }
+    (!result.is_empty()).then_some(result)
 }
 
 /// The last actual passage, including the surrounding nodes. These identities distinguish it
@@ -109,7 +204,8 @@ fn source(blocks: &[Block], from: usize, to: usize) -> Option<Source> {
 /// Follows each selected text through changes after its creation. A structural replacement must
 /// be made by the same update that removed its source. A deleted passage only revives in an
 /// explicit restore/undo, and only in the original gap between surviving neighbouring nodes.
-/// Both paths require an identical complete source block, never a global quote match.
+/// Review decisions additionally follow the same proposal's retained nodes across block splits.
+/// None of these paths use a global quote match.
 pub(super) fn recover(
     updates: &[StoredUpdate],
     restoring: &std::collections::HashSet<i64>,
@@ -125,15 +221,20 @@ pub(super) fn recover(
             .map(|u| u.update.as_slice()),
     )?;
     let fragment = ydoc::fragment(&y);
-    let mut ranges = ranges.to_vec();
-    let mut sources = {
+    let (mut tracked, mut previous) = {
         let txn = y.transact();
         let map = ydoc::text_map(&txn, &fragment);
         let blocks = blocks(&txn, &fragment, &map);
-        ranges
+        let tracked = ranges
             .iter()
-            .map(|range| resolve(&txn, &map, range).and_then(|(a, b)| source(&blocks, a, b)))
-            .collect::<Vec<_>>()
+            .map(|range| {
+                (
+                    range.clone(),
+                    resolve(&txn, &map, range).and_then(|(a, b)| source(&blocks, a, b)),
+                )
+            })
+            .collect::<Vec<_>>();
+        (tracked, blocks)
     };
     for update in updates.iter().filter(|u| u.seq > seq) {
         y.transact_mut()
@@ -145,14 +246,27 @@ pub(super) fn recover(
         let txn = y.transact();
         let map = ydoc::text_map(&txn, &fragment);
         let blocks = blocks(&txn, &fragment, &map);
-        for (range, origin) in ranges.iter_mut().zip(&mut sources) {
-            if let Some((a, b)) = resolve(&txn, &map, range) {
-                *origin = source(&blocks, a, b);
+        let mut next = Vec::new();
+        for (mut range, mut origin) in tracked {
+            if let Some((a, b)) = resolve(&txn, &map, &range) {
+                next.push((range, source(&blocks, a, b)));
                 continue;
             }
             let Some(old) = origin.as_ref() else {
+                next.push((range, origin));
                 continue;
             };
+            if let Some(positions) = accepted_ranges(old, &previous, &blocks, &changes, update.seq)
+            {
+                for (a, b) in positions {
+                    for part in capture(&txn, &map, a, b) {
+                        let origin =
+                            resolve(&txn, &map, &part).and_then(|(a, b)| source(&blocks, a, b));
+                        next.push((part, origin));
+                    }
+                }
+                continue;
+            }
             let lower = old
                 .before
                 .iter()
@@ -165,38 +279,64 @@ pub(super) fn recover(
                 .find_map(|id| blocks.iter().position(|b| b.id == *id))
                 .unwrap_or(blocks.len());
             if lower > upper {
+                next.push((range, origin));
                 continue;
             }
-            let mut candidates = blocks[lower..upper].iter().filter(|b| {
-                let inserted_here = changes
-                    .inserter(&b.id)
-                    .is_some_and(|i| changes.list[i].seq == update.seq);
-                b.text == old.text
-                    && ((inserted_here && changes.replaced(&old.id, &b.id))
-                        || (restoring.contains(&update.seq) && (inserted_here || old.id == b.id)))
+            let candidates: Vec<_> = blocks[lower..upper]
+                .iter()
+                .filter(|b| {
+                    let inserted_here = changes
+                        .inserter(&b.id)
+                        .is_some_and(|i| changes.list[i].seq == update.seq);
+                    b.text == old.text
+                        && ((inserted_here && changes.replaced(&old.id, &b.id))
+                            || (restoring.contains(&update.seq)
+                                && (inserted_here || old.id == b.id)))
+                })
+                .collect();
+            // A reconstructed proposal contains two equal passages. The Delete side is the
+            // current text; the Insert side is its alternative, not another original passage.
+            let mut candidates = candidates.iter().copied().filter(|b| {
+                !b.suggestion.as_ref().is_some_and(|s| {
+                    s.kind == SuggestionKind::Insert
+                        && candidates.iter().any(|other| {
+                            other.suggestion.as_ref().is_some_and(|d| {
+                                d.kind == SuggestionKind::Delete
+                                    && d.id == s.id
+                                    && d.author == s.author
+                            })
+                        })
+                })
             });
             let Some(block) = candidates.next() else {
+                next.push((range, origin));
                 continue;
             };
             if candidates.next().is_some() {
+                next.push((range, origin));
                 continue;
             }
             let (a, b) = (block.from + old.from, block.from + old.to);
             if b > block.to {
+                next.push((range, origin));
                 continue;
             }
             let (Some(start), Some(end)) = (
                 ydoc::position_at(&txn, &map, a, false),
                 ydoc::position_at(&txn, &map, b, true),
             ) else {
+                next.push((range, origin));
                 continue;
             };
-            *range = Range {
+            range = Range {
                 start: B64.encode(start),
                 end: B64.encode(end),
             };
-            *origin = source(&blocks, a, b);
+            origin = source(&blocks, a, b);
+            next.push((range, origin));
         }
+        tracked = next;
+        previous = blocks;
     }
-    Ok(ranges)
+    Ok(tracked.into_iter().map(|(range, _)| range).collect())
 }

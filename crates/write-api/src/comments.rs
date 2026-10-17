@@ -27,6 +27,8 @@ mod anchoring;
 
 const MAX_BODY: usize = 20_000;
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+// Revisit unresolved results cached before structural review recovery was available.
+const ANCHOR_RECOVERY_VERSION: i64 = 1;
 
 #[derive(sqlx::FromRow, Clone)]
 struct ThreadRow {
@@ -77,7 +79,14 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
         let frag = ydoc::fragment(y);
         let txn = yrs::Transact::transact(y);
         let map = ydoc::text_map(&txn, &frag);
-        (anchors.iter().zip(threads).map(|(rs,thread)| thread.anchor.get("resolved_seq").and_then(Value::as_i64) != Some(seq) && rs.as_ref().is_some_and(|rs| rs.iter().any(|r| anchoring::resolve(&txn, &map, r).is_none()))).collect::<Vec<_>>(), seq)
+        let missing = anchors.iter().zip(threads).map(|(ranges, thread)| {
+            let stale = thread.anchor.get("resolved_seq").and_then(Value::as_i64) != Some(seq)
+                || thread.anchor.get("resolved_version").and_then(Value::as_i64) != Some(ANCHOR_RECOVERY_VERSION);
+            stale && ranges.as_ref().is_some_and(|ranges| {
+                ranges.iter().any(|range| anchoring::resolve(&txn, &map, range).is_none())
+            })
+        }).collect::<Vec<_>>();
+        (missing, seq)
     }).await?;
     if missing.iter().any(|missing| *missing) {
         let rows: Vec<(i64, String, String, Vec<u8>)> = sqlx::query_as("select seq, author_uuid, origin, update from doc_updates where doc_id = $1 and seq <= $2 order by seq")
@@ -102,8 +111,8 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
                 }
             }
             let recovered = anchoring::recover(&updates, &restoring, seq, &original)?;
-            sqlx::query("update threads set anchor = jsonb_set(jsonb_set(anchor, '{resolved_segments}', $2), '{resolved_seq}', $3) where id = $1")
-                .bind(&thread.id).bind(json!(recovered)).bind(json!(latest)).execute(&state.db).await?;
+            sqlx::query("update threads set anchor = jsonb_set(jsonb_set(jsonb_set(anchor, '{resolved_segments}', $2), '{resolved_seq}', $3), '{resolved_version}', $4) where id = $1")
+                .bind(&thread.id).bind(json!(recovered)).bind(json!(latest)).bind(json!(ANCHOR_RECOVERY_VERSION)).execute(&state.db).await?;
             anchors[i] = Some(recovered);
         }
     }
