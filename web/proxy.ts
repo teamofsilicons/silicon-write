@@ -1,6 +1,7 @@
 /**
  * Next 16 proxy (formerly middleware), run before every page, prefetches included (route handlers under /api and /auth,
- * the agent files and static files set their own headers and never pass through here, so request bodies stream):
+ * the images under /assets, the agent files and static files set their own headers and never pass through here, so
+ * request bodies stream and an image keeps the service's sandbox policy instead of the pages' one):
  *
  * - Keeps the session fresh: under 2 minutes left on the access token, it refreshes (single-flight, lib/server/tokens.ts),
  *   writes the new cookie on the response and hands it to the page render as a request cookie, so Server Components
@@ -105,9 +106,9 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      // Route handlers (the BFF under /api and /auth, the agent files, the icons and the social image) and static files
-      // set their own headers.
-      source: "/((?!api/|auth/|_next/static|_next/image|fonts/|favicon\\.ico|icon|apple-icon|og\\.png|robots\\.txt|sitemap\\.xml|llms\\.txt|manifest\\.webmanifest).*)",
+      // Route handlers (the BFF under /api and /auth, the doc images under /assets, the agent files, the icons and the
+      // social image) and static files set their own headers.
+      source: "/((?!api/|auth/|assets/|_next/static|_next/image|fonts/|favicon\\.ico|icon|apple-icon|og\\.png|robots\\.txt|sitemap\\.xml|llms\\.txt|manifest\\.webmanifest).*)",
     },
   ],
 };

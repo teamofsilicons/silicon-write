@@ -26,6 +26,9 @@ use yrs::{
 use crate::model::names::*;
 use crate::model::*;
 
+mod inline;
+pub mod textdiff;
+
 /// The editor's fragment name (Tiptap's Collaboration extension default).
 pub const FRAGMENT: &str = "default";
 
@@ -151,6 +154,7 @@ fn read_block<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Block> {
                             .filter_map(|cell| match cell {
                                 XmlOut::Element(cell) => Some(TableCell {
                                     header: cell.tag().as_ref() == TABLE_HEADER,
+                                    align: attr_string(txn, &cell, "textAlign"),
                                     colspan: attr_number(txn, &cell, "colspan").unwrap_or(1).max(1)
                                         as u32,
                                     rowspan: attr_number(txn, &cell, "rowspan").unwrap_or(1).max(1)
@@ -215,6 +219,14 @@ fn read_atom<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Inline> {
         },
         DOC_LINK => Inline::DocLink {
             title: attr_string(txn, el, "title").unwrap_or_default(),
+            alias: attr_string(txn, el, "alias"),
+        },
+        INLINE_IMAGE => Inline::Image {
+            src: attr_string(txn, el, "src").unwrap_or_default(),
+            alt: attr_string(txn, el, "alt"),
+            title: attr_string(txn, el, "title"),
+            link: attr_string(txn, el, "link"),
+            link_title: attr_string(txn, el, "linkTitle"),
         },
         _ => return None,
     })
@@ -267,8 +279,11 @@ pub fn attrs_to_marks(attrs: Option<&Attrs>) -> Marks {
     marks.underline = present(UNDERLINE);
     marks.strike = present(STRIKE);
     marks.code = present(CODE);
+    marks.subscript = present(SUBSCRIPT);
+    marks.superscript = present(SUPERSCRIPT);
     if let Some(link) = attrs.get(LINK).filter(|v| !matches!(v, Any::Null | Any::Undefined)) {
         marks.link = Some(any_str(map_get(link, "href")).unwrap_or_default());
+        marks.link_title = any_str(map_get(link, "title"));
     }
     if let Some(style) = attrs.get(TEXT_STYLE) {
         marks.color = any_str(map_get(style, "color"));
@@ -324,8 +339,10 @@ pub fn marks_to_attrs(marks: &Marks) -> Attrs {
     if marks.code {
         set(CODE, empty_obj());
     }
+    if marks.subscript { set(SUBSCRIPT, empty_obj()); }
+    if marks.superscript { set(SUPERSCRIPT, empty_obj()); }
     if let Some(href) = &marks.link {
-        set(LINK, obj(&[("href", Any::String(Arc::from(href.as_str())))]));
+        set(LINK, obj(&[("href", Any::String(Arc::from(href.as_str()))), ("title", marks.link_title.as_deref().map(string).unwrap_or(Any::Null))]));
     }
     if let Some(color) = &marks.color {
         set(TEXT_STYLE, obj(&[("color", Any::String(Arc::from(color.as_str())))]));
@@ -486,6 +503,7 @@ fn fill_block(txn: &mut TransactionMut, el: &XmlElementRef, block: &Block, mode:
                     let td = tr.insert(txn, c as u32, XmlElementPrelim::empty(tag));
                     set_attr(txn, &td, "colspan", num(cell.colspan));
                     set_attr(txn, &td, "rowspan", num(cell.rowspan));
+                    if let Some(align) = &cell.align { set_attr(txn, &td, "textAlign", string(align)); }
                     write_children(txn, &td, &cell.blocks, mode);
                 }
             }
@@ -537,7 +555,18 @@ fn write_atom_attrs(txn: &mut TransactionMut, el: &XmlElementRef, atom: &Inline)
     match atom {
         Inline::InlineMath { latex } => set_attr(txn, el, "latex", string(latex)),
         Inline::Footnote { content } => set_attr(txn, el, "content", string(content)),
-        Inline::DocLink { title } => set_attr(txn, el, "title", string(title)),
+        Inline::DocLink { title, alias } => {
+            set_attr(txn, el, "title", string(title));
+            if let Some(alias) = alias { set_attr(txn, el, "alias", string(alias)); }
+            else { el.remove_attribute(txn, &"alias"); }
+        },
+        Inline::Image { src, alt, title, link, link_title } => {
+            set_attr(txn, el, "src", string(src));
+            for (key, value) in [("alt", alt), ("title", title), ("link", link), ("linkTitle", link_title)] {
+                if let Some(value) = value { set_attr(txn, el, key, string(value)); }
+                else { el.remove_attribute(txn, &key); }
+            }
+        },
         _ => {}
     }
 }
@@ -844,6 +873,10 @@ fn patch_block(
                     })
                     .collect();
                 for (c, cell) in row.cells.iter().enumerate() {
+                    if live_rows[r].cells[c].align != cell.align {
+                        if let Some(align) = &cell.align { set_attr(txn, &cell_els[c], "textAlign", string(align)); }
+                        else { cell_els[c].remove_attribute(txn, &"textAlign"); }
+                    }
                     if base_rows[r].cells[c].blocks != cell.blocks {
                         patch_children(txn, &cell_els[c], &base_rows[r].cells[c].blocks, &cell.blocks, mode);
                     }
@@ -961,6 +994,10 @@ enum Segment {
 
 /// Edits a text block's inline content in place.
 fn patch_inline(txn: &mut TransactionMut, el: &XmlElementRef, exact: &[Inline], target: &[Inline], mode: &EditMode) {
+    if mode.suggest.is_none() {
+        inline::patch(txn, el, target);
+        return;
+    }
     let segments: Vec<Segment> = el
         .children(txn)
         .filter_map(|c| match c {
@@ -1104,6 +1141,10 @@ fn patch_text(
     target: &[(String, Marks)],
     mode: &EditMode,
 ) {
+    if mode.suggest.is_none() {
+        inline::patch_text(txn, text, old_runs, target);
+        return;
+    }
     let old_units = units(old_runs, true);
     let new_units = units(target, false);
     // Where each visible character sits in the live text (UTF-16).
@@ -1380,16 +1421,23 @@ pub fn text_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> TextMap {
         blocks: vec![],
         texts: vec![],
     };
+    let mut root_starts = vec![];
     for (i, child) in frag.children(txn).enumerate() {
         if let XmlOut::Element(el) = child {
             if !map.text.is_empty() {
                 map.text.push(b'\n' as u16);
             }
             let start = map.text.len();
+            root_starts.push(start);
             walk_text(txn, &el, &mut map);
+            if el.tag().as_ref() == IMAGE && map.text.len() == start {
+                map.text.push(0xFFFC);
+            }
             map.blocks.push((start, map.text.len(), i));
         }
     }
+    root_starts.push(map.text.len());
+    map.child_starts.insert(AsRef::<yrs::branch::Branch>::as_ref(frag).id(), root_starts);
     map
 }
 
@@ -1421,6 +1469,70 @@ fn walk_text<T: ReadTxn>(txn: &T, el: &XmlElementRef, map: &mut TextMap) {
         }
     }
     map.child_starts.insert(AsRef::<yrs::branch::Branch>::as_ref(el).id(), starts);
+}
+
+/// The text a reader can quote, with each UTF-16 unit mapped back to its live range. Suggested
+/// insertions aren't part of that reading; inline nodes keep their visible words.
+pub fn quote_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, map: &TextMap) -> (Vec<u16>, Vec<(usize, usize)>) {
+    struct Quoted {
+        text: Vec<u16>,
+        ranges: Vec<(usize, usize)>,
+    }
+    impl Quoted {
+        fn add(&mut self, text: &str, range: impl Fn(usize) -> (usize, usize)) {
+            for (i, unit) in text.encode_utf16().enumerate() {
+                self.text.push(unit);
+                self.ranges.push(range(i));
+            }
+        }
+    }
+    fn walk<T: ReadTxn>(txn: &T, el: &XmlElementRef, map: &TextMap, out: &mut Quoted) {
+        let starts = map.child_starts.get(&AsRef::<yrs::branch::Branch>::as_ref(el).id());
+        let mut first_block = true;
+        for (i, child) in el.children(txn).enumerate() {
+            match child {
+                XmlOut::Text(text) => {
+                    let mut at = *map.starts.get(&AsRef::<yrs::branch::Branch>::as_ref(&text).id()).unwrap_or(&0);
+                    for (text, marks) in text_runs(txn, &text) {
+                        if !matches!(marks.suggestion, Some(Suggestion { kind: SuggestionKind::Insert, .. })) {
+                            out.add(&text, |i| (at + i, at + i + 1));
+                        }
+                        at += text.encode_utf16().count();
+                    }
+                }
+                XmlOut::Element(child) => {
+                    let at = starts.and_then(|s| s.get(i)).copied().unwrap_or(0);
+                    if let Some(atom) = read_atom(txn, &child) {
+                        let text = match atom {
+                            Inline::HardBreak => "\n".to_owned(),
+                            Inline::InlineMath { latex } => latex,
+                            Inline::DocLink { title, .. } => title,
+                            _ => String::new(),
+                        };
+                        out.add(&text, |_| (at, at + 1));
+                    } else {
+                        if !first_block {
+                            out.add("\n", |_| (at.saturating_sub(1), at));
+                        }
+                        first_block = false;
+                        walk(txn, &child, map, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Quoted { text: vec![], ranges: vec![] };
+    for (i, child) in frag.children(txn).enumerate() {
+        if let XmlOut::Element(el) = child {
+            let at = map.blocks.iter().find(|(_, _, index)| *index == i).map(|(start, _, _)| *start).unwrap_or(0);
+            if !out.text.is_empty() {
+                out.add("\n\n", |_| (at.saturating_sub(1), at));
+            }
+            walk(txn, &el, map, &mut out);
+        }
+    }
+    (out.text, out.ranges)
 }
 
 /// A Yjs relative position (encoded the way the editor encodes them) at an offset in the text
@@ -1474,10 +1586,13 @@ pub fn authorship(ydoc: &YDoc) -> Vec<Vec<(u64, usize)>> {
         .collect();
     let mut out = vec![];
     for block in blocks {
+        let Some(model) = read_block(&txn, &block) else { continue; };
+        if crate::to_markdown(&Doc {blocks: vec![model]}).is_empty() { continue; }
         let texts = all_texts(&txn, &block);
         let mut runs: Vec<(u64, usize)> = vec![];
         for text in texts {
             for d in text.diff_range(&mut txn, Some(&hi), Some(&lo), YChange::identity) {
+                if matches!(attrs_to_marks(d.attributes.as_deref()).suggestion, Some(s) if s.kind == SuggestionKind::Insert) { continue; }
                 let len = match &d.insert {
                     yrs::Out::Any(Any::String(s)) => s.chars().count(),
                     _ => 1,
@@ -1487,6 +1602,11 @@ pub fn authorship(ydoc: &YDoc) -> Vec<Vec<(u64, usize)>> {
                     Some((c, l)) if *c == client => *l += len,
                     _ => runs.push((client, len)),
                 }
+            }
+        }
+        if runs.is_empty() {
+            if let yrs::branch::BranchID::Nested(id) = XmlOut::Element(block).id() {
+                runs.push((id.client.get(), 1));
             }
         }
         out.push(runs);

@@ -39,7 +39,8 @@ async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
         scopes: vec!["subscriptions.register".into()],
         access_ttl_seconds: Some(300),
     };
-    let key = format!("write-ting-enroll-{}-{}", caller.uuid, OffsetDateTime::now_utc().unix_timestamp() / 600);
+    // Each proof request has its own identity: a fresh access token changes its body.
+    let key = format!("write-ting-enroll-{}", crate::ids::new_id("proof"));
     let proof = match state.app().issue_user_verification(&request, Some(&key)).await {
         Ok(p) => p,
         Err(e) => {
@@ -51,7 +52,7 @@ async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
         .http
         .post(format!("{}/v1/subscriptions", ting.trim_end_matches('/')))
         .bearer_auth(proof.proof_token.expose())
-        .json(&json!({ "app_id": state.config.app_id, "for": caller.id }))
+        .json(&json!({ "app_id": state.config.app_id, "for": caller.uuid }))
         .timeout(Duration::from_secs(15))
         .send()
         .await;
@@ -149,6 +150,19 @@ async fn send_due(state: &AppState) -> anyhow::Result<()> {
     }
     let proof = send_proof(state).await?;
     for item in due {
+        // Access may have changed while a notification waited for registration or a retry.
+        if let Some(doc_id) = item.data.pointer("/doc/id").and_then(Value::as_str) {
+            let allowed = match crate::access::load_doc(state, doc_id).await {
+                Ok(doc) => crate::notify::can_read(state, &doc, &item.for_uuid).await.map_err(|e| anyhow::anyhow!(e.message))?,
+                Err(e) if e.status == axum::http::StatusCode::NOT_FOUND => false,
+                Err(e) => return Err(anyhow::anyhow!(e.message)),
+            };
+            if !allowed {
+                sqlx::query("update ting_outbox set status = 'failed', last_error = 'The recipient no longer has access to this doc.' where id = $1")
+                    .bind(item.id).execute(&state.db).await?;
+                continue;
+            }
+        }
         let response = state
             .http
             .post(format!("{}/v1/tings", ting.trim_end_matches('/')))

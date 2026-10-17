@@ -1,14 +1,23 @@
 //! History: every change to a doc is stored as the Yjs update it made, in order. Any version of a
 //! doc is those updates replayed up to a point, and nothing is ever thinned out.
 //!
-//! Per-author undo ("undo everything si:writer changed since this version") replays the history
-//! with that author's later deletions left out, then removes what that author inserted since the
-//! version. Everyone else's changes, even ones made inside the author's text, stay where they are.
+//! - [`changes`]: who made each change, and which Yjs ids it inserted and deleted.
+//! - [`blocks`]: a doc's top-level blocks with the elements that hold them, matched between two
+//!   versions, and bringing some blocks of an older version back.
+//! - [`compare`]: two versions side by side, block by block, with who added and removed what.
+//! - [`undo`]: undoing everything one Carbon or Silicon changed since a version, leaving everyone
+//!   else's changes in place.
+
+pub mod blocks;
+pub mod changes;
+pub mod compare;
+mod text;
+pub mod undo;
 
 use std::collections::HashSet;
 
-use yrs::updates::decoder::Decode;
 use yrs::encoding::write::Write;
+use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1};
 use yrs::{Doc as YDoc, IdSet, ReadTxn, StateVector, Transact, Update};
 
@@ -38,7 +47,8 @@ pub fn replay<'a>(updates: impl IntoIterator<Item = &'a [u8]>) -> Result<YDoc, H
     {
         let mut txn = doc.transact_mut();
         for bytes in updates {
-            let update = Update::decode_v1(bytes).map_err(|e| HistoryError::Decode(e.to_string()))?;
+            let update =
+                Update::decode_v1(bytes).map_err(|e| HistoryError::Decode(e.to_string()))?;
             txn.apply_update(update)
                 .map_err(|e| HistoryError::Apply(e.to_string()))?;
         }
@@ -99,7 +109,8 @@ pub fn state_vector_at(updates: &[StoredUpdate], seq: i64) -> Result<StateVector
     Ok(txn.state_vector())
 }
 
-/// The doc as it would read if everything `clients` changed after `since_seq` were undone.
+/// The doc as it would read if everything `author` changed after `since_seq` were undone, with
+/// everyone else's changes kept ([`undo`]).
 ///
 /// `clients` are the Yjs client ids that belong to the author.
 pub fn undo_author_since(
@@ -108,35 +119,15 @@ pub fn undo_author_since(
     clients: &HashSet<u64>,
     since_seq: i64,
 ) -> Result<Doc, HistoryError> {
-    let before = state_vector_at(updates, since_seq)?;
-    let mut bytes: Vec<Vec<u8>> = Vec::with_capacity(updates.len());
-    for u in updates {
-        if u.seq > since_seq && u.author == author {
-            bytes.push(without_deletions(&u.update)?);
-        } else {
-            bytes.push(u.update.clone());
-        }
-    }
-    let ydoc = replay(bytes.iter().map(|b| b.as_slice()))?;
-    // Remove what the author inserted after the version.
-    let now = ydoc.transact().state_vector();
-    let mut inserted = IdSet::default();
-    for client in clients {
-        let client = yrs::ClientID::new(*client);
-        let from = before.get(&client);
-        let to = now.get(&client);
-        if to > from {
-            inserted.insert(yrs::ID::new(client, from), to - from);
-        }
-    }
-    if !inserted.is_empty() {
-        let update = Update::decode_v1(&deletion_update(&inserted))
-            .map_err(|e| HistoryError::Decode(e.to_string()))?;
-        ydoc.transact_mut()
-            .apply_update(update)
-            .map_err(|e| HistoryError::Apply(e.to_string()))?;
-    }
-    Ok(ydoc::read_doc(&ydoc))
+    undo::undo_author_since(updates, author, clients, since_seq)
+}
+
+/// Applies an update to a doc, in a transaction of its own.
+pub(crate) fn apply(doc: &YDoc, update: &[u8]) -> Result<(), HistoryError> {
+    let update = Update::decode_v1(update).map_err(|e| HistoryError::Decode(e.to_string()))?;
+    doc.transact_mut()
+        .apply_update(update)
+        .map_err(|e| HistoryError::Apply(e.to_string()))
 }
 
 /// The doc a full state describes, without the text of anything deleted: what someone who may not
@@ -149,7 +140,9 @@ pub fn without_history(full_state: &[u8]) -> Result<yrs::Doc, yrs::encoding::rea
         ..yrs::Options::default()
     });
     let update = Update::decode_v1(full_state)?;
-    doc.transact_mut().apply_update(update).map_err(|_| yrs::encoding::read::Error::UnexpectedValue)?;
+    doc.transact_mut()
+        .apply_update(update)
+        .map_err(|_| yrs::encoding::read::Error::UnexpectedValue)?;
     Ok(doc)
 }
 
@@ -169,7 +162,10 @@ pub fn inserted_upper(update: &Update) -> Vec<(u64, u32)> {
 /// The client ids that inserted anything in an update.
 pub fn update_clients(update: &[u8]) -> Result<Vec<u64>, HistoryError> {
     let decoded = Update::decode_v1(update).map_err(|e| HistoryError::Decode(e.to_string()))?;
-    Ok(inserted_upper(&decoded).into_iter().map(|(client, _)| client).collect())
+    Ok(inserted_upper(&decoded)
+        .into_iter()
+        .map(|(client, _)| client)
+        .collect())
 }
 
 /// For each update: who it deleted text of. Used to say who removed something in a comparison.

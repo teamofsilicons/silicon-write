@@ -412,6 +412,7 @@ pub async fn edit_expecting<T>(
     let room = state.rooms.get(state, doc_id).await?;
     let mut inner = room.inner.lock().await;
     inner.editable(expect_seq)?;
+    let creating = inner.seq == 0 && matches!(origin, Origin::Import);
     let copy = inner.copy(state, doc_id, base_seq, &[]).await?;
     let result = f(&copy.doc)?;
     if !copy.changed() {
@@ -421,7 +422,7 @@ pub async fn edit_expecting<T>(
     inner.commit(state, doc_id, author, origin, None).await?;
     inner.broadcast_authors(state).await;
     // A brand-new doc has no one in it to see its creator arrive.
-    if !matches!(origin, Origin::Create) {
+    if !creating && !matches!(origin, Origin::Create) {
         inner.visit(state, author, &copy).await;
     }
     let seq = inner.seq;
@@ -702,8 +703,9 @@ async fn index(state: &AppState, room: &Arc<Room>) -> ApiResult<()> {
         inner.index_due = None;
         (inner.read(), inner.seq)
     };
-    let plain = doc.without_suggestions().plain_text();
-    let links: Vec<String> = doc.doc_links().iter().map(|l| l.trim().to_lowercase()).collect();
+    // Postgres text can't hold NUL: it never reaches the index.
+    let plain = doc.without_suggestions().plain_text().replace('\0', "");
+    let links: Vec<String> = doc.doc_links().iter().map(|l| l.replace('\0', "").trim().to_lowercase()).collect();
     // The uploaded images the doc shows: anyone who can open it can see them. Never forgotten, so an
     // older version still shows its images.
     let images: Vec<String> = write_doc::pandoc::images(&doc).iter().filter_map(|src| crate::content::asset_id_from_src(state, src)).collect();

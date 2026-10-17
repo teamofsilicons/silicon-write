@@ -431,6 +431,9 @@ pub struct PublicBody {
 
 pub async fn set_public(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<PublicBody>) -> ApiResult<Json<Value>> {
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Owner).await?;
+    if doc.deleted_at.is_some() {
+        return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
+    }
     let access_level = body.access.trim();
     if !["none", "view", "comment", "edit"].contains(&access_level) {
         return Err(ApiError::invalid("Public access must be none, view, comment or edit."));
@@ -450,7 +453,7 @@ async fn after_change(state: &AppState, target: Target, id: &str) -> ApiResult<(
     let docs: Vec<String> = match target {
         Target::Doc => vec![id.to_owned()],
         Target::Folder => sqlx::query_scalar(
-            "with recursive t as (select id from folders where id = $1 union all select f.id from folders f join t on f.parent_id = t.id)
+            "with recursive t as (select id from folders where id = $1 union select f.id from folders f join t on f.parent_id = t.id)
              select id from docs where folder_id in (select id from t)",
         )
         .bind(id)

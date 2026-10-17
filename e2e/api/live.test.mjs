@@ -1,4 +1,14 @@
-// Real-time editing over the WebSocket, end to end against the running service.
+// Real-time editing over the WebSocket, end to end against the running service (UNDERSTANDING.md,
+// "Editing", "Suggestions", "Sharing" and "Versions"; docs/api.md, "Real time").
+//
+// What it holds the service to: several Carbons and Silicons editing at once converge, and the service's
+// Markdown is what their editors show; every change is stored in order with its author (doc_updates) and
+// rebuilds the doc; viewers change nothing; commenters only add or remove their own suggestions; nobody
+// suggests in someone else's name or writes with someone else's client id; presence always shows the real
+// account; API changes (a Silicon at the command line) arrive live as one change and show their author in
+// the doc for about 30 s; people below editor are never sent deleted text; role changes, removals, the
+// trash and public links apply live; tickets can't be forged, reused elsewhere or kept past their time;
+// changes made offline merge back.
 //
 // Every test signs up its own Carbons (and Silicons), makes its own docs, and connects real
 // y-websocket clients the way the web editor does (web/lib/write/live.ts), so the tests are
@@ -9,9 +19,12 @@
 //   node --test e2e/api/live.test.mjs
 //
 // Needs the local stack (see e2e/lib/stack.mjs). A few checks read the service's Postgres
-// (read only) with psql: WRITE_PSQL, WRITE_PG_HOST/PORT/USER/DB override where it is. The expired
-// ticket check signs a ticket with the development ticket secret (WRITE_TICKET_SECRET, else the
-// default from scripts/dev-env.sh) and is skipped when that isn't the service's secret.
+// (read only) with psql: WRITE_PSQL, WRITE_PG_HOST/PORT/USER/DB override where it is. The checks that
+// sign tickets themselves (an expired ticket, one that runs out while offline) use the development ticket
+// secret (WRITE_TICKET_SECRET, else the default from scripts/dev-env.sh) and are skipped when that isn't
+// the service's secret. Only the times the contract names are held to (search within about two seconds,
+// presence for about 30 s); speed is compared between sizes, so the suite means the same against a debug
+// build as a release build.
 
 import { test, describe, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -30,6 +43,7 @@ const decoding = require("lib0/decoding");
 const encoding = require("lib0/encoding");
 const syncProtocol = require("y-protocols/sync");
 const { yXmlFragmentToProsemirrorJSON } = require("@tiptap/y-tiptap");
+// @tiptap/core and @tiptap/starter-kit are loaded on first use (see `opensInEditor`).
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -174,14 +188,18 @@ async function liveTicket(who, docId) {
   return r.body;
 }
 
-/** A WebSocket that keeps every frame the service sends, exactly as it arrived. */
-function recordingSocket(frames) {
+/** A WebSocket that keeps every frame the service sends, exactly as it arrived, and every frame the client sends. */
+function recordingSocket(frames, sent) {
   return class RecordingWebSocket extends WebSocket {
     constructor(url, protocols) {
       super(url, protocols);
       this.addEventListener("message", event => {
         if (event.data instanceof ArrayBuffer) frames.push(new Uint8Array(event.data));
       });
+    }
+    send(data) {
+      sent.push(Uint8Array.from(data instanceof ArrayBuffer ? new Uint8Array(data) : data));
+      super.send(data);
     }
   };
 }
@@ -198,10 +216,11 @@ async function connect(who, docId, options = {}) {
   const closes = [];
   const remoteUpdates = [];
   const frames = [];
+  const sent = [];
   const serverUrl = ticket.url.slice(0, ticket.url.lastIndexOf("/"));
   const provider = new WebsocketProvider(serverUrl, docId, ydoc, {
     params: { ticket: ticket.ticket },
-    WebSocketPolyfill: recordingSocket(frames),
+    WebSocketPolyfill: recordingSocket(frames, sent),
     disableBc: true,
     maxBackoffTime: 1000,
   });
@@ -222,6 +241,7 @@ async function connect(who, docId, options = {}) {
     closes,
     remoteUpdates,
     frames,
+    sent,
     frag: ydoc.getXmlFragment("default"),
     event: (type, pred = () => true) => events.find(e => e.type === type && pred(e)),
     eventsOf: type => events.filter(e => e.type === type),
@@ -319,6 +339,80 @@ function watchPresence(watcher, clientID) {
 
 /** Whether any frame the service sent a client holds `text`. */
 const receivedText = (client, text) => Buffer.concat(client.frames.map(f => Buffer.from(f))).includes(Buffer.from(text));
+
+/** What a Yjs update holds: how many inserted structures, and how many deleted ranges. */
+function describeUpdate(update) {
+  const { structs, ds } = Y.decodeUpdate(update);
+  return {
+    structs: structs.filter(s => s.constructor.name !== "Skip").length,
+    deletedRanges: [...ds.clients.values()].reduce((n, ranges) => n + ranges.length, 0),
+  };
+}
+
+/** The Yjs sync messages (y-websocket message 0) in a list of frames, described. */
+function syncMessages(frames) {
+  const out = [];
+  for (const frame of frames) {
+    const decoder = decoding.createDecoder(frame);
+    if (decoding.readVarUint(decoder) !== MESSAGE_SYNC) continue;
+    const kind = decoding.readVarUint(decoder);
+    const payload = decoding.readVarUint8Array(decoder);
+    if (kind === 0) out.push({ kind: "sync step 1" });
+    else out.push({ kind: kind === 1 ? "sync step 2" : "update", ...describeUpdate(payload) });
+  }
+  return out;
+}
+
+/** The caret colour the web editor gives an account (web/components/editor/editor.tsx, `colourFor`). */
+function colourFor(id) {
+  const colours = ["#1f5cb1", "#b5531c", "#2f7a4a", "#8a3fa0", "#a0362f", "#2c6f86", "#7a6a1f"];
+  let hash = 0;
+  for (const c of id) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  return colours[hash % colours.length];
+}
+
+/**
+ * Stops a client passing presence along. Every stock y-websocket client (the web editor's too) sends
+ * back to the service each presence change it learns of; a quiet watcher shows what the service alone does.
+ */
+function quiet(client) {
+  client.provider.awareness.off("update", client.provider._awarenessUpdateHandler);
+  return client;
+}
+
+/** The presences a client shows for an account, as [client id, state] (never its own). */
+const presencesOf = (client, account) =>
+  [...client.provider.awareness.getStates()].filter(([id, state]) => id !== client.ydoc.clientID && state?.user?.uuid === account.uuid);
+
+/** The text just before where a presence's cursor is, in a client's doc (null when it doesn't resolve). */
+function textBeforeCursor(client, state) {
+  if (!state?.cursor?.anchor) return null;
+  const at = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(state.cursor.anchor), client.ydoc);
+  if (!at || !(at.type instanceof Y.XmlText)) return null;
+  return at.type.toString().replace(/<[^>]+>/g, "").slice(0, at.index);
+}
+
+/**
+ * Whether a doc's content still opens in the web editor: y-tiptap projects the shared fragment into
+ * the editor's ProseMirror schema (StarterKit and the suggestion marks, the part of
+ * web/components/editor/schema.ts these tests write). The web editor stops showing and sending
+ * changes when this fails (y-tiptap's projection error). "yes", or the error.
+ */
+let schemaCache = null;
+function opensInEditor(frag) {
+  if (!schemaCache) {
+    const { getSchema, Mark } = require("@tiptap/core");
+    const starter = require("@tiptap/starter-kit");
+    const suggestion = name => Mark.create({ name, inclusive: false, addAttributes: () => ({ id: { default: null }, author: { default: null } }) });
+    schemaCache = getSchema([starter.default ?? starter.StarterKit, suggestion("suggestionInsert"), suggestion("suggestionDelete")]);
+  }
+  try {
+    require("@tiptap/y-tiptap").yXmlFragmentToProseMirrorRootNode(frag, schemaCache);
+    return "yes";
+  } catch (error) {
+    return `no (${error.constructor.name}: ${error.message})`;
+  }
+}
 
 // ------------------------------------------------------------------------------------------
 // The doc in y-prosemirror's layout
@@ -589,6 +683,52 @@ describe("editing together", () => {
     assert.equal((await markdown(owner, doc.id)).markdown, `${expected.join("\n\n")}\n`);
   });
 
+  test("live typing by two Carbons and API edits by two Silicons, all at the same time, converge and are each stored once as their author's", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const friend = await carbon("livefriend");
+    const first = await silicon(owner, "livesione");
+    const second = await silicon(owner, "livesitwo");
+    const doc = await newDoc(owner, "Owner line\n\nFriend line\n\nFirst Silicon 0\n\nSecond Silicon 0");
+    for (const who of [friend, first, second]) await share(owner, doc.id, who, "editor");
+    const a = await connect(owner, doc.id);
+    const b = await connect(friend, doc.id);
+    const start = await docSeq(owner, doc.id);
+
+    const TYPED = 20;
+    const EDITS = 5;
+    const type = async (client, index) => {
+      for (let i = 0; i < TYPED; i++) {
+        const text = blockText(client, index);
+        text.insert(text.length, String(i % 10));
+        await sleep(i % 3 === 0 ? 15 : 0);
+      }
+    };
+    const edits = async (who, label) => {
+      for (let v = 0; v < EDITS; v++) {
+        const r = await who.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: `${label} ${v}`, new: `${label} ${v + 1}` }] });
+        assert.equal(r.status, 200, `${who.id}'s edit ${v + 1}: ${JSON.stringify(r.body)}`);
+      }
+    };
+    await Promise.all([type(a, 0), type(b, 1), edits(first, "First Silicon"), edits(second, "Second Silicon")]);
+
+    const digits = Array.from({ length: TYPED }, (_, i) => i % 10).join("");
+    const expected = [`Owner line${digits}`, `Friend line${digits}`, `First Silicon ${EDITS}`, `Second Silicon ${EDITS}`];
+    await converged([a, b], x => JSON.stringify(blockTexts(x)) === JSON.stringify(expected), 15_000);
+    await until("every change to be stored", async () => (await docSeq(owner, doc.id)) >= start + 2 * TYPED + 2 * EDITS, 15_000);
+    await sleep(QUIET_MS);
+    assert.equal(await docSeq(owner, doc.id), start + 2 * TYPED + 2 * EDITS, "one stored change per change made");
+
+    const rows = storedUpdates(doc.id).filter(r => r.seq > start);
+    const count = (who, origin) => rows.filter(r => r.author === who.uuid && r.origin === origin).length;
+    assert.deepEqual(
+      { owner: count(owner, "live"), friend: count(friend, "live"), first: count(first, "edit"), second: count(second, "edit") },
+      { owner: TYPED, friend: TYPED, first: EDITS, second: EDITS },
+    );
+    assert.deepEqual(fragmentPm(replay(storedUpdates(doc.id)).getXmlFragment("default")), clientPm(a));
+    assert.equal((await markdown(owner, doc.id)).markdown, `${expected.join("\n\n")}\n`);
+    assert.equal(fragmentMarkdown(b.frag), `${expected.join("\n\n")}\n`);
+  });
+
   test("a stored checkpoint holds exactly the doc its changes build", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("liveowner");
     const doc = await newDoc(owner, "Typed:");
@@ -648,6 +788,50 @@ describe("editing together", () => {
     });
     assert.equal(md.markdown, fragmentMarkdown(b.frag));
     assert.equal(a.event("rejected"), undefined, JSON.stringify(a.event("rejected")));
+  });
+
+  test("changes made offline in the same paragraph others are changing merge back, even when the ticket ran out meanwhile", { timeout: TEST_TIMEOUT }, async t => {
+    const owner = await carbon("liveowner");
+    const friend = await carbon("livefriend");
+    const doc = await newDoc(owner, "The quick brown fox jumps over the lazy dog.\n\nSecond paragraph.");
+    await share(owner, doc.id, friend, "editor");
+    const a = await connect(owner, doc.id);
+    if (!knowsTicketSecret(a.ticket.ticket)) {
+      t.skip("this run doesn't know the service's ticket secret (set WRITE_TICKET_SECRET)");
+      return;
+    }
+    const b = await connect(friend, doc.id);
+
+    a.provider.disconnect();
+    await until("the owner to be offline", () => !a.provider.wsconnected);
+    // Offline: words added in the middle of the first sentence, one removed, a paragraph added.
+    blockText(a, 0).insert("The quick brown".length, " (and clever)");
+    blockText(a, 0).delete(0, "The ".length);
+    appendParagraph(a, "Written offline.");
+    // Meanwhile, online, the friend changes the same sentence around those places.
+    const seq = await docSeq(owner, doc.id);
+    blockText(b, 0).insert("The quick brown fox jumps over the lazy".length, " old");
+    blockText(b, 0).delete("The ".length, "quick ".length);
+    await storedAfter(owner, doc.id, seq);
+
+    // Its ticket ran out while it was away: the first try is refused, and it fetches a new one (as the web editor does).
+    const expired = makeTicket({ ...ticketFields(a.ticket.ticket), e: Math.floor(Date.now() / 1000) - 5 });
+    assert.equal((await handshake(liveUrl(doc.id, { ...a.ticket, ticket: expired }))).status, 401);
+    a.provider.params = { ticket: expired };
+    const closesBefore = a.closes.length;
+    a.provider.connect();
+    await until("the expired ticket to be refused", () => a.closes.length > closesBefore);
+    a.provider.params = { ticket: (await liveTicket(owner, doc.id)).ticket };
+
+    const expected = ["brown (and clever) fox jumps over the lazy old dog.", "Second paragraph.", "Written offline."];
+    await converged([a, b], x => JSON.stringify(blockTexts(x)) === JSON.stringify(expected), 10_000);
+    const md = await until("the offline changes to be stored", async () => {
+      const m = await markdown(owner, doc.id);
+      return m.markdown === `${expected.join("\n\n")}\n` ? m : false;
+    });
+    assert.equal(fragmentMarkdown(b.frag), md.markdown);
+    assert.equal(a.event("rejected"), undefined, JSON.stringify(a.event("rejected")));
+    assert.deepEqual(fragmentPm(replay(storedUpdates(doc.id)).getXmlFragment("default")), clientPm(b), "the stored history holds both sides");
   });
 
   test("a commenter's suggestions made while offline merge back when it reconnects", { timeout: TEST_TIMEOUT }, async () => {
@@ -739,13 +923,19 @@ describe("roles", () => {
     // The connection blips (a laptop waking up, a network change); y-websocket reconnects by itself.
     v.provider.disconnect();
     await until("the viewer to be offline", () => !v.provider.wsconnected);
+    const sentBefore = v.sent.length;
     v.provider.connect();
     await until("the viewer to reconnect", () => v.eventsOf("hello").length >= 2);
     await v.synced();
     await sleep(QUIET_MS);
-    // The viewer changed nothing; on reconnecting, its client only tells the service what it already has.
-    // (The web editor reloads the page on "rejected".)
-    assert.equal(v.event("rejected"), undefined, `a viewer who changed nothing was sent ${JSON.stringify(v.event("rejected"))} on reconnecting`);
+    // The viewer changed nothing; on reconnecting, its client only tells the service what it already has
+    // (its sync answer carries the doc's delete set, every range of it already deleted on the service).
+    // The web editor reloads the page on "rejected", so every blip would reload a reader's page.
+    assert.equal(
+      v.event("rejected"),
+      undefined,
+      `a viewer who changed nothing was sent ${JSON.stringify(v.event("rejected"))} on reconnecting; all its client sent was ${JSON.stringify(syncMessages(v.sent.slice(sentBefore)))}`,
+    );
     assert.deepEqual(blockTexts(v), ["Hello world"]);
   });
 
@@ -757,10 +947,30 @@ describe("roles", () => {
     const v = await connect(anonymous, doc.id);
     v.provider.disconnect();
     await until("the viewer to be offline", () => !v.provider.wsconnected);
+    const sentBefore = v.sent.length;
     v.provider.connect();
     await until("the viewer to reconnect", () => v.eventsOf("hello").length >= 2);
     await sleep(QUIET_MS);
-    assert.equal(v.event("rejected"), undefined, `an anonymous viewer who changed nothing was sent ${JSON.stringify(v.event("rejected"))} on reconnecting`);
+    assert.equal(
+      v.event("rejected"),
+      undefined,
+      `an anonymous viewer who changed nothing was sent ${JSON.stringify(v.event("rejected"))} on reconnecting; all its client sent was ${JSON.stringify(syncMessages(v.sent.slice(sentBefore)))}`,
+    );
+  });
+
+  test("a commenter whose connection drops and comes back isn't told a change was refused either", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const commenter = await carbon("livecommenter");
+    const doc = await newDoc(owner, "Hello world, and more");
+    await share(owner, doc.id, commenter, "commenter");
+    assert.equal((await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: ", and more", new: "" }] })).status, 200);
+    const k = await connect(commenter, doc.id);
+    k.provider.disconnect();
+    await until("the commenter to be offline", () => !k.provider.wsconnected);
+    k.provider.connect();
+    await until("the commenter to reconnect", () => k.eventsOf("hello").length >= 2);
+    await sleep(QUIET_MS);
+    assert.equal(k.event("rejected"), undefined, JSON.stringify(k.event("rejected")));
   });
 
   test("a commenter's plain insert is refused", { timeout: TEST_TIMEOUT }, async () => {
@@ -863,6 +1073,54 @@ describe("roles", () => {
     assert.deepEqual(r.body.suggestions.map(s => [s.author.uuid, s.inserted]), [[owner.uuid, " again"]]);
   });
 
+  test("a commenter can take back their own suggested deletion, but can't turn a suggestion into a change, hand it to someone else, or undo someone else's", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const commenter = await carbon("livecommenter");
+    const doc = await newDoc(owner, "Hello brave new world");
+    await share(owner, doc.id, commenter, "commenter");
+    // The owner suggests deleting "new " (offsets: "Hello " 0, "brave " 6, "new " 12, "world" 16).
+    const theirs = await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "new ", new: "" }], suggest: true });
+    assert.equal(theirs.status, 200, JSON.stringify(theirs.body));
+    const k = await connect(commenter, doc.id);
+    let seq = await docSeq(owner, doc.id);
+
+    // Allowed: suggesting a deletion and an insertion of one's own, and taking the deletion back.
+    const del = `s_${unique()}`;
+    const ins = `s_${unique()}`;
+    const hello = `s_${unique()}`;
+    blockText(k, 0).format(6, 6, { suggestionDelete: { id: del, author: commenter.uuid } });
+    seq = await storedAfter(owner, doc.id, seq);
+    blockText(k, 0).insert(21, " indeed", { suggestionInsert: { id: ins, author: commenter.uuid } });
+    seq = await storedAfter(owner, doc.id, seq);
+    blockText(k, 0).format(0, 6, { suggestionDelete: { id: hello, author: commenter.uuid } });
+    seq = await storedAfter(owner, doc.id, seq);
+    blockText(k, 0).format(6, 6, { suggestionDelete: null });
+    seq = await storedAfter(owner, doc.id, seq);
+    assert.equal(k.event("rejected"), undefined, JSON.stringify(k.event("rejected")));
+    const summary = async () => (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions.map(s => [s.author.uuid === owner.uuid ? "owner" : "commenter", s.inserted, s.deleted]).sort();
+    const expected = [["commenter", "", "Hello "], ["commenter", " indeed", ""], ["owner", "", "new "]].sort();
+    assert.deepEqual(await summary(), expected);
+
+    // Refused, each sent on its own (from a client of its own, on the doc as it is).
+    const tries = {
+      "accepting their own suggested insertion (dropping its mark)": frag => fragText(frag, 0).format(21, 7, { suggestionInsert: null }),
+      "really deleting the text they suggested deleting": frag => fragText(frag, 0).delete(0, 6),
+      "taking back the owner's suggested deletion": frag => fragText(frag, 0).format(12, 4, { suggestionDelete: null }),
+      "handing their own suggestion to the owner": frag => fragText(frag, 0).format(21, 7, { suggestionInsert: { id: ins, author: owner.uuid } }),
+      "taking over the owner's suggestion": frag => fragText(frag, 0).format(12, 4, { suggestionDelete: { id: `s_${unique()}`, author: commenter.uuid } }),
+    };
+    const outcome = {};
+    for (const [what, change] of Object.entries(tries)) {
+      const before = k.eventsOf("rejected").length;
+      sendUpdate(k, updateOf(scratchFrom(k), change));
+      await until(`"${what}" to be answered`, () => k.eventsOf("rejected").length > before, 3000).catch(() => null);
+      outcome[what] = { refused: k.eventsOf("rejected").length > before, stored: (await docSeq(owner, doc.id)) > seq };
+    }
+    assert.deepEqual(outcome, Object.fromEntries(Object.keys(tries).map(what => [what, { refused: true, stored: false }])));
+    assert.deepEqual(await summary(), expected, "the suggestions are as they were");
+    assert.equal((await markdown(owner, doc.id)).markdown, "Hello brave new world\n");
+  });
+
   test("a commenter can't change formatting or a block's attributes", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("liveowner");
     const commenter = await carbon("livecommenter");
@@ -948,6 +1206,7 @@ describe("roles", () => {
     const k = await connect(commenter, doc.id);
     blockText(k, 1).insert("Second paragraph".length, " typed without suggesting");
     await k.waitEvent("rejected");
+    const seq = await docSeq(owner, doc.id);
 
     // A suggestion in the other paragraph, which doesn't build on the refused text.
     blockText(k, 0).insert(0, "(suggested) ", { suggestionInsert: { id: `s_${unique()}`, author: commenter.uuid } });
@@ -964,9 +1223,44 @@ describe("roles", () => {
     };
     const kept = { "in the doc's Markdown": true, "in the stored history": true, "in the owner's editor": true, "in an editor opened now": true, refused: false };
     const refusedEverywhere = { "in the doc's Markdown": false, "in the stored history": false, "in the owner's editor": false, "in an editor opened now": false, refused: true };
+    const stored = storedUpdates(doc.id).filter(r => r.seq > seq).map(r => ({ seq: r.seq, origin: r.origin, ...describeUpdate(r.update) }));
     assert.ok(
       isDeepStrictEqual(facts, kept) || isDeepStrictEqual(facts, refusedEverywhere),
-      `the suggestion is in some places and not others: ${JSON.stringify(facts)} (an editor opened now waits for missing changes: ${Boolean(late.ydoc.store.pendingStructs)})`,
+      `the suggestion is in some places and not others: ${JSON.stringify(facts)}; stored for it: ${JSON.stringify(stored)}; an editor opened now waits for changes it can never get: ${Boolean(late.ydoc.store.pendingStructs)}`,
+    );
+  });
+
+  test("a change that arrives after a gap in its client's changes (an earlier one never got there) is never shown by the service without being stored", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const editor = await carbon("liveeditor");
+    const doc = await newDoc(owner, "Alpha\n\nBeta");
+    await share(owner, doc.id, editor, "editor");
+    const a = await connect(owner, doc.id);
+    const e = await connect(editor, doc.id);
+    const seq = await docSeq(owner, doc.id);
+
+    // Two changes from one client of the editor's. The first never reaches the service (a message
+    // lost, or refused as above); the second doesn't build on it. A Yjs client can't apply the second
+    // without the first, so the service must hold it (or refuse it) rather than show it.
+    const scratch = scratchFrom(e);
+    updateOf(scratch, frag => fragText(frag, 1).insert(4, " (never arrives)"));
+    const second = updateOf(scratch, frag => fragText(frag, 0).insert(5, " (arrives)"));
+    sendUpdate(e, second);
+    await sleep(QUIET_MS * 2);
+    const late = await connect(owner, doc.id);
+    await sleep(QUIET_MS);
+
+    const has = value => value.includes("(arrives)");
+    const facts = {
+      "in the doc's Markdown (what Silicons read)": has((await markdown(owner, doc.id)).markdown),
+      "in the stored history": has(JSON.stringify(fragmentPm(replay(storedUpdates(doc.id)).getXmlFragment("default")))),
+      "in the owner's editor": has(blockTexts(a).join("|")),
+      "in an editor opened now": has(blockTexts(late).join("|")),
+    };
+    const stored = storedUpdates(doc.id).filter(r => r.seq > seq).map(r => ({ seq: r.seq, origin: r.origin, ...describeUpdate(r.update) }));
+    assert.ok(
+      Object.values(facts).every(Boolean) || Object.values(facts).every(v => !v),
+      `the service and the editors disagree about the doc: ${JSON.stringify(facts)}; stored for it: ${JSON.stringify(stored)} (seq ${seq} → ${await docSeq(owner, doc.id)})`,
     );
   });
 
@@ -986,20 +1280,189 @@ describe("roles", () => {
     assert.match((await markdown(owner, doc.id, "?suggestions=critic")).markdown, /\{\+\+ again\+\+\}/);
   });
 
-  test("an editor can't make a suggestion in someone else's name", { timeout: TEST_TIMEOUT }, async () => {
+  test("an editor can't make a suggestion in someone else's name: refused, nothing stored", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("liveowner");
     const editor = await carbon("liveeditor");
     const doc = await newDoc(owner, "Hello world");
     await share(owner, doc.id, editor, "editor");
     const e = await connect(editor, doc.id);
+    const seq = await docSeq(owner, doc.id);
     const id = `s_${unique()}`;
     blockText(e, 0).insert(11, " (forged)", { suggestionInsert: { id, author: owner.uuid } });
-    await sleep(QUIET_MS * 2);
-    const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions.find(s => s.id === id);
+    const rejected = await e.waitEvent("rejected");
+    assert.match(rejected.reason, /own name/i);
+    // A suggested deletion in the owner's name, on text already there.
+    blockText(e, 0).format(0, 5, { suggestionDelete: { id: `s_${unique()}`, author: owner.uuid } });
+    await until("a second rejected event", () => e.eventsOf("rejected").length >= 2);
+    await sleep(QUIET_MS);
+    assert.equal(await docSeq(owner, doc.id), seq, "nothing stored");
     // "Each suggestion shows who made it": the editor made it, so it can't be listed as the owner's.
-    assert.ok(
-      !listed || listed.author?.uuid === editor.uuid,
-      `the editor's suggestion is listed as made by the owner: ${JSON.stringify(listed && { id: listed.id, author: listed.author?.id, inserted: listed.inserted })}`,
+    assert.deepEqual((await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions, []);
+  });
+
+  test("an editor can't slip a suggestion in someone else's name through by sending it ahead of the change it builds on", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const editor = await carbon("liveeditor");
+    const doc = await newDoc(owner, "Hello world");
+    await share(owner, doc.id, editor, "editor");
+    const a = await connect(owner, doc.id);
+    const e = await connect(editor, doc.id);
+
+    // Two changes from one client of the editor's: plain text (fine for an editor), then a suggestion
+    // in the owner's name right after it. Sent the other way round, the forged suggestion can't be
+    // applied yet when it arrives (it builds on the plain text), and the plain text alone sets no
+    // suggestion mark.
+    const id = `s_${unique()}`;
+    const scratch = scratchFrom(e);
+    const plain = updateOf(scratch, frag => fragText(frag, 0).insert(11, " and more"));
+    const forged = updateOf(scratch, frag => fragText(frag, 0).insert(20, " (in the owner's name)", { suggestionInsert: { id, author: owner.uuid } }));
+    const seq = await docSeq(owner, doc.id);
+    sendUpdate(e, forged);
+    await sleep(300);
+    sendUpdate(e, plain);
+    await sleep(QUIET_MS * 2);
+
+    const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions.find(s => s.id === id);
+    const marks = blockText(a, 0).toDelta().filter(op => op.attributes?.suggestionInsert?.id === id);
+    const rows = storedUpdates(doc.id)
+      .filter(r => r.seq > seq)
+      .map(r => ({ seq: r.seq, origin: r.origin, by: r.author === editor.uuid ? "the editor" : r.author, "holds the forged mark": r.update.includes(Buffer.from(owner.uuid)) }));
+    assert.deepEqual(
+      {
+        "listed as the owner's": listed?.author?.uuid === owner.uuid,
+        "in the owner's editor under the owner's name": marks.some(op => op.attributes.suggestionInsert.author === owner.uuid),
+      },
+      { "listed as the owner's": false, "in the owner's editor under the owner's name": false },
+      `a suggestion the editor made is shown as the owner's: ${JSON.stringify(listed && { id: listed.id, author: listed.author?.id, inserted: listed.inserted })}; stored: ${JSON.stringify(rows)}; rejected events: ${JSON.stringify(e.eventsOf("rejected"))}`,
+    );
+  });
+
+  test("an editor typing inside someone else's pending suggestion (the text takes on its mark) is accepted, and the suggestion stays theirs", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const editor = await carbon("liveeditor");
+    const commenter = await carbon("livecommenter");
+    const doc = await newDoc(owner, "Hello world");
+    await share(owner, doc.id, editor, "editor");
+    await share(owner, doc.id, commenter, "commenter");
+    // The commenter suggests through the API (a commenter's edit always becomes their suggestion).
+    const suggested = await commenter.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "world", new: "world again" }] });
+    assert.equal(suggested.status, 200, JSON.stringify(suggested.body));
+    assert.equal(suggested.body.suggested, true);
+    const [theirs] = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
+    assert.equal(theirs.author.uuid, commenter.uuid);
+
+    const e = await connect(editor, doc.id);
+    const op = blockText(e, 0).toDelta().find(o => o.attributes?.suggestionInsert);
+    assert.ok(op, "the commenter's suggestion reached the editor");
+    assert.deepEqual(op.attributes.suggestionInsert, { id: theirs.id, author: commenter.uuid });
+    const seq = await docSeq(owner, doc.id);
+    // Typing in the middle of " again": ProseMirror gives typed text the marks around it.
+    const at = "Hello world ag".length;
+    blockText(e, 0).insert(at, "AIN-AG", { suggestionInsert: op.attributes.suggestionInsert });
+    await storedAfter(owner, doc.id, seq);
+    assert.equal(e.event("rejected"), undefined, JSON.stringify(e.event("rejected")));
+    const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
+    assert.deepEqual(listed.map(s => [s.id, s.author.uuid, s.inserted]), [[theirs.id, commenter.uuid, " agAIN-AGain"]]);
+  });
+
+  test("an editor can't put words of their own into someone else's suggestion away from it, in another paragraph", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const editor = await carbon("liveeditor");
+    const doc = await newDoc(owner, "Hello world\n\nSecond paragraph");
+    await share(owner, doc.id, editor, "editor");
+    const suggested = await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Hello world", new: "Hello world again" }], suggest: true });
+    assert.equal(suggested.status, 200, JSON.stringify(suggested.body));
+    const [theirs] = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
+    const e = await connect(editor, doc.id);
+    const mark = blockText(e, 0).toDelta().find(o => o.attributes?.suggestionInsert)?.attributes.suggestionInsert;
+    assert.deepEqual(mark, { id: theirs.id, author: owner.uuid });
+    const seq = await docSeq(owner, doc.id);
+
+    // Not typing inside it (where text takes on the marks around it): a new passage elsewhere, under the owner's name.
+    blockText(e, 1).insert("Second paragraph".length, " (the editor's words)", { suggestionInsert: mark });
+    await until("the change to be refused or stored", async () => e.event("rejected") || (await docSeq(owner, doc.id)) > seq, 3000).catch(() => null);
+    const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
+    assert.deepEqual(
+      listed.map(s => [s.author.uuid === owner.uuid ? "the owner" : s.author.id, s.inserted]),
+      [["the owner", " again"]],
+      `words the editor wrote are listed as the owner's suggestion (rejected: ${JSON.stringify(e.event("rejected"))}; stored as ${JSON.stringify(storedUpdates(doc.id).filter(r => r.seq > seq).map(r => r.author === editor.uuid ? "the editor's change" : r.author))})`,
+    );
+  });
+
+  test("a commenter typing inside someone else's suggestion with their mark is refused: that would change their suggestion", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const commenter = await carbon("livecommenter");
+    const doc = await newDoc(owner, "Hello world");
+    await share(owner, doc.id, commenter, "commenter");
+    const suggested = await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "world", new: "world again" }], suggest: true });
+    assert.equal(suggested.status, 200, JSON.stringify(suggested.body));
+    const k = await connect(commenter, doc.id);
+    const op = blockText(k, 0).toDelta().find(o => o.attributes?.suggestionInsert);
+    assert.ok(op, "the owner's suggestion reached the commenter");
+    const seq = await docSeq(owner, doc.id);
+    blockText(k, 0).insert("Hello world ag".length, "AIN-AG", { suggestionInsert: op.attributes.suggestionInsert });
+    await k.waitEvent("rejected");
+    await sleep(QUIET_MS);
+    assert.equal(await docSeq(owner, doc.id), seq);
+    const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
+    assert.deepEqual(listed.map(s => [s.author.uuid, s.inserted]), [[owner.uuid, " again"]]);
+  });
+
+  test("a suggestion that names nobody (no author) is refused, from an editor and from a commenter", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const editor = await carbon("liveeditor");
+    const commenter = await carbon("livecommenter");
+    const doc = await newDoc(owner, "Hello world");
+    await share(owner, doc.id, editor, "editor");
+    await share(owner, doc.id, commenter, "commenter");
+    const e = await connect(editor, doc.id);
+    const k = await connect(commenter, doc.id);
+    const seq = await docSeq(owner, doc.id);
+    blockText(e, 0).insert(11, " (by nobody)", { suggestionInsert: { id: `s_${unique()}` } });
+    blockText(k, 0).insert(0, "Nobody's: ", { suggestionInsert: { id: `s_${unique()}`, author: "" } });
+    await e.waitEvent("rejected");
+    await k.waitEvent("rejected");
+    await sleep(QUIET_MS);
+    assert.equal(await docSeq(owner, doc.id), seq);
+    assert.deepEqual((await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions, []);
+  });
+
+  test("a commenter can't change what the doc model doesn't show either: an unknown mark, an unknown block, stray text, another part of the Yjs doc", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const commenter = await carbon("livecommenter");
+    const tries = {
+      "an unknown mark on some text": frag => fragText(frag, 0).format(0, 5, { zzzMark: true }),
+      "an unknown block": frag => frag.insert(1, [new Y.XmlElement("zzzBlock")]),
+      "stray text between blocks": frag => {
+        const stray = new Y.XmlText();
+        stray.insert(0, "stray text");
+        frag.insert(1, [stray]);
+      },
+      "an attribute the doc model doesn't read, on a paragraph": frag => frag.get(0).setAttribute("zzzAttribute", "1"),
+      "text in a part of the Yjs doc other than the editor's fragment": frag => frag.doc.getText("elsewhere").insert(0, "anything at all, as much as wanted"),
+    };
+    const outcome = {};
+    for (const [what, change] of Object.entries(tries)) {
+      // Each on a doc of its own.
+      const doc = await newDoc(owner, "Hello world\n\nSecond paragraph");
+      await share(owner, doc.id, commenter, "commenter");
+      const k = await connect(commenter, doc.id);
+      const seq = await docSeq(owner, doc.id);
+      sendUpdate(k, updateOf(scratchFrom(k), change));
+      await until(`"${what}" to be refused or stored`, async () => k.event("rejected") || (await docSeq(owner, doc.id)) > seq, 3000).catch(() => null);
+      outcome[what] = {
+        refused: Boolean(k.event("rejected")),
+        stored: (await docSeq(owner, doc.id)) > seq,
+        // The web editor (y-tiptap) projects the shared fragment into its ProseMirror schema; when it can't, it
+        // stops showing and sending changes for everyone with the doc open (the editor turns read-only).
+        "the stored doc opens in the web editor": opensInEditor(replay(storedUpdates(doc.id)).getXmlFragment("default")),
+      };
+      k.stop();
+    }
+    // Commenters may only add or remove their own suggestions; none of these is one.
+    assert.deepEqual(
+      outcome,
+      Object.fromEntries(Object.keys(tries).map(what => [what, { refused: true, stored: false, "the stored doc opens in the web editor": "yes" }])),
     );
   });
 
@@ -1012,6 +1475,12 @@ describe("roles", () => {
     const rejected = await a.waitEvent("rejected");
     assert.match(rejected.reason, /couldn't be read/i);
     assert.equal(await docSeq(owner, doc.id), seq);
+    // Frames that aren't y-websocket messages at all, and a message type nobody uses: ignored.
+    sendRaw(a, new Uint8Array([0xff, 0xff, 0xff]));
+    sendRaw(a, new Uint8Array([7, 1, 2, 3]));
+    sendRaw(a, new Uint8Array([]));
+    await sleep(QUIET_MS);
+    assert.equal(a.closes.length, 0, "still connected");
     appendParagraph(a, "still connected");
     await storedAfter(owner, doc.id, seq);
     assert.match((await markdown(owner, doc.id)).markdown, /still connected/);
@@ -1143,13 +1612,26 @@ describe("identity", () => {
     await sleep(QUIET_MS);
     sendAwareness(e, [{ clientID: a.ydoc.clientID, clock: clock + 5, state: null }]);
     await sleep(QUIET_MS);
+    const describeSeen = list => list.filter(s => s === null || s?.user?.uuid !== owner.uuid).map(s => (s === null ? "removed" : `shown as ${s.user?.id || s.user?.name || "nobody"}`));
+    const wrong = { "by an editor": describeSeen(seen) };
 
-    const wrong = seen.filter(s => s === null || s?.user?.uuid !== owner.uuid);
-    assert.deepEqual(
-      wrong.map(s => (s === null ? "removed" : `shown as ${s.user?.id ?? "nobody"}`)),
-      [],
-      "the reader saw the owner's presence taken over or removed by the editor",
-    );
+    // The same from someone with only the public link, not signed in, on another doc.
+    const open = await newDoc(owner, "Hello everyone");
+    await share(owner, open.id, reader, "viewer");
+    assert.equal((await owner.api.put(`/v1/docs/${open.id}/public`, { access: "view" })).status, 200);
+    const a2 = await connect(owner, open.id);
+    const r2 = await connect(reader, open.id);
+    a2.provider.awareness.setLocalStateField("cursor", { anchor: 2, head: 2 });
+    await until("the reader to see the owner's cursor", () => r2.provider.awareness.getStates().get(a2.ydoc.clientID)?.cursor);
+    const anon = await connect(anonymous, open.id);
+    const seen2 = watchPresence(r2, a2.ydoc.clientID);
+    sendAwareness(anon, [{ clientID: a2.ydoc.clientID, clock, state: { cursor: { anchor: 9, head: 9 } } }]);
+    await sleep(QUIET_MS);
+    sendAwareness(anon, [{ clientID: a2.ydoc.clientID, clock: clock + 5, state: null }]);
+    await sleep(QUIET_MS);
+    wrong["by someone with only the public link"] = describeSeen(seen2);
+
+    assert.deepEqual(wrong, { "by an editor": [], "by someone with only the public link": [] }, "the reader saw the owner's presence taken over or removed by someone else");
   });
 
   test("the authors event maps client ids to accounts, including a Silicon's API edit", { timeout: TEST_TIMEOUT }, async () => {
@@ -1157,7 +1639,7 @@ describe("identity", () => {
     const editor = await carbon("liveeditor");
     const writer = await silicon(owner, "livesi");
     const doc = await newDoc(owner, "Hello world");
-    await share(owner, doc.id, editor, "editor");
+    const editorShare = await share(owner, doc.id, editor, "editor");
     await share(owner, doc.id, writer, "editor");
     const a = await connect(owner, doc.id);
     const e = await connect(editor, doc.id);
@@ -1188,6 +1670,16 @@ describe("identity", () => {
     assert.equal(authorship.status, 200, JSON.stringify(authorship.body));
     const firstAuthors = blocks => blocks.map(b => b.authors[0]?.uuid);
     assert.deepEqual(firstAuthors(authorship.body.blocks), [writer.uuid, owner.uuid, editor.uuid]);
+    // "Any part of a doc shows who wrote it": for every signed-in reader, a viewer too, but not for someone
+    // who isn't signed in (someone with only the public link).
+    assert.equal((await owner.api.patch(`/v1/docs/${doc.id}/sharing/${editorShare.id}`, { role: "viewer" })).status, 200);
+    const asViewer = await editor.api.get(`/v1/docs/${doc.id}/authorship`);
+    assert.equal(asViewer.status, 200, JSON.stringify(asViewer.body));
+    assert.deepEqual(asViewer.body, authorship.body);
+    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/public`, { access: "view" })).status, 200);
+    const anon = await anonymous.api.get(`/v1/docs/${doc.id}/authorship`);
+    assert.equal(anon.status, 401, JSON.stringify(anon.body));
+    assert.equal(anon.body?.error?.code, "unauthorized");
   });
 
   test("a Silicon connected live shows up as itself, and its typing is stored as the Silicon's", { timeout: TEST_TIMEOUT }, async () => {
@@ -1294,6 +1786,57 @@ describe("API edits", () => {
     assert.deepEqual(clientPm(a), await servicePm(owner, doc.id));
   });
 
+  test("a whole-doc write from an older version keeps what was typed live meanwhile, and its conflicting text reaches everyone as the writer's suggestion", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const writer = await silicon(owner, "livesi");
+    const doc = await newDoc(owner, "# Plan\n\nThe launch is on Monday.\n\nThe budget is small.\n\nNotes follow.");
+    await share(owner, doc.id, writer, "editor");
+    const a = await connect(owner, doc.id);
+    // The Silicon reads the doc (`write pull`)...
+    const read = await markdown(writer, doc.id);
+    // ...while the owner, live, changes the launch day and adds a line.
+    a.ydoc.transact(() => {
+      blockText(a, 1).delete(17, 6);
+      blockText(a, 1).insert(17, "Tuesday");
+    });
+    let seq = await storedAfter(owner, doc.id, read.seq);
+    blockText(a, 3).insert("Notes follow.".length, " Typed live.");
+    seq = await storedAfter(owner, doc.id, seq);
+
+    // The Silicon writes its whole version from what it read (`write push`): another day, a bigger budget.
+    const put = await writer.api.put(`/v1/docs/${doc.id}/markdown`, {
+      markdown: "# Plan\n\nThe launch is on Friday.\n\nThe budget is large.\n\nNotes follow.\n",
+      base_seq: read.seq,
+    });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    // Never overwritten: the doc keeps the owner's day; the budget (only the Silicon changed it) is merged.
+    assert.equal(put.body.markdown, "# Plan\n\nThe launch is on Tuesday.\n\nThe budget is large.\n\nNotes follow. Typed live.\n");
+    assert.equal(put.body.conflicts.length, 1, JSON.stringify(put.body.conflicts));
+    const [conflict] = put.body.conflicts;
+    assert.match(conflict.was, /Monday/);
+    assert.match(conflict.now, /Tuesday/);
+    assert.match(conflict.yours, /Friday/);
+    assert.match(conflict.suggestion ?? "", /^s_/);
+
+    // Live, the owner's editor shows the budget change and the Silicon's suggestion on the launch day.
+    await until("the merge and the suggestion to reach the owner", () => {
+      const marks = blockText(a, 1).toDelta().filter(op => op.attributes?.suggestionInsert || op.attributes?.suggestionDelete);
+      return blockTexts(a)[2] === "The budget is large." && marks.length > 0 ? marks : false;
+    });
+    const marks = blockText(a, 1).toDelta().filter(op => op.attributes?.suggestionInsert || op.attributes?.suggestionDelete);
+    for (const op of marks) {
+      const s = op.attributes.suggestionInsert ?? op.attributes.suggestionDelete;
+      assert.deepEqual(s, { id: conflict.suggestion, author: writer.uuid }, "the writer's own suggestion, under its id");
+    }
+    const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
+    assert.deepEqual(listed.map(s => [s.id, s.author.uuid]), [[conflict.suggestion, writer.uuid]]);
+    assert.deepEqual(clientPm(a), await servicePm(owner, doc.id));
+    // Accepting it from the editor's side of things (the API) turns the day into the Silicon's, for everyone live.
+    assert.equal((await owner.api.post(`/v1/docs/${doc.id}/suggestions/${conflict.suggestion}/accept`)).status, 200);
+    await until("the accepted suggestion to reach the owner", () => blockTexts(a)[1] === "The launch is on Friday." && blockText(a, 1).toDelta().every(op => !op.attributes?.suggestionInsert && !op.attributes?.suggestionDelete));
+    assert.equal((await markdown(owner, doc.id)).markdown, "# Plan\n\nThe launch is on Friday.\n\nThe budget is large.\n\nNotes follow. Typed live.\n");
+  });
+
   test("restoring an older version reaches connected clients live, as one change", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("liveowner");
     const doc = await newDoc(owner, "Version one");
@@ -1331,7 +1874,7 @@ describe("API edits", () => {
     assert.equal(present.user.id, writer.id);
   });
 
-  test("a large paste arrives whole, is stored as one change, and reads back as Markdown promptly", { timeout: TEST_TIMEOUT }, async () => {
+  test("a large paste arrives whole, is stored as one change, and reads back as Markdown", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("liveowner");
     const friend = await carbon("livefriend");
     const doc = await newDoc(owner, "Start");
@@ -1346,13 +1889,38 @@ describe("API edits", () => {
     assert.ok(storedUpdates(doc.id).at(-1).update.length > big.length, "the stored change holds the whole paste");
     await until("the paste to reach the friend", () => blockTexts(b)[1]?.length === big.length, 15_000);
     assert.deepEqual(await servicePm(owner, doc.id), clientPm(b));
-    // Silicons read docs as Markdown: the paste has to come back out of it, and without a long wait.
-    const started = Date.now();
+    // Silicons read docs as Markdown: the paste comes back out of it whole.
     const md = await markdown(owner, doc.id);
-    const took = Date.now() - started;
-    assert.equal(md.markdown.length, `Start\n\n${big}\n`.length);
-    assert.ok(md.markdown.endsWith("End.\n"));
-    assert.ok(took < 2000, `reading the doc as Markdown took ${took} ms for a ${Math.round(big.length / 1000)} KB paragraph`);
+    assert.equal(md.markdown, `Start\n\n${big}\n`);
+  });
+
+  test("reading a doc as Markdown takes time in proportion to its length, not its square: a long pasted paragraph", { timeout: TEST_TIMEOUT }, async () => {
+    // Timed on whatever build the service runs (a debug build is slow everywhere), so this compares two sizes
+    // rather than holding one to a fixed time: three times the text should take about three times as long.
+    const owner = await carbon("liveowner");
+    const sentence = "A long pasted passage, over and over. ";
+    const took = {};
+    for (const kb of [100, 300]) {
+      const doc = await newDoc(owner, "Start");
+      const a = await connect(owner, doc.id);
+      const seq = await docSeq(owner, doc.id);
+      const big = `${sentence.repeat(Math.ceil((kb * 1000) / sentence.length))}End.`;
+      appendParagraph(a, big);
+      await storedAfter(owner, doc.id, seq);
+      const times = [];
+      for (let i = 0; i < 3; i++) {
+        const started = Date.now();
+        const md = await markdown(owner, doc.id);
+        times.push(Date.now() - started);
+        assert.equal(md.markdown.length, `Start\n\n${big}\n`.length);
+      }
+      took[`${kb} KB`] = times.sort((x, y) => x - y)[1];
+      a.stop();
+    }
+    assert.ok(
+      took["300 KB"] <= Math.max(300, 5 * took["100 KB"]),
+      `reading one paragraph as Markdown took ${took["100 KB"]} ms at 100 KB and ${took["300 KB"]} ms at 300 KB (${(took["300 KB"] / took["100 KB"]).toFixed(1)}× the time for 3× the text)`,
+    );
   });
 
   test("accepting a suggestion through the API reaches connected clients live", { timeout: TEST_TIMEOUT }, async () => {
@@ -1377,6 +1945,209 @@ describe("API edits", () => {
       });
     }
     assert.equal((await markdown(owner, doc.id)).markdown, "Hello world, everyone\n");
+  });
+});
+
+// ==========================================================================================
+// Presence of someone changing the doc through the API (a Silicon at the command line)
+// ==========================================================================================
+
+describe("presence of API changes", () => {
+  /** The account as the service shows it (from the authors event a client got). */
+  const shownAccount = (client, account) =>
+    client.eventsOf("authors").flatMap(ev => Object.values(ev.clients)).find(acct => acct.uuid === account.uuid);
+
+  test("a Silicon's API change puts it among the people in the doc: its name, pfp, caret colour and a cursor right after its change", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const writer = await silicon(owner, "livesi");
+    const doc = await newDoc(owner, "Hello world.\n\nSecond paragraph.");
+    await share(owner, doc.id, writer, "editor");
+    const a = await connect(owner, doc.id);
+    assert.deepEqual(presencesOf(a, writer), [], "nobody before the change");
+
+    const r = await writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Hello world.", new: "Hello world, from the command line." }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const [[visitorClient, state]] = await until("the Silicon to show up", () => (presencesOf(a, writer).length ? presencesOf(a, writer) : false), 5000);
+    const account = await until("the authors event naming the Silicon", () => shownAccount(a, writer));
+    assert.deepEqual(state.user, {
+      uuid: writer.uuid,
+      id: writer.id,
+      name: account.display_name || account.id,
+      kind: "silicon",
+      pfp_url: account.pfp_url,
+      color: colourFor(writer.uuid),
+    });
+    assert.ok(state.user.pfp_url, "it has a pfp");
+    assert.notEqual(visitorClient, a.ydoc.clientID);
+    // The cursor sits just after what the change wrote, as anyone's would after typing it.
+    await until("the change to arrive", () => blockTexts(a)[0].includes("from the command line"));
+    assert.deepEqual(state.cursor?.anchor, state.cursor?.head, "a caret, not a selection");
+    assert.match(textBeforeCursor(a, state) ?? "(the cursor doesn't resolve)", /from the command line\.?$/);
+  });
+
+  test("it stays for about 30 s after its last change, every change starts that again, and then it leaves for everyone", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const writer = await silicon(owner, "livesi");
+    const doc = await newDoc(owner, "Hello world.\n\nSecond paragraph.");
+    await share(owner, doc.id, writer, "editor");
+    // A watcher that doesn't pass presence along, connected throughout.
+    const a = quiet(await connect(owner, doc.id));
+
+    let r = await writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Hello world.", new: "Hello world, once." }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const [[visitor]] = await until("the Silicon to show up", () => (presencesOf(a, writer).length ? presencesOf(a, writer) : false), 5000);
+    await sleep(12_000);
+    r = await writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Second paragraph.", new: "Second paragraph, twice." }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const last = Date.now();
+
+    // 20 s after the second change (32 s after the first), someone who opens the doc still finds it.
+    await sleep(20_000);
+    const b = quiet(await connect(owner, doc.id));
+    await sleep(300);
+    assert.ok(b.provider.awareness.getStates().has(visitor), "20 s after its last change, the Silicon is still in the doc for someone opening it");
+    // Then it leaves: the service says so (b's own 30 s timeout for it would only come ~50 s after the change).
+    await until("the Silicon to leave", () => !b.provider.awareness.getStates().has(visitor), 20_000);
+    const leftAfter = Date.now() - last;
+    assert.ok(leftAfter >= 25_000 && leftAfter <= 40_000, `it left ${leftAfter} ms after its last change`);
+    assert.ok(!a.provider.awareness.getStates().has(visitor), "gone for everyone connected");
+    const c = await connect(owner, doc.id);
+    await sleep(QUIET_MS);
+    assert.ok(!c.provider.awareness.getStates().has(visitor), "and not shown to anyone who opens the doc after");
+  });
+
+  test("someone who opens the doc later sees the Silicon under its own name, and it stays when the others close the doc", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const reader = await carbon("livereader");
+    const writer = await silicon(owner, "livesi");
+    const doc = await newDoc(owner, "Hello world");
+    await share(owner, doc.id, writer, "editor");
+    await share(owner, doc.id, reader, "viewer");
+    // The owner has the doc open in the web editor, whose y-websocket client passes along every
+    // presence change it learns of (back to the service).
+    const a = await connect(owner, doc.id);
+    const r = await writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "world", new: "world, from the command line" }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const [[visitor]] = await until("the owner to see the Silicon", () => (presencesOf(a, writer).length ? presencesOf(a, writer) : false), 5000);
+    await sleep(QUIET_MS);
+
+    const later = await connect(reader, doc.id);
+    const seen = await until("the reader to see the Silicon's presence", () => later.provider.awareness.getStates().get(visitor), 5000).catch(() => null);
+    a.stop(); // the owner closes the doc, well within the Silicon's 30 s
+    await sleep(QUIET_MS * 2);
+    assert.deepEqual(
+      {
+        "the reader sees it as": seen?.user?.id ?? "nobody",
+        "still there after the owner left": later.provider.awareness.getStates().has(visitor),
+      },
+      { "the reader sees it as": writer.id, "still there after the owner left": true },
+      "the Silicon's presence is shown under someone else's name, or leaves with them",
+    );
+  });
+
+  test("a brand-new doc shows nobody in it: not one made from Markdown, nor one opened from a file, nor a copy", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const writer = await silicon(owner, "livesi");
+    const made = await newDoc(writer, "# Made\n\nFrom Markdown.");
+    const form = new FormData();
+    form.append("file", new Blob(["# Opened\n\nFrom a file.\n"], { type: "text/markdown" }), "opened.md");
+    const opened = await writer.api.post("/v1/docs/import", form);
+    assert.equal(opened.status, 201, JSON.stringify(opened.body));
+    const copied = await writer.api.post(`/v1/docs/${made.id}/copy`, { title: `Copy ${unique()}` });
+    assert.ok(copied.status === 200 || copied.status === 201, JSON.stringify(copied.body));
+    const shown = {};
+    for (const [what, doc] of [["made from Markdown", made], ["opened from a file", opened.body], ["a copy", copied.body]]) {
+      await share(writer, doc.id, owner, "editor");
+      const a = await connect(owner, doc.id);
+      await sleep(300);
+      shown[what] = presencesOf(a, writer).map(([, s]) => s.user.id);
+    }
+    assert.deepEqual(shown, { "made from Markdown": [], "opened from a file": [], "a copy": [] }, "its creator shows up in a doc nobody has changed since it was made");
+  });
+
+  test("a Silicon's API change that only deletes shows it with its cursor where the text was", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const writer = await silicon(owner, "livesi");
+    const doc = await newDoc(owner, "Hello world, from far away.\n\nSecond paragraph.");
+    await share(owner, doc.id, writer, "editor");
+    const a = quiet(await connect(owner, doc.id));
+    const r = await writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: ", from far away", new: "" }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    await until("the deletion to arrive", () => blockTexts(a)[0] === "Hello world.");
+    const [[, state]] = await until("the Silicon to show up", () => (presencesOf(a, writer).length ? presencesOf(a, writer) : false), 5000);
+    // Like a Carbon who just deleted something: a caret where the text was.
+    assert.deepEqual(
+      { cursor: Boolean(state.cursor), "text before it": textBeforeCursor(a, state) },
+      { cursor: true, "text before it": "Hello world" },
+      `the Silicon's presence after a deletion: ${JSON.stringify(state)}`,
+    );
+  });
+
+  test("someone with the doc open who also changes it through the API shows up once, and opening the doc ends an API visit", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const writer = await silicon(owner, "livesi");
+    const doc = await newDoc(owner, "Hello world.\n\nSecond paragraph.");
+    await share(owner, doc.id, writer, "editor");
+    const a = await connect(owner, doc.id);
+    // The Silicon has the doc open live (with a cursor) and changes it through the API too.
+    const s = await connect(writer, doc.id);
+    s.provider.awareness.setLocalStateField("cursor", { anchor: 1, head: 1 });
+    await until("the owner to see the Silicon's live cursor", () => a.provider.awareness.getStates().get(s.ydoc.clientID)?.cursor);
+    let r = await writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Hello world.", new: "Hello world, while connected." }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    await until("the change to arrive", () => blockTexts(a)[0].includes("while connected"));
+    await sleep(QUIET_MS);
+    assert.deepEqual(presencesOf(a, writer).map(([client]) => client), [s.ydoc.clientID], "only its live presence");
+
+    // It closes the doc, changes it through the API (now shown for its change), then opens it again.
+    s.stop();
+    await until("its live presence to leave", () => !a.provider.awareness.getStates().has(s.ydoc.clientID));
+    r = await writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Second paragraph.", new: "Second paragraph, from the command line." }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const [[visitor]] = await until("its API presence", () => (presencesOf(a, writer).length ? presencesOf(a, writer) : false), 5000);
+    const again = await connect(writer, doc.id);
+    again.provider.awareness.setLocalStateField("cursor", { anchor: 2, head: 2 });
+    await until("the API presence to give way to the live one", () => !a.provider.awareness.getStates().has(visitor), 5000);
+    await until("its live presence", () => a.provider.awareness.getStates().get(again.ydoc.clientID)?.cursor);
+    assert.deepEqual(presencesOf(a, writer).map(([client]) => client), [again.ydoc.clientID]);
+  });
+
+  test("a commenter's API change reaches connected editors live as their suggestion and shows them in the doc; a viewer's is refused", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const commenter = await silicon(owner, "livenotes");
+    const doc = await newDoc(owner, "Hello world.\n\nSecond paragraph.");
+    await share(owner, doc.id, commenter, "commenter");
+    const a = await connect(owner, doc.id);
+
+    const r = await commenter.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Hello world.", new: "Hello world, please." }] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.suggested, true);
+    assert.equal(r.body.markdown, "Hello world.\n\nSecond paragraph.\n", "the answer is the doc as it reads now");
+    const marked = await until("the suggestion to reach the owner", () => blockText(a, 0).toDelta().find(op => op.attributes?.suggestionInsert));
+    assert.equal(marked.attributes.suggestionInsert.author, commenter.uuid);
+    const [[, state]] = await until("the commenter to show up", () => (presencesOf(a, commenter).length ? presencesOf(a, commenter) : false), 5000);
+    assert.equal(state.user.id, commenter.id);
+
+    // A whole-doc write from a commenter is their suggestion too.
+    const read = await markdown(commenter, doc.id);
+    const put = await commenter.api.put(`/v1/docs/${doc.id}/markdown`, { markdown: "Hello world.\n\nSecond paragraph, rewritten.", base_seq: read.seq });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    assert.equal(put.body.suggested, true);
+    await until("the second suggestion to reach the owner", () => blockText(a, 1).toDelta().some(op => op.attributes?.suggestionInsert?.author === commenter.uuid));
+    assert.equal((await markdown(owner, doc.id)).markdown, "Hello world.\n\nSecond paragraph.\n");
+
+    // A viewer still can't change the doc through the API at all, and nothing reaches the editors.
+    const member = (await owner.api.get(`/v1/docs/${doc.id}/sharing`)).body.members.find(m => m.account?.uuid === commenter.uuid);
+    assert.equal((await owner.api.patch(`/v1/docs/${doc.id}/sharing/${member.id}`, { role: "viewer" })).status, 200);
+    const seq = await docSeq(owner, doc.id);
+    const edit = await commenter.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Hello world.", new: "Hello world, as a viewer." }] });
+    assert.equal(edit.status, 403, JSON.stringify(edit.body));
+    assert.equal(edit.body?.error?.code, "forbidden");
+    const write = await commenter.api.put(`/v1/docs/${doc.id}/markdown`, { markdown: "Rewritten by a viewer." });
+    assert.equal(write.status, 403, JSON.stringify(write.body));
+    assert.equal(write.body?.error?.code, "forbidden");
+    await sleep(QUIET_MS);
+    assert.equal(await docSeq(owner, doc.id), seq, "nothing stored");
   });
 });
 
@@ -1608,22 +2379,28 @@ describe("tickets", () => {
 
     assert.equal((await handshake(liveUrl(doc.id, ticket))).status, 101);
 
-    const garbage = await handshake(liveUrl(doc.id, { ...ticket, ticket: "not-a-ticket" }));
-    assert.equal(garbage.status, 401, JSON.stringify(garbage.body));
-    const unsigned = await handshake(liveUrl(doc.id, { ...ticket, ticket: ticket.ticket.split(".")[0] }));
-    assert.equal(unsigned.status, 401, JSON.stringify(unsigned.body));
+    // Every refusal has the API's error shape, {"error": {"code", "message"}}.
+    const refused = (answer, status, code) => {
+      assert.equal(answer.status, status, JSON.stringify(answer.body));
+      assert.equal(answer.body?.error?.code, code, `the refusal's body: ${JSON.stringify(answer.body)}`);
+      assert.equal(typeof answer.body?.error?.message, "string");
+    };
+    refused(await handshake(liveUrl(doc.id, { ...ticket, ticket: "not-a-ticket" })), 401, "unauthorized");
+    refused(await handshake(liveUrl(doc.id, { ...ticket, ticket: ticket.ticket.split(".")[0] })), 401, "unauthorized");
     // The payload changed to name another doc, the signature kept.
     const fields = ticketFields(ticket.ticket);
     const tampered = `${Buffer.from(JSON.stringify({ ...fields, d: other.id })).toString("base64url")}.${ticket.ticket.split(".")[1]}`;
-    const t1 = await handshake(liveUrl(other.id, { ...ticket, ticket: tampered }));
-    assert.equal(t1.status, 401, JSON.stringify(t1.body));
+    refused(await handshake(liveUrl(other.id, { ...ticket, ticket: tampered })), 401, "unauthorized");
+    // The payload changed to another account (or to nobody), the signature kept.
+    refused(await handshake(liveUrl(doc.id, { ...ticket, ticket: `${Buffer.from(JSON.stringify({ ...fields, a: null })).toString("base64url")}.${ticket.ticket.split(".")[1]}` })), 401, "unauthorized");
     // A real ticket used on another doc.
-    const elsewhere = await handshake(liveUrl(other.id, ticket));
-    assert.equal(elsewhere.status, 403, JSON.stringify(elsewhere.body));
-    assert.equal(elsewhere.body?.error?.code, "forbidden");
-    // No ticket at all.
-    const none = await handshake(`${ticket.url}`);
-    assert.notEqual(none.status, 101, "no ticket, no connection");
+    refused(await handshake(liveUrl(other.id, ticket)), 403, "forbidden");
+    // No ticket at all (a request the router refuses before any handler runs: once plain text, now JSON too).
+    refused(await handshake(`${ticket.url}`), 400, "invalid");
+    // A good ticket, but a plain request rather than a WebSocket.
+    const plain = await fetch(liveUrl(doc.id, ticket).replace(/^ws/, "http"));
+    assert.match(plain.headers.get("content-type") ?? "", /json/);
+    refused({ status: plain.status, body: await plain.json() }, 400, "invalid");
   });
 
   test("an expired ticket is refused", { timeout: TEST_TIMEOUT }, async t => {
@@ -1640,7 +2417,12 @@ describe("tickets", () => {
     assert.equal(fresh.status, 101, "a ticket signed the same way works");
     const expired = await handshake(liveUrl(doc.id, { ...ticket, ticket: makeTicket({ ...fields, e: Math.floor(Date.now() / 1000) - 5 }) }));
     assert.equal(expired.status, 401, JSON.stringify(expired.body));
-    assert.match(JSON.stringify(expired.body), /expired/i);
+    assert.equal(expired.body?.error?.code, "unauthorized");
+    assert.match(expired.body?.error?.hint ?? "", /expired/i);
+    // A properly signed, unexpired ticket opens only the doc it names.
+    const other = await newDoc(owner, "Not this one");
+    const forOther = await handshake(liveUrl(other.id, { ...ticket, ticket: makeTicket({ ...fields, e: Math.floor(Date.now() / 1000) + 60 }) }));
+    assert.equal(forOther.status, 403, JSON.stringify(forOther.body));
   });
 
   test("no ticket is issued to anyone who can't open the doc, nor for a PDF shown as it is", { timeout: TEST_TIMEOUT }, async () => {
@@ -1706,6 +2488,22 @@ describe("trash", () => {
     await storedAfter(owner, doc.id, seq);
     assert.match((await markdown(owner, doc.id)).markdown, /after restoring/);
     assert.doesNotMatch((await markdown(owner, doc.id)).markdown, /typed into the trash|a second try/);
+  });
+
+  test("permanently deleting a doc tells whoever still has it open (role:null), closes the connection, and opens nothing again", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const doc = await newDoc(owner, "Soon gone for good");
+    assert.equal((await owner.api.del(`/v1/docs/${doc.id}`)).status, 204);
+    // The owner still has it open (from the trash, read only).
+    const a = await connect(owner, doc.id);
+    assert.equal(a.event("hello").role, "owner");
+    const r = await owner.api.del(`/v1/docs/${doc.id}/permanently?confirm=${doc.id}`);
+    assert.equal(r.status, 204, JSON.stringify(r.body));
+    const closed = await until("the owner's connection to close", () => a.closes.find(c => !c.local));
+    assert.equal((await handshake(liveUrl(doc.id, a.ticket))).status, 404);
+    assert.equal((await owner.api.post(`/v1/docs/${doc.id}/live`)).status, 404);
+    // The web editor shows "You no longer have access" on role:null; without it, it only sees the socket close.
+    assert.ok(a.event("role", ev => ev.role === null), `no role:null before the close (code ${closed.code}); events: ${JSON.stringify(a.events.map(e => e.type))}`);
   });
 
   test("a doc trashed with its folder refuses live edits, and takes them again once the folder is restored", { timeout: TEST_TIMEOUT }, async () => {
@@ -1841,6 +2639,31 @@ describe("public docs", () => {
     assert.doesNotMatch((await markdown(owner, doc.id)).markdown, /anonymous edit/);
   });
 
+  test("turning a public edit link down to view, then off, changes signed-in link editors' roles live", { timeout: TEST_TIMEOUT }, async () => {
+    const owner = await carbon("liveowner");
+    const stranger = await carbon("livestranger");
+    const doc = await newDoc(owner, "Open for edits, for now");
+    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/public`, { access: "edit" })).status, 200);
+    const s = await connect(stranger, doc.id);
+    assert.equal(s.event("hello").role, "editor");
+    let seq = await docSeq(owner, doc.id);
+    appendParagraph(s, "while the link edits");
+    seq = await storedAfter(owner, doc.id, seq);
+
+    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/public`, { access: "view" })).status, 200);
+    await s.waitEvent("role", ev => ev.role === "viewer");
+    appendParagraph(s, "after the link became view-only");
+    await s.waitEvent("rejected");
+    await sleep(QUIET_MS);
+    assert.equal(await docSeq(owner, doc.id), seq, "nothing stored");
+
+    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/public`, { access: "none" })).status, 200);
+    await s.waitEvent("role", ev => ev.role === null);
+    await until("the stranger's connection to close", () => s.closes.find(c => !c.local));
+    assert.equal((await stranger.api.post(`/v1/docs/${doc.id}/live`)).status, 404);
+    assert.equal((await markdown(owner, doc.id)).markdown, "Open for edits, for now\n\nwhile the link edits\n");
+  });
+
   test("making a public doc private sends role:null to anonymous viewers and closes their connection", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("liveowner");
     const doc = await newDoc(owner, "Briefly public");
@@ -1853,29 +2676,93 @@ describe("public docs", () => {
     assert.equal(again.status, 404, JSON.stringify(again.body));
   });
 
-  test("people who can't edit are sent the doc as it is, not the text deleted from it", { timeout: TEST_TIMEOUT }, async () => {
+  test("people below editor are sent the doc without the text deleted from it, and editors are sent all of it", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("liveowner");
-    const viewer = await carbon("liveviewer");
-    const doc = await newDoc(owner, "Visible text");
-    await share(owner, doc.id, viewer, "viewer");
+    const member = await carbon("livemember");
+    const stranger = await carbon("livestranger");
+    // Two secrets: text deleted from a paragraph that stays, and a whole paragraph deleted.
     const secret = `private-note-${unique()}`;
+    const secretParagraph = `private-paragraph-${unique()}`;
+    const doc = await newDoc(owner, `Visible text\n\nA paragraph about ${secretParagraph}`);
+    const membership = await share(owner, doc.id, member, "viewer");
     let r = await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Visible text", new: `Visible text ${secret}` }] });
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    r = await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: ` ${secret}`, new: "" }] });
+    r = await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: ` ${secret}`, new: "" }, { old: `\n\nA paragraph about ${secretParagraph}`, new: "" }] });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.equal((await markdown(owner, doc.id)).markdown, "Visible text\n");
     // The history (where the deleted text lives) is for editors.
-    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/public`, { access: "view" })).status, 200);
-    assert.equal((await anonymous.api.get(`/v1/docs/${doc.id}/versions`)).status, 401);
-    assert.notEqual((await viewer.api.get(`/v1/docs/${doc.id}/versions`)).status, 200);
+    assert.notEqual((await member.api.get(`/v1/docs/${doc.id}/versions`)).status, 200);
 
-    // What arrives over the wire, byte for byte (a client's own "update" events are re-encoded
-    // after its garbage collection, so they can't show this).
-    const v = await connect(anonymous, doc.id);
-    assert.deepEqual(blockTexts(v), ["Visible text"]);
-    assert.equal(receivedText(v, secret), false, `the anonymous viewer of the public link was sent the deleted text "${secret}"`);
-    const w = await connect(viewer, doc.id);
-    assert.equal(receivedText(w, secret), false, `the viewer was sent the deleted text "${secret}"`);
+    const setRole = async role => assert.equal((await owner.api.patch(`/v1/docs/${doc.id}/sharing/${membership.id}`, { role })).status, 200);
+    const setPublic = async access => assert.equal((await owner.api.put(`/v1/docs/${doc.id}/public`, { access })).status, 200);
+    // What arrives over the wire, byte for byte (a client's own "update" events are re-encoded after its
+    // garbage collection, so they can't show this).
+    const sent = {};
+    const roles = {};
+    const secretsSent = c => [secret, secretParagraph].filter(s => receivedText(c, s)).length;
+    const look = async (label, who) => {
+      const c = await connect(who, doc.id);
+      roles[label] = c.event("hello").role;
+      assert.deepEqual(blockTexts(c), ["Visible text"], `${label} reads the doc as it is`);
+      sent[label] = secretsSent(c);
+      return c;
+    };
+    (await look("a viewer", member)).stop();
+    await setRole("commenter");
+    const k = await look("a commenter", member);
+    // Its connection blips: it syncs again from what it has.
+    k.provider.disconnect();
+    await until("the commenter to be offline", () => !k.provider.wsconnected);
+    k.provider.connect();
+    await until("the commenter to reconnect", () => k.eventsOf("hello").length >= 2);
+    await k.synced();
+    await sleep(QUIET_MS);
+    sent["a commenter, after reconnecting"] = secretsSent(k);
+    k.stop();
+    await setPublic("view");
+    (await look("someone with the public link", anonymous)).stop();
+    await setPublic("comment");
+    (await look("a signed-in stranger with a comment link", stranger)).stop();
+    await setPublic("edit");
+    (await look("a signed-in stranger with an edit link", stranger)).stop();
+    await setPublic("none");
+    await setRole("editor");
+    (await look("an editor", member)).stop();
+    const a = await look("the owner", owner);
+
+    assert.deepEqual(roles, {
+      "a viewer": "viewer",
+      "a commenter": "commenter",
+      "someone with the public link": "viewer",
+      "a signed-in stranger with a comment link": "commenter",
+      "a signed-in stranger with an edit link": "editor",
+      "an editor": "editor",
+      "the owner": "owner",
+    });
+    assert.deepEqual(
+      sent,
+      {
+        "a viewer": 0,
+        "a commenter": 0,
+        "a commenter, after reconnecting": 0,
+        "someone with the public link": 0,
+        "a signed-in stranger with a comment link": 0,
+        "a signed-in stranger with an edit link": 2,
+        "an editor": 2,
+        "the owner": 2,
+      },
+      `how many of the deleted secrets ("${secret}", "${secretParagraph}") each was sent`,
+    );
+
+    // A reader's copy keeps the deleted text's place: changes made right where it was still land right.
+    await setRole("viewer");
+    const v = await connect(member, doc.id);
+    blockText(a, 0).insert("Visible text".length, " and more");
+    blockText(a, 0).insert(0, "Some ");
+    appendParagraph(a, "A new paragraph");
+    await converged([a, v], x => blockTexts(x).join("|") === "Some Visible text and more|A new paragraph");
+    assert.equal(fragmentMarkdown(v.frag), (await markdown(owner, doc.id)).markdown);
+    assert.equal(secretsSent(v), 0);
   });
 });
 

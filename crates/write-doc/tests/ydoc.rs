@@ -174,3 +174,61 @@ fn text_map_and_authorship() {
     let authors = ydoc::block_authors(&y);
     assert_eq!(authors, vec![vec![5], vec![5]]);
 }
+
+#[test]
+fn inline_node_edits_keep_offline_typing_and_comment_positions() {
+    use yrs::{Text, XmlFragment, XmlOut};
+    let cases = [
+        ("The Carbon wrote a long sentence with a note.[^1]\n\n[^1]: Old note.\n", "Old note.", "New note."),
+        ("The Carbon wrote a long sentence about [[Plan A]].\n", "[[Plan A]]", "[[Plan B]]"),
+        ("The Carbon wrote a long sentence about maths $x^2$.\n", "$x^2$", "$y^2$"),
+        ("The Carbon wrote a long sentence and a tail.\n", "sentence and", "sentence\\\nand"),
+    ];
+    for (original, old, new) in cases {
+        let server = ydoc_from(&from_markdown(original), 1);
+        let carbon = fork(&server, 2);
+        let silicon = fork(&server, 3);
+        let server_frag = ydoc::fragment(&server);
+        let carbon_frag = ydoc::fragment(&carbon);
+        let (anchor, end) = {
+            let txn = server.transact();
+            let map = ydoc::text_map(&txn, &server_frag);
+            (ydoc::position_at(&txn, &map, 4, false).unwrap(), ydoc::position_at(&txn, &map, 10, true).unwrap())
+        };
+        {
+            let mut txn = carbon.transact_mut();
+            let first = carbon_frag.children(&txn).find_map(|c| if let XmlOut::Element(e) = c { Some(e) } else { None }).unwrap();
+            let text = first.children(&txn).find_map(|c| if let XmlOut::Text(t) = c { Some(t) } else { None }).unwrap();
+            text.insert(&mut txn, 10, " (offline)");
+        }
+        edit_markdown(&silicon, &original.replace(old, new), &EditMode::default());
+        for client in [&silicon, &carbon] {
+            let update = client.transact().encode_diff_v1(&server.transact().state_vector());
+            server.transact_mut().apply_update(Update::decode_v1(&update).unwrap()).unwrap();
+        }
+        let rendered = to_markdown(&ydoc::read_doc(&server));
+        assert!(rendered.contains("(offline)"), "{original}: lost offline typing: {rendered}");
+        let txn = server.transact();
+        let map = ydoc::text_map(&txn, &server_frag);
+        assert!(ydoc::resolve_position(&txn, &map, &anchor).is_some());
+        assert!(ydoc::resolve_position(&txn, &map, &end).is_some());
+        drop(txn);
+        assert_eq!(ydoc::block_authors(&server)[0][0], 1, "the sentence stays the original author's");
+    }
+}
+
+#[test]
+fn replacing_an_unrelated_sentence_does_not_leave_accidental_anchor_characters() {
+    let y = ydoc_from(&from_markdown("Replace this sentence entirely.\n"), 1);
+    let fragment = ydoc::fragment(&y);
+    let (start, end) = {
+        let txn = y.transact();
+        let map = ydoc::text_map(&txn, &fragment);
+        (ydoc::position_at(&txn, &map, 0, false).unwrap(), ydoc::position_at(&txn, &map, map.text.len(), true).unwrap())
+    };
+    edit_markdown(&y, "Zebra quantum 42 lorem.\n", &EditMode::default());
+    let txn = y.transact();
+    let map = ydoc::text_map(&txn, &fragment);
+    let range = (ydoc::resolve_position(&txn, &map, &start), ydoc::resolve_position(&txn, &map, &end));
+    assert!(matches!(range, (None, _) | (_, None)) || range.0 == range.1, "old comment spans replacement: {range:?}");
+}

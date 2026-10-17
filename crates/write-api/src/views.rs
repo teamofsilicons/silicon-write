@@ -49,32 +49,41 @@ pub struct FolderView {
     pub deleted_at: Option<OffsetDateTime>,
 }
 
-/// The folders above, top first, limited to the ones the viewer can see.
+/// The folders above, top first, limited to the ones the viewer can see: walking up from the
+/// nearest folder, it stops at the first one the viewer neither owns nor has through a share on
+/// it or on a folder above it. However deep the folders go, the path is whole.
 async fn visible_path(state: &AppState, folder_id: Option<&str>, viewer: Option<&str>) -> ApiResult<Vec<PathPart>> {
-    let chain = access::ancestors(state, folder_id).await?;
-    let mut parts: Vec<PathPart> = vec![];
-    // Walk from the nearest folder up and stop at the first one the viewer has no access to.
-    for folder in &chain {
-        let visible = match viewer {
-            Some(v) if v == folder.owner_uuid => true,
-            Some(v) => {
-                let ids: Vec<String> = chain.iter().map(|f| f.id.clone()).collect();
-                let pos = ids.iter().position(|i| *i == folder.id).unwrap_or(0);
-                let above: Vec<String> = ids[pos..].to_vec();
-                let shared: Option<String> = sqlx::query_scalar("select id from shares where account_uuid = $1 and folder_id = any($2) limit 1")
-                    .bind(v)
-                    .bind(&above)
-                    .fetch_optional(&state.db)
-                    .await?;
-                shared.is_some()
-            }
-            None => false,
-        };
-        if !visible {
-            break;
-        }
-        parts.push(PathPart { id: folder.id.clone(), name: folder.name.clone() });
+    let (Some(folder_id), Some(viewer)) = (folder_id, viewer) else { return Ok(vec![]) };
+    // The chain up from the folder, nearest first, each with whether it is shared with the viewer.
+    // A folder already seen ends the walk, so it ends even if the folders ever went round in a loop.
+    let chain: Vec<(String, String, String, bool)> = sqlx::query_as(
+        "with recursive chain as (
+            select id, parent_id, owner_uuid, name, 0 as depth, array[id] as seen from folders where id = $1
+            union all
+            select f.id, f.parent_id, f.owner_uuid, f.name, c.depth + 1, c.seen || f.id
+            from folders f join chain c on f.id = c.parent_id
+            where not f.id = any(c.seen)
+         )
+         select id, name, owner_uuid, exists (select 1 from shares s where s.account_uuid = $2 and s.folder_id = chain.id)
+         from chain order by depth",
+    )
+    .bind(folder_id)
+    .bind(viewer)
+    .fetch_all(&state.db)
+    .await?;
+    // Whether a share on the folder or on any folder above it reaches the viewer.
+    let mut reached = vec![false; chain.len()];
+    let mut above = false;
+    for (i, (_, _, _, shared)) in chain.iter().enumerate().rev() {
+        above |= *shared;
+        reached[i] = above;
     }
+    let mut parts: Vec<PathPart> = chain
+        .into_iter()
+        .zip(reached)
+        .take_while(|((_, _, owner, _), reached)| owner == viewer || *reached)
+        .map(|((id, name, _, _), _)| PathPart { id, name })
+        .collect();
     parts.reverse();
     Ok(parts)
 }
