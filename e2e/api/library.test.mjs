@@ -834,7 +834,7 @@ describe("the trash", () => {
       move: await owner.api.patch(`/v1/docs/${doc.id}`, { folder_id: folder.id }),
       comment: await owner.api.post(`/v1/docs/${doc.id}/threads`, { anchor: { kind: "text", quote: "text here" }, body: "A comment in the trash" }),
       "version name": await owner.api.put(`/v1/docs/${doc.id}/versions/1/name`, { name: "Named in the trash" }),
-      "remove version name": await owner.api.delete(`/v1/docs/${doc.id}/versions/1/name`),
+      "remove version name": await owner.api.del(`/v1/docs/${doc.id}/versions/1/name`),
     };
     const accepted = Object.entries(attempts).filter(([, r]) => r.status < 400).map(([what, r]) => `${what} (HTTP ${r.status})`);
     assert.deepEqual(accepted, [], `changes accepted on a doc in the trash: ${accepted.join(", ")}`);

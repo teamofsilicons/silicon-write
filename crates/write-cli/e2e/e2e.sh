@@ -136,7 +136,7 @@ contains "whoami shows the si:id" "$SID"
 expect_exit 5 "login twice without --force (conflict)" $SI --json login --slt slt_x
 perm=$(stat -f %Lp "$WORK/silicon/.write/session.json" 2>/dev/null || stat -c %a "$WORK/silicon/.write/session.json")
 [ "$perm" = 600 ] && pass "session file is 0600" || fail "session file is 0600 (got $perm)"
-if grep -rq "$(jq -r .access_token "$WORK/silicon/.write/session.json")" <<<"$LAST"; then fail "never prints tokens"; else pass "never prints tokens"; fi
+if grep -Fq -- "$(jq -r .access_token "$WORK/silicon/.write/session.json")" <<<"$LAST"; then fail "never prints tokens"; else pass "never prints tokens"; fi
 
 # ── token refresh ──────────────────────────────────────────────────────────────────────────
 section "Token refresh"
