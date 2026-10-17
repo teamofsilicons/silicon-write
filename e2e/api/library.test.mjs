@@ -827,12 +827,14 @@ describe("the trash", () => {
     const owner = await carbon("owner");
     const folder = await newFolder(owner, "Somewhere");
     const doc = await newDoc(owner, { title: "Frozen", markdown: "Some text here." });
+    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/versions/1/name`, { name: "Original" })).status, 200);
     await trashDoc(owner, doc.id);
     const attempts = {
       rename: await owner.api.patch(`/v1/docs/${doc.id}`, { title: "Renamed in the trash" }),
       move: await owner.api.patch(`/v1/docs/${doc.id}`, { folder_id: folder.id }),
       comment: await owner.api.post(`/v1/docs/${doc.id}/threads`, { anchor: { kind: "text", quote: "text here" }, body: "A comment in the trash" }),
       "version name": await owner.api.put(`/v1/docs/${doc.id}/versions/1/name`, { name: "Named in the trash" }),
+      "remove version name": await owner.api.delete(`/v1/docs/${doc.id}/versions/1/name`),
     };
     const accepted = Object.entries(attempts).filter(([, r]) => r.status < 400).map(([what, r]) => `${what} (HTTP ${r.status})`);
     assert.deepEqual(accepted, [], `changes accepted on a doc in the trash: ${accepted.join(", ")}`);
