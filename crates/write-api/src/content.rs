@@ -163,11 +163,10 @@ pub async fn put_markdown(State(state): State<AppState>, Auth(caller): Auth, Pat
     }
     let min = if body.suggest { Role::Commenter } else { Role::Editor };
     let (doc_row, role) = access::require_doc(&state, Some(&caller), &id, min).await?;
-    if let Some(base) = body.base_seq {
-        if base < 0 || base > doc_row.seq {
+    if let Some(base) = body.base_seq
+        && (base < 0 || base > doc_row.seq) {
             return Err(ApiError::invalid(format!("base_seq {base} isn't a version of this doc (it's at {}).", doc_row.seq)));
         }
-    }
     let suggest = body.suggest || role == Role::Commenter;
     let mode = suggest_mode(&caller, suggest);
     let origin = if suggest { Origin::Suggestion } else { Origin::Edit };
@@ -488,13 +487,11 @@ pub async fn authorship(State(state): State<AppState>, Auth(caller): Auth, Path(
             let mut authors: Vec<Value> = vec![];
             let mut seen = std::collections::HashSet::new();
             for client in ids {
-                if let Some(uuid) = clients.get(&client) {
-                    if seen.insert(uuid.clone()) {
-                        if let Some(account) = people.get(uuid) {
+                if let Some(uuid) = clients.get(&client)
+                    && seen.insert(uuid.clone())
+                        && let Some(account) = people.get(uuid) {
                             authors.push(serde_json::to_value(account).unwrap_or(Value::Null));
                         }
-                    }
-                }
             }
             json!({ "index": index, "authors": authors })
         })

@@ -374,7 +374,7 @@ pub async fn purge_doc(State(state): State<AppState>, Auth(caller): Auth, Path(i
     if doc.deleted_at.is_none() {
         return Err(ApiError::conflict("Only docs in the trash can be deleted permanently.").hint("Move it to the trash first."));
     }
-    purge_docs(&state, &[id.clone()]).await?;
+    purge_docs(&state, std::slice::from_ref(&id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -20,11 +20,10 @@ pub async fn queue(state: &AppState, to: &str, subject: &str, body: &str) -> sql
 
 pub async fn worker(state: AppState) {
     loop {
-        if let Some(token) = state.config.postmark_token.clone() {
-            if let Err(e) = send_due(&state, &token).await {
+        if let Some(token) = state.config.postmark_token.clone()
+            && let Err(e) = send_due(&state, &token).await {
                 tracing::warn!(error = %e, "sending email failed");
             }
-        }
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }

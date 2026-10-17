@@ -115,11 +115,10 @@ impl Writer {
                 continue;
             }
             // A paragraph or heading that is only suggested text isn't there yet.
-            if let Some(content) = block.inline_content() {
-                if !content.is_empty() && self.view(content).is_empty() {
+            if let Some(content) = block.inline_content()
+                && !content.is_empty() && self.view(content).is_empty() {
                     continue;
                 }
-            }
             // Two lists of the same kind in a row would read back as one list: alternate the
             // bullet (or the ordered delimiter) to keep them apart.
             let same_kind_list = matches!(
@@ -1100,7 +1099,7 @@ fn read_html_table<'a>(
                     return (None, 0);
                 };
                 // Read this one node as a block list of its own.
-                let blocks = read_single(*node, footnotes);
+                let blocks = read_single(node, footnotes);
                 open.blocks.extend(blocks);
             }
         }

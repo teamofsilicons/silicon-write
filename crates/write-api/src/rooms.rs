@@ -187,11 +187,10 @@ impl Rooms {
                 let inner = room.inner.lock().await;
                 inner.index_due.is_some_and(|t| t <= Instant::now())
             };
-            if due {
-                if let Err(e) = index(state, room).await {
+            if due
+                && let Err(e) = index(state, room).await {
                     tracing::warn!(doc = %room.doc_id, error = %e.message, "indexing failed");
                 }
-            }
         }
         let mut map = self.map.lock().await;
         let mut idle = vec![];

@@ -47,6 +47,7 @@ pub fn mentions(body: &str) -> Vec<String> {
 }
 
 /// A new comment (a new thread or a reply): mentions, the owner, and the thread's participants.
+#[allow(clippy::too_many_arguments)]
 pub async fn comment(
     state: &AppState,
     doc: &DocRow,
@@ -68,15 +69,14 @@ pub async fn comment(
         "url": format!("{}?thread={}", state.config.doc_url(&doc.id), thread_id),
     });
     for id in mentions(body) {
-        if let Ok(account) = accounts::by_public_id(state, &id).await {
-            if notified.insert(account.uuid.clone()) {
+        if let Ok(account) = accounts::by_public_id(state, &id).await
+            && notified.insert(account.uuid.clone()) {
                 // Only people who can open the doc hear about it.
                 let caller = crate::auth::Caller { uuid: account.uuid.clone(), id: account.id.clone(), kind: account.kind.clone(), token: String::new() };
                 if crate::access::doc_role(state, Some(&caller), doc).await?.is_some() {
                     ting::queue(state, "write.mention.received", &account.uuid, &format!("mention:{comment_id}:{}", account.uuid), base.clone()).await?;
                 }
             }
-        }
     }
     if is_reply {
         let participants: Vec<String> = sqlx::query_scalar(
@@ -137,6 +137,7 @@ pub async fn suggestion_created(state: &AppState, doc_id: &str, suggestion: &wri
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn shared(state: &AppState, kind: &str, item_id: &str, title: &str, url: &str, to: &str, by: &Account, role: &str) -> ApiResult<()> {
     if to == by.uuid {
         return Ok(());

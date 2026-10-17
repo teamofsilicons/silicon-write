@@ -89,11 +89,10 @@ pub async fn queue(state: &AppState, kind: &str, for_uuid: &str, key: &str, data
 
 async fn send_proof(state: &AppState) -> anyhow::Result<String> {
     let mut cached = SEND_PROOF.lock().await;
-    if let Some((token, expires)) = cached.as_ref() {
-        if *expires - OffsetDateTime::now_utc() > time::Duration::minutes(2) {
+    if let Some((token, expires)) = cached.as_ref()
+        && *expires - OffsetDateTime::now_utc() > time::Duration::minutes(2) {
             return Ok(token.clone());
         }
-    }
     let request = IssueAppVerification {
         receiving_app: state.config.ting_app_id.clone(),
         scopes: vec!["tings.send".into()],
@@ -121,11 +120,10 @@ struct Pending {
 /// Sends queued notifications, forever.
 pub async fn worker(state: AppState) {
     loop {
-        if state.config.ting_url.is_some() {
-            if let Err(e) = send_due(&state).await {
+        if state.config.ting_url.is_some()
+            && let Err(e) = send_due(&state).await {
                 tracing::warn!(error = %e, "sending notifications failed");
             }
-        }
         tokio::time::sleep(Duration::from_millis(1500)).await;
     }
 }

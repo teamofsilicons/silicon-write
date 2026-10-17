@@ -29,6 +29,7 @@ pub async fn record(state: &AppState, doc_id: Option<&str>, folder_id: Option<&s
 struct Row {
     id: i64,
     doc_id: Option<String>,
+    #[allow(dead_code)]
     folder_id: Option<String>,
     actor_uuid: String,
     kind: String,

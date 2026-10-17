@@ -62,6 +62,7 @@ pub struct FolderRow {
     pub owner_uuid: String,
     pub parent_id: Option<String>,
     pub name: String,
+    #[allow(dead_code)]
     pub created_by: String,
     pub created_at: OffsetDateTime,
     pub deleted_at: Option<OffsetDateTime>,

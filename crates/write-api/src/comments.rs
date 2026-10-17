@@ -54,10 +54,16 @@ fn rfc3339(t: &OffsetDateTime) -> String {
     t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
 }
 
-/// Where each thread's text is now: (current quote, orphaned, block index).
-async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiResult<Vec<(Option<String>, bool, Option<usize>)>> {
+/// Where a thread's text is now: the current quote, whether its text is gone, and its top-level block.
+type Place = (Option<String>, bool, Option<usize>);
+
+/// A thread's anchor positions (start, end), as encoded Yjs relative positions.
+type Positions = (Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// Where each thread's text is now.
+async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiResult<Vec<Place>> {
     let pdf: Vec<bool> = threads.iter().map(|t| t.anchor.get("kind").and_then(Value::as_str) == Some("pdf")).collect();
-    let anchors: Vec<(Option<Vec<u8>>, Option<Vec<u8>>)> = threads
+    let anchors: Vec<Positions> = threads
         .iter()
         .map(|t| {
             let decode = |key: &str| t.anchor.get(key).and_then(Value::as_str).and_then(|s| B64.decode(s).ok());
@@ -327,7 +333,7 @@ async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, 
     let mut tx = state.db.begin().await?;
     sqlx::query("insert into threads (id, doc_id, anchor, quote, created_by) values ($1, $2, $3, $4, $5)")
         .bind(&thread_id)
-        .bind(&id)
+        .bind(id)
         .bind(&anchor)
         .bind(&quote)
         .bind(&caller.uuid)
@@ -336,7 +342,7 @@ async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, 
     sqlx::query("insert into comments (id, thread_id, doc_id, author_uuid, body) values ($1, $2, $3, $4, $5)")
         .bind(&comment_id)
         .bind(&thread_id)
-        .bind(&id)
+        .bind(id)
         .bind(&caller.uuid)
         .bind(&text)
         .execute(&mut *tx)

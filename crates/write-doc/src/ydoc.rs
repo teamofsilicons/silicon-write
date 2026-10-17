@@ -568,11 +568,10 @@ pub fn patch(txn: &mut TransactionMut, frag: &XmlFragmentRef, base: &Doc, new: &
 fn live_blocks<T: ReadTxn, F: XmlFragment>(txn: &T, parent: &F) -> Vec<(u32, XmlElementRef, Block)> {
     let mut out = vec![];
     for (i, child) in parent.children(txn).enumerate() {
-        if let XmlOut::Element(el) = child {
-            if let Some(block) = read_block(txn, &el) {
+        if let XmlOut::Element(el) = child
+            && let Some(block) = read_block(txn, &el) {
                 out.push((i as u32, el, block));
             }
-        }
     }
     out
 }
@@ -680,12 +679,11 @@ fn delete_live<F: XmlFragment>(
             // Find the element's current index (earlier deletions may have moved it).
             let mut current = *index;
             for (i, child) in parent.children(txn).enumerate() {
-                if let XmlOut::Element(c) = child {
-                    if c == *el {
+                if let XmlOut::Element(c) = child
+                    && c == *el {
                         current = i as u32;
                         break;
                     }
-                }
             }
             parent.remove_range(txn, current, 1);
         }
@@ -907,11 +905,10 @@ fn patch_items(
         match tag {
             similar::DiffTag::Equal => {
                 for (o, n) in old_range.zip(new_range) {
-                    if let Some(checked) = new[n].1 {
-                        if attr_bool(txn, &items[o], "checked") != checked {
+                    if let Some(checked) = new[n].1
+                        && attr_bool(txn, &items[o], "checked") != checked {
                             set_attr(txn, &items[o], "checked", Any::Bool(checked));
                         }
-                    }
                 }
             }
             similar::DiffTag::Delete => {
@@ -945,11 +942,10 @@ fn patch_items(
                 }
                 for k in (0..paired).rev() {
                     let item = &items[olds[k]];
-                    if let Some(checked) = new[news[k]].1 {
-                        if attr_bool(txn, item, "checked") != checked {
+                    if let Some(checked) = new[news[k]].1
+                        && attr_bool(txn, item, "checked") != checked {
                             set_attr(txn, item, "checked", Any::Bool(checked));
                         }
-                    }
                     patch_children(txn, item, &base_keys[olds[k]], new[news[k]].0, mode);
                 }
             }
@@ -959,7 +955,7 @@ fn patch_items(
 
 enum Segment {
     Text(XmlTextRef),
-    Atom(XmlElementRef, Inline),
+    Atom(Inline),
 }
 
 /// Edits a text block's inline content in place.
@@ -968,14 +964,14 @@ fn patch_inline(txn: &mut TransactionMut, el: &XmlElementRef, exact: &[Inline], 
         .children(txn)
         .filter_map(|c| match c {
             XmlOut::Text(t) => Some(Segment::Text(t)),
-            XmlOut::Element(e) => read_atom(txn, &e).map(|a| Segment::Atom(e, a)),
+            XmlOut::Element(e) => read_atom(txn, &e).map(Segment::Atom),
             _ => None,
         })
         .collect();
     let live_atoms: Vec<&Inline> = segments
         .iter()
         .filter_map(|s| match s {
-            Segment::Atom(_, a) => Some(a),
+            Segment::Atom(a) => Some(a),
             _ => None,
         })
         .collect();
@@ -1295,8 +1291,8 @@ pub fn resolve_suggestion(txn: &mut TransactionMut, frag: &XmlFragmentRef, id: &
             }
         }
         // A block that held only this suggestion's text and is now empty goes with it.
-        if touched && was_all_suggested {
-            if let Some(el) = el {
+        if touched && was_all_suggested
+            && let Some(el) = el {
                 let empty = all_texts(txn, &el).iter().all(|t| plain(txn, t).is_empty())
                     && !el.children(txn).any(|c| matches!(c, XmlOut::Element(_)));
                 if empty {
@@ -1304,14 +1300,12 @@ pub fn resolve_suggestion(txn: &mut TransactionMut, frag: &XmlFragmentRef, id: &
                         if parent.len(txn) > 1 {
                             remove_child(txn, &parent, &el);
                         }
-                    } else if let Some(XmlOut::Fragment(parent)) = el.parent() {
-                        if parent.len(txn) > 1 {
+                    } else if let Some(XmlOut::Fragment(parent)) = el.parent()
+                        && parent.len(txn) > 1 {
                             remove_child(txn, &parent, &el);
                         }
-                    }
                 }
             }
-        }
     }
     found
 }
@@ -1509,7 +1503,7 @@ pub fn block_authors(ydoc: &YDoc) -> Vec<Vec<u64>> {
                 *totals.entry(c).or_default() += l;
             }
             let mut v: Vec<(u64, usize)> = totals.into_iter().collect();
-            v.sort_by(|a, b| b.1.cmp(&a.1));
+            v.sort_by_key(|entry| std::cmp::Reverse(entry.1));
             v.into_iter().map(|(c, _)| c).collect()
         })
         .collect()

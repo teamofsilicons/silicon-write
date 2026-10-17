@@ -4,7 +4,6 @@
 
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::request::Parts;
-use time::OffsetDateTime;
 
 use crate::accounts;
 use crate::error::ApiError;
@@ -85,8 +84,4 @@ where
             None => Ok(MaybeAuth(None)),
         }
     }
-}
-
-pub fn now() -> OffsetDateTime {
-    OffsetDateTime::now_utc()
 }

@@ -371,12 +371,10 @@ pub fn normalize_inlines(content: Vec<Inline>) -> Vec<Inline> {
                     text: prev,
                     marks: prev_marks,
                 }) = out.last_mut()
-                {
-                    if *prev_marks == marks {
+                    && *prev_marks == marks {
                         prev.push_str(&text);
                         continue;
                     }
-                }
                 out.push(Inline::Text { text, marks });
             }
             other => out.push(other),
@@ -495,11 +493,10 @@ impl Doc {
         let mut blocks = self.blocks.clone();
         map_inlines(&mut blocks, &mut |content| {
             for inline in content.iter() {
-                if let Inline::DocLink { title } = inline {
-                    if !titles.contains(title) {
+                if let Inline::DocLink { title } = inline
+                    && !titles.contains(title) {
                         titles.push(title.clone());
                     }
-                }
             }
         });
         titles
@@ -589,11 +586,10 @@ fn normalize_blocks(blocks: &mut Vec<Block>) {
                     }
                 }
             }
-            Block::CodeBlock { language, .. } => {
-                if language.as_deref().is_some_and(|l| l.trim().is_empty()) {
+            Block::CodeBlock { language, .. }
+                if language.as_deref().is_some_and(|l| l.trim().is_empty()) => {
                     *language = None;
                 }
-            }
             _ => {}
         }
     }

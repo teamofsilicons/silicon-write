@@ -19,11 +19,10 @@ fn node(kind: &str, attrs: Option<Value>, content: Option<Vec<Value>>) -> Value 
     if let Some(attrs) = attrs {
         map.insert("attrs".into(), attrs);
     }
-    if let Some(content) = content {
-        if !content.is_empty() {
+    if let Some(content) = content
+        && !content.is_empty() {
             map.insert("content".into(), Value::Array(content));
         }
-    }
     Value::Object(map)
 }
 

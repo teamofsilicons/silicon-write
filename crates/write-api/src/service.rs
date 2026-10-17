@@ -47,7 +47,8 @@ pub async fn dev_outbox(State(state): State<AppState>) -> ApiResult<Json<Value>>
     let emails: Vec<(i64, String, String, String, String)> = sqlx::query_as("select id, to_email, subject, text_body, status from email_outbox order by id desc limit 100")
         .fetch_all(&state.db)
         .await?;
-    let tings: Vec<(i64, String, String, String, Value, String, Option<String>)> =
+    type TingRow = (i64, String, String, String, Value, String, Option<String>);
+    let tings: Vec<TingRow> =
         sqlx::query_as("select id, type, for_uuid, key, data, status, last_error from ting_outbox order by id desc limit 200").fetch_all(&state.db).await?;
     Ok(Json(json!({
         "emails": emails.into_iter().map(|(id, to, subject, body, status)| json!({ "id": id, "to": to, "subject": subject, "body": body, "status": status })).collect::<Vec<_>>(),

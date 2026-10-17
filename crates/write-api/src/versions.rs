@@ -191,11 +191,10 @@ fn summary(origin: &str, before: &Doc, after: &Doc) -> String {
         } else {
             None
         };
-        if let Some(section) = section {
-            if !sections.contains(&section) {
+        if let Some(section) = section
+            && !sections.contains(&section) {
                 sections.push(section);
             }
-        }
     }
     let verb = if origin == "suggestion" {
         "suggested changes to"
@@ -374,11 +373,10 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
                     Some(c) => ("removed", deleter(&c.id)),
                     None => ("same", None),
                 };
-                if let Some(by) = &by {
-                    if !authors.contains(by) {
+                if let Some(by) = &by
+                    && !authors.contains(by) {
                         authors.push(by.clone());
                     }
-                }
                 match parts.last_mut() {
                     Some(last) if last["op"] == op && last.get("by_uuid").and_then(Value::as_str) == by.as_deref() => {
                         let joined = format!("{}{}", last["text"].as_str().unwrap_or(""), chunk);
@@ -425,17 +423,16 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
                             let old_text = before.blocks[i].plain_text();
                             if !shares_text && !old_text.is_empty() {
                                 let by = first_ids.get(i).cloned().flatten().and_then(|id| deleter(&id));
-                                if let Some(by) = &by {
-                                    if !authors.contains(by) {
+                                if let Some(by) = &by
+                                    && !authors.contains(by) {
                                         authors.push(by.clone());
                                     }
-                                }
                                 parts.insert(0, json!({ "op": "removed", "text": old_text, "by_uuid": by }));
                             }
                             let parts: Vec<Value> = parts
                                 .into_iter()
                                 .map(|mut p| {
-                                    let by = p.get("by_uuid").and_then(Value::as_str).map(|u| person(u));
+                                    let by = p.get("by_uuid").and_then(Value::as_str).map(&person);
                                     p.as_object_mut().map(|m| m.remove("by_uuid"));
                                     if let Some(by) = by {
                                         p["by"] = by;
@@ -516,11 +513,10 @@ pub async fn restore(State(state): State<AppState>, Auth(caller): Auth, Path(id)
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Editor).await?;
     check_seq(body.seq, doc.seq)?;
     let old = doc_at(&state, &id, body.seq).await?;
-    if let Some([a, b]) = body.blocks {
-        if a > b || b >= old.blocks.len() {
+    if let Some([a, b]) = body.blocks
+        && (a > b || b >= old.blocks.len()) {
             return Err(ApiError::invalid(format!("Version {} has blocks 0 to {}.", body.seq, old.blocks.len().saturating_sub(1))));
         }
-    }
     let ((), seq) = rooms::edit(&state, &id, &caller.uuid, Origin::Restore, None, |y| {
         let current = ydoc::read_doc(y);
         let target = match body.blocks {

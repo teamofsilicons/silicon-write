@@ -121,11 +121,10 @@ pub async fn open(state: &AppState, filename: &str, bytes: &[u8]) -> ApiResult<O
             let mut images = vec![];
             for src in pandoc::images(&doc) {
                 let path = PathBuf::from(&src);
-                if path.starts_with(dir.path()) || path.starts_with(&media) {
-                    if let Ok(data) = tokio::fs::read(&path).await {
+                if (path.starts_with(dir.path()) || path.starts_with(&media))
+                    && let Ok(data) = tokio::fs::read(&path).await {
                         images.push((src.clone(), data, content_type(&src).to_owned()));
                     }
-                }
             }
             Ok(Opened::Doc { doc, images })
         }
@@ -233,7 +232,7 @@ pub async fn export(state: &AppState, doc: &Doc, title: &str, format: &str) -> A
 /// Replaces images that aren't the doc's own uploads with a link to them.
 fn keep_only_local_images(doc: &mut Doc, local: &[(String, String)]) {
     use write_doc::{Block, Inline, Marks};
-    fn walk(blocks: &mut Vec<Block>, local: &[(String, String)]) {
+    fn walk(blocks: &mut [Block], local: &[(String, String)]) {
         for block in blocks.iter_mut() {
             match block {
                 Block::Image { src, alt, .. } if !local.iter().any(|(s, _)| s == src) => {

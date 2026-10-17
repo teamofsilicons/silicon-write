@@ -102,12 +102,11 @@ impl PWriter<'_> {
                 .map(|i| {
                     let mut blocks = self.blocks(&i.blocks);
                     let box_char = if i.checked { "☒" } else { "☐" };
-                    if let Some(first) = blocks.first_mut() {
-                        if let Some(c) = first.get_mut("c").and_then(Value::as_array_mut) {
+                    if let Some(first) = blocks.first_mut()
+                        && let Some(c) = first.get_mut("c").and_then(Value::as_array_mut) {
                             c.insert(0, json!({"t": "Space"}));
                             c.insert(0, json!({"t": "Str", "c": box_char}));
                         }
-                    }
                     blocks
                 })
                 .collect::<Vec<_>>()}),

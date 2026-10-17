@@ -44,7 +44,6 @@ impl Target {
 #[derive(sqlx::FromRow)]
 struct ShareRow {
     id: String,
-    doc_id: Option<String>,
     folder_id: Option<String>,
     account_uuid: Option<String>,
     email: Option<String>,
@@ -53,10 +52,9 @@ struct ShareRow {
     created_at: time::OffsetDateTime,
 }
 
-const SHARE_COLUMNS: &str = "id, doc_id, folder_id, account_uuid, email, role, invited_by, created_at";
+const SHARE_COLUMNS: &str = "id, folder_id, account_uuid, email, role, invited_by, created_at";
 
 struct Item {
-    id: String,
     title: String,
     owner: String,
     /// The folder the item is in (for inherited shares).
@@ -69,12 +67,12 @@ async fn item(state: &AppState, caller: &Caller, target: Target, id: &str, min: 
     match target {
         Target::Doc => {
             let (doc, role) = access::require_doc(state, Some(caller), id, min).await?;
-            Ok(Item { id: doc.id.clone(), title: doc.display_title(), owner: doc.owner_uuid.clone(), folder: doc.folder_id.clone(), role, url: state.config.doc_url(&doc.id) })
+            Ok(Item { title: doc.display_title(), owner: doc.owner_uuid.clone(), folder: doc.folder_id.clone(), role, url: state.config.doc_url(&doc.id) })
         }
         Target::Folder => {
             let (folder, role) = access::require_folder(state, caller, id, min).await?;
             let url = format!("{}/folders/{}", state.config.web_url.trim_end_matches('/'), folder.id);
-            Ok(Item { id: folder.id.clone(), title: folder.name.clone(), owner: folder.owner_uuid.clone(), folder: folder.parent_id.clone(), role, url })
+            Ok(Item { title: folder.name.clone(), owner: folder.owner_uuid.clone(), folder: folder.parent_id.clone(), role, url })
         }
     }
 }

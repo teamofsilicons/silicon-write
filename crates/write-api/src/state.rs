@@ -37,13 +37,11 @@ impl Inner {
 
     /// The signing keys, fetched again when older than an hour or when `refresh` is set.
     pub async fn jwks(&self, refresh: bool) -> anyhow::Result<silicon_accounts_client::types::Jwks> {
-        if !refresh {
-            if let Some((keys, at)) = self.jwks.read().await.as_ref() {
-                if at.elapsed() < Duration::from_secs(3600) {
+        if !refresh
+            && let Some((keys, at)) = self.jwks.read().await.as_ref()
+                && at.elapsed() < Duration::from_secs(3600) {
                     return Ok(keys.clone());
                 }
-            }
-        }
         let keys = self.accounts.jwks().await?;
         *self.jwks.write().await = Some((keys.clone(), Instant::now()));
         Ok(keys)
