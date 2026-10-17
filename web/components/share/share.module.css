@@ -1,33 +1,79 @@
-.body { display: grid; gap: var(--space-5); }
-.invite { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: var(--space-2); align-items: end; }
-@media (max-width: 560px) { .invite { grid-template-columns: 1fr; } }
+.dialog {
+  --space-section: 24px;
+  --primary: var(--foreground);
+  --primary-hover: var(--text-secondary);
+  --primary-foreground: var(--background);
+  width: min(560px, calc(100vw - 32px));
+}
+.dialog h2 { font-size: 20px; line-height: 1.3; }
+.dialog > div:first-child > div { min-width: 0; }
+.dialog > div:first-child p { font-size: 14px; line-height: 1.45; }
+.body { display: grid; gap: 24px; min-width: 0; }
+.sectionLabel { margin: 0; color: var(--foreground); font: 500 13px/1.4 var(--font-body); }
+.invite { display: grid; gap: 10px; min-width: 0; }
+.inviteRow { display: grid; grid-template-columns: minmax(0, 1fr) 124px auto; gap: 8px; align-items: center; }
 .inviteInput {
-  height: 44px;
-  padding: 0 var(--space-4);
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
+  corner-shape: squircle;
   background: var(--surface);
   color: var(--foreground);
-  font: 400 .95rem/1 var(--font-body);
-  min-width: 0;
+  font: 400 14px/1.4 var(--font-body);
 }
-.inviteInput:focus { outline: none; border-color: var(--accent); }
-.roleSelect :global(label), .roleSelectSmall :global(label), .publicSelect :global(label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); max-height: 320px; overflow-y: auto; }
-.person { min-width: 0; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
-.person[data-inherited] { opacity: .85; }
-.who { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.who > span:first-child { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.id { font: 400 .78rem/1.4 var(--font-pixel); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.role { font-size: .85rem; color: var(--text-secondary); }
-.roleSelectSmall { width: 140px; }
-.remove { border: 0; background: none; color: var(--text-muted); padding: var(--space-2); border-radius: 10px; cursor: pointer; }
-.remove:hover { color: var(--danger); background: var(--surface-muted); }
-.mailIcon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; background: var(--surface-muted); color: var(--text-secondary); }
-.public { display: grid; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border); }
-.publicHead { display: flex; align-items: center; gap: var(--space-3); }
-.publicHead > svg { flex: none; }
-.publicSelect { flex: 1; min-width: 0; }
-.note { margin: 0; color: var(--text-muted); font-size: .85rem; }
-.transfer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
-.transfer .inviteInput { height: 36px; flex: 1; min-width: 160px; }
+.inviteInput::placeholder { color: var(--text-muted); }
+.inviteInput:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.roleField { min-width: 0; }
+.roleField > div { gap: 0; }
+/* Select's label belongs to its wrapper, while className belongs to the trigger. Keep the native label for AT. */
+.roleField label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.dialog .roleSelect, .dialog .roleSelectSmall, .dialog .publicSelect { min-height: 40px; gap: 6px; padding-inline: 10px; border-radius: 8px; font-size: 13px; }
+.dialog .shareButton { min-height: 40px; padding-inline: 16px; border-radius: 8px; }
+.access { display: grid; gap: 8px; min-width: 0; }
+.people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); max-height: 304px; overflow-y: auto; overscroll-behavior: contain; }
+.person { min-width: 0; display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.person + .person { border-top: 1px solid var(--border-subtle); }
+.who { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; }
+.who > span:first-child { color: var(--foreground); font-size: 14px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+.id { color: var(--text-muted); font: 400 12px/1.45 var(--font-body); overflow-wrap: anywhere; }
+.role { flex: none; color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+.memberActions { display: flex; flex: none; align-items: center; gap: 4px; }
+.memberActions .roleField { width: 112px; }
+.dialog .roleSelectSmall { min-height: 32px; padding-inline: 8px; border-color: transparent; background: transparent; color: var(--text-secondary); }
+.dialog .roleSelectSmall:hover, .dialog .roleSelectSmall:focus-visible, .dialog .roleSelectSmall[data-state="open"] { background: var(--surface-muted); color: var(--foreground); border-color: var(--border); }
+.remove { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border: 0; padding: 0; border-radius: 8px; corner-shape: squircle; background: transparent; color: var(--text-muted); cursor: pointer; }
+.remove:hover, .remove:focus-visible { outline: none; color: var(--danger); background: var(--surface-muted); }
+.mailIcon { display: inline-grid; flex: none; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 30%; corner-shape: squircle; background: var(--surface-muted); color: var(--text-secondary); }
+.public { display: grid; gap: 10px; min-width: 0; padding-top: 16px; border-top: 1px solid var(--border); }
+.publicHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.linkAccess { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; }
+.accessIcon { display: grid; place-items: center; color: var(--text-secondary); }
+.dialog .publicSelect { padding-inline: 10px; }
+.linkLabel { color: var(--foreground); font-size: 14px; line-height: 1.45; }
+.note { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.note > svg { display: inline; vertical-align: -2px; margin-right: 4px; }
+.transfer { min-width: 0; padding-top: 16px; border-top: 1px solid var(--border); }
+.transfer > summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 32px; margin: -4px -6px; padding: 0 6px; border-radius: 6px; corner-shape: squircle; color: var(--text-secondary); font-size: 13px; cursor: pointer; list-style: none; }
+.transfer > summary::-webkit-details-marker { display: none; }
+.transfer > summary:hover, .transfer > summary:focus-visible { outline: none; background: var(--surface-muted); color: var(--foreground); }
+.transfer > summary > svg { flex: none; }
+.transfer[open] > summary > svg { transform: rotate(90deg); }
+.transferBody { display: grid; gap: 10px; padding-top: 12px; }
+.transferForm { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+@media (max-width: 480px) {
+  .dialog { --space-section: 20px; width: calc(100vw - 24px); }
+  .body { gap: 20px; }
+  .inviteRow { grid-template-columns: minmax(0, 1fr) auto; }
+  .inviteInput { font-size: 16px; }
+  .inviteRow > .inviteInput { grid-column: 1 / -1; }
+  .inviteRow > .roleField { width: 124px; }
+  .person { gap: 8px; }
+  .memberActions { gap: 0; }
+  .memberActions .roleField { width: 108px; }
+  .dialog .roleSelectSmall, .remove { min-height: 36px; }
+  .remove { width: 28px; }
+}

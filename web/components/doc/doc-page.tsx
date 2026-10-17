@@ -31,6 +31,7 @@ import { StatusBar } from "./status-bar";
 import { DocHeading } from "./doc-heading";
 import { ImageAreas } from "./image-areas";
 import { SectionGutter } from "./section-gutter";
+import { CommentMarkers } from "./comment-markers";
 import styles from "./doc.module.css";
 
 export type Panel = "comments" | "versions" | "links" | null;
@@ -59,6 +60,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const wantedThread = useSearchParams().get("thread");
   const [panel, setPanel] = useState<Panel>(wantedThread && canComment ? "comments" : null);
   const [activeThread, setActiveThread] = useState<string | null>(wantedThread);
+  const [openThreadRequest, setOpenThreadRequest] = useState(0);
   const [pending, setPending] = useState<PendingComment | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
@@ -220,6 +222,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       if (!id) return;
       setPanel("comments");
       const thread = threads.find(t => t.id === id);
+      if (thread) setOpenThreadRequest(request => request + 1);
       if (!thread || !editor) return;
       const range = rangeOf(editor, thread.anchor);
       if (!range) return;
@@ -261,7 +264,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const writable = canEdit || (canComment && mode === "suggesting");
 
   return (
-    <div className={styles.page} data-panel={panel ?? "none"} data-formatting={formatOpen && writable && mode !== "viewing" ? "open" : "closed"}>
+    <div className={styles.page} data-panel={panel ?? "none"} data-comments={threads.length ? "present" : undefined} data-formatting={formatOpen && writable && mode !== "viewing" ? "open" : "closed"}>
       <a href="#main" className={styles.skipLink}>Skip to content</a>
       <TopBar
         doc={doc}
@@ -302,13 +305,14 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
                 canSuggest={canComment}
                 mode={canEdit ? mode : canComment && mode === "suggesting" ? "suggesting" : "viewing"}
                 threads={threads}
-                activeThread={activeThread}
+                activeThread={panel === "comments" ? activeThread : null}
                 onActivateThread={openThread}
                 onRefused={onRefused}
                 onReady={setEditor}
                 onUploadImage={uploadImage}
                 pickImage={pickImage}
               />
+              {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={panel === "comments" ? activeThread : null} onActivate={openThread} /> : null}
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
             </div>
@@ -327,13 +331,14 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               onCreated={thread => {
                 client.invalidateQueries({ queryKey: ["threads", docId] });
                 setActiveThread(thread.id);
+                setOpenThreadRequest(request => request + 1);
                 setPanel("comments");
               }}
             />
           ) : null}
         </main>
         {panel === "comments" && canComment ? (
-          <CommentsPanel docId={docId} doc={doc} account={account!} threads={threads} activeThread={activeThread} onActivate={openThread} editor={editor} canEdit={canEdit} onClose={() => setPanel(null)} />
+          <CommentsPanel docId={docId} doc={doc} account={account!} threads={threads} activeThread={activeThread} openThreadRequest={openThreadRequest} onActivate={openThread} editor={editor} canEdit={canEdit} onClose={() => setPanel(null)} />
         ) : null}
         {panel === "versions" && canEdit ? <VersionsPanel doc={doc} editor={editor} live={live} onClose={() => setPanel(null)} /> : null}
         {panel === "links" && account ? <LinksPanel doc={doc} onClose={() => setPanel(null)} /> : null}

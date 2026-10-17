@@ -18,7 +18,7 @@ export function SectionGutter({ editor, onComment }: { editor: Editor; onComment
     const onMove = (event: MouseEvent) => {
       const area = dom.getBoundingClientRect();
       // The margin to the left of the doc counts too, so the pointer can reach the button.
-      const inside = event.clientX >= area.left - 64 && event.clientX <= area.right && event.clientY >= area.top && event.clientY <= area.bottom;
+      const inside = event.clientX >= area.left - 84 && event.clientX <= area.right && event.clientY >= area.top && event.clientY <= area.bottom;
       if (!inside) {
         if (!hideTimer.current) hideTimer.current = setTimeout(() => { setSpot(null); hideTimer.current = null; }, 300);
         return;
@@ -39,7 +39,9 @@ export function SectionGutter({ editor, onComment }: { editor: Editor; onComment
         return;
       }
       const r = block.getBoundingClientRect();
-      setSpot(current => (current && current.pos === pos && current.top === r.top ? current : { top: r.top, left: area.left - 44, height: r.height, pos }));
+      const commented = block.matches("[data-thread]") || Boolean(block.querySelector("[data-thread]"));
+      const left = area.left - (commented ? 80 : 44);
+      setSpot(current => (current && current.pos === pos && current.top === r.top && current.left === left ? current : { top: r.top, left, height: r.height, pos }));
     };
     document.addEventListener("mousemove", onMove);
     return () => {

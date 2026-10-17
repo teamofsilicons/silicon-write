@@ -106,6 +106,8 @@ export interface Thread {
   resolved_by: Account | null;
   resolved_at: string | null;
   comments: Comment[];
+  activity_version: number;
+  unread: boolean;
 }
 
 export interface Suggestion {

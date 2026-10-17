@@ -84,6 +84,7 @@ fn router(state: AppState) -> Router {
         .route("/v1/transfers", get(library::transfers))
         .route("/v1/transfers/{id}/{action}", post(library::decide_transfer))
         .route("/v1/threads/{id}/comments", post(comments::reply))
+        .route("/v1/threads/{id}/read", post(comments::mark_read))
         .route("/v1/threads/{id}/resolve", post(comments::resolve))
         .route("/v1/threads/{id}/reopen", post(comments::reopen))
         .route("/v1/comments/{id}", patch(comments::edit).delete(comments::delete))

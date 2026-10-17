@@ -5,9 +5,9 @@
  * editor, commenter or viewer; see everyone with access (including through a shared folder); and, for a doc, make it
  * public to anyone with the link. The owner can also transfer it to someone else.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Globe, Link2, Mail, UserMinus } from "lucide-react";
+import { ChevronRight, Globe, Link2, LockKeyhole, Mail, UserMinus } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/silicon-ui/dialog/dialog";
 import { Button } from "@/components/silicon-ui/button/button";
 import { Avatar } from "@/components/silicon-ui/avatar/avatar";
@@ -36,6 +36,7 @@ const PUBLIC: { value: PublicAccess; label: string }[] = [
 
 export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "docs" | "folders"; id: string; title: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const client = useQueryClient();
+  const inviteId = useId();
   const { data, isLoading, error } = useSharing(kind, id, open);
   // Someone who has the doc only through its public link doesn't see who it's shared with, or share it.
   const linkOnly = error instanceof ApiError && error.status === 403;
@@ -111,102 +112,126 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
 
   const direct = (data?.members ?? []).filter(m => m.via === "doc" || m.via === "folder");
   const inherited = (data?.members ?? []).filter(m => typeof m.via === "object");
+  const publicAccess = data?.public_access ?? "none";
+  const linkDescription = publicAccess === "none"
+    ? "Only people with access can open this link."
+    : publicAccess === "view"
+      ? "Anyone with the link can read. It isn’t listed publicly."
+      : "Anyone with the link can " + (publicAccess === "comment" ? "comment" : "edit") + " after signing in. It isn’t listed publicly.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={`Share “${title}”`} description={kind === "folders" ? "Everyone you add can open everything in this folder, now and later." : undefined}>
+      <DialogContent title="Share" description={title} className={styles.dialog}>
         <div className={styles.body}>
+          {kind === "folders" && data ? <p className={styles.note}>Everyone you add can open everything in this folder, now and later.</p> : null}
           {linkOnly ? (
-            <>
-              <p className={styles.note}>You have this doc through its link. Only its owner and the people it’s shared with can see who has it, or share it.</p>
-              <div className={styles.publicHead}>
-                <Link2 size={16} aria-hidden="true" />
-                <span>The link</span>
-                <CopyButton value={link} label="Copy link" />
-              </div>
-            </>
-          ) : null}
-          {linkOnly ? null : canInvite ? (
+            <p className={styles.note}>You have this doc through its link. Only its owner and the people it’s shared with can see who has it, or share it.</p>
+          ) : canInvite ? (
             <form className={styles.invite} onSubmit={invite}>
-              <input className={styles.inviteInput} value={to} onChange={e => setTo(e.target.value)} placeholder="c:id, si:id or email" aria-label="Who to share with" autoFocus />
-              <Select label="Role" options={ROLES} value={role} onValueChange={setRole} className={styles.roleSelect} />
-              <Button type="submit" variant="primary" size="md" loading={inviting} disabled={!to.trim()}>
-                Share
-              </Button>
-            </form>
-          ) : (
-            <p className={styles.note}>Only the owner and editors can share this.</p>
-          )}
-          {linkOnly ? null : (
-            <ul className={styles.people} aria-label="People with access">
-              {data?.owner ? (
-                <li className={styles.person}>
-                  <Avatar name={displayName(data.owner)} src={data.owner.pfp_url || undefined} size="sm" />
-                  <span className={styles.who}>
-                    <span>{displayName(data.owner)}</span>
-                    <span className={styles.id}>{data.owner.id}</span>
-                  </span>
-                  <span className={styles.role}>Owner</span>
-                </li>
-              ) : null}
-              {isLoading ? <li className={styles.note}>Loading…</li> : null}
-              {direct.map(member => (
-                <li key={member.id} className={styles.person}>
-                  {member.account ? <Avatar name={displayName(member.account)} src={member.account.pfp_url || undefined} size="sm" /> : <span className={styles.mailIcon}><Mail size={14} aria-hidden="true" /></span>}
-                  <span className={styles.who}>
-                    <span>{member.account ? displayName(member.account) : member.email}</span>
-                    <span className={styles.id}>{member.account ? member.account.id : "Invited, not signed in yet"}</span>
-                  </span>
-                  {isOwner ? (
-                    <Select label={`Role of ${member.account?.id ?? member.email}`} options={ROLES} value={member.role} onValueChange={v => void change(member, v)} className={styles.roleSelectSmall} />
-                  ) : (
-                    <span className={styles.role}>{member.role[0].toUpperCase() + member.role.slice(1)}</span>
-                  )}
-                  {isOwner || (me && member.account?.uuid === me) ? (
-                    <button type="button" className={styles.remove} aria-label={member.account?.uuid === me ? "Leave" : `Remove ${member.account?.id ?? member.email}`} onClick={() => void remove(member)}>
-                      <UserMinus size={15} aria-hidden="true" />
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-              {inherited.map(member => (
-                <li key={`via-${member.id}`} className={styles.person} data-inherited="">
-                  {member.account ? <Avatar name={displayName(member.account)} src={member.account.pfp_url || undefined} size="sm" /> : <span className={styles.mailIcon}><Mail size={14} aria-hidden="true" /></span>}
-                  <span className={styles.who}>
-                    <span>{member.account ? displayName(member.account) : member.email}</span>
-                    <span className={styles.id}>
-                      {member.account?.id ?? member.email} · {typeof member.via === "object" && member.via.folder ? `through the folder “${member.via.folder.name}”` : "through a folder above it"}
-                    </span>
-                  </span>
-                  <span className={styles.role}>{member.role[0].toUpperCase() + member.role.slice(1)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {kind === "docs" && !linkOnly ? (
-            <section className={styles.public} aria-label="Public link">
-              <div className={styles.publicHead}>
-                {data?.public_access && data.public_access !== "none" ? <Globe size={16} aria-hidden="true" /> : <Link2 size={16} aria-hidden="true" />}
-                {isOwner ? (
-                  <Select label="Who can open the link" options={PUBLIC} value={data?.public_access ?? "none"} onValueChange={v => void setPublic(v)} className={styles.publicSelect} />
-                ) : (
-                  <span>{PUBLIC.find(p => p.value === data?.public_access)?.label ?? ""}</span>
-                )}
-                <CopyButton value={link} label="Copy link" />
+              <label htmlFor={inviteId} className={styles.sectionLabel}>Who to share with</label>
+              <div className={styles.inviteRow}>
+                <input id={inviteId} className={styles.inviteInput} value={to} onChange={e => setTo(e.target.value)} placeholder="c:id, si:id or email" aria-label="Who to share with" autoFocus />
+                <div className={styles.roleField}>
+                  <Select label="Role" options={ROLES} value={role} onValueChange={setRole} className={styles.roleSelect} />
+                </div>
+                <Button type="submit" variant="primary" size="md" loading={inviting} disabled={!to.trim()} className={styles.shareButton}>
+                  Share
+                </Button>
               </div>
-              <p className={styles.note}>
-                {data?.public_access === "none" || !data ? "Nothing is published or listed: a doc only opens for the people above." : "Nothing is published or listed: the doc is just reachable by its link. Commenting or editing through the link needs signing in."}
-              </p>
+            </form>
+          ) : data ? (
+            <p className={styles.note}>Only the owner and editors can share this.</p>
+          ) : null}
+          {isLoading ? <p className={styles.note} role="status">Loading access…</p> : null}
+          {error && !linkOnly ? <p className={styles.note} role="alert">Couldn’t load sharing. Close this dialog and try again.</p> : null}
+          {data && !linkOnly ? (
+            <section className={styles.access} aria-label="People">
+              <h3 className={styles.sectionLabel}>People with access</h3>
+              <ul className={styles.people} aria-label="People with access">
+                {data.owner ? (
+                  <li className={styles.person}>
+                    <Avatar name={displayName(data.owner)} src={data.owner.pfp_url || undefined} size="sm" />
+                    <span className={styles.who}>
+                      <span>{displayName(data.owner)}</span>
+                      <span className={styles.id}>{data.owner.id}</span>
+                    </span>
+                    <span className={styles.role}>Owner</span>
+                  </li>
+                ) : null}
+                {direct.map(member => (
+                  <li key={member.id} className={styles.person}>
+                    {member.account ? <Avatar name={displayName(member.account)} src={member.account.pfp_url || undefined} size="sm" /> : <span className={styles.mailIcon}><Mail size={14} aria-hidden="true" /></span>}
+                    <span className={styles.who}>
+                      <span>{member.account ? displayName(member.account) : member.email}</span>
+                      <span className={styles.id}>{member.account ? member.account.id : "Invited, not signed in yet"}</span>
+                    </span>
+                    <div className={styles.memberActions}>
+                      {isOwner ? (
+                        <div className={styles.roleField}>
+                          <Select label={`Role of ${member.account?.id ?? member.email}`} options={ROLES} value={member.role} onValueChange={v => void change(member, v)} className={styles.roleSelectSmall} />
+                        </div>
+                      ) : (
+                        <span className={styles.role}>{member.role[0].toUpperCase() + member.role.slice(1)}</span>
+                      )}
+                      {isOwner || (me && member.account?.uuid === me) ? (
+                        <button type="button" className={styles.remove} aria-label={member.account?.uuid === me ? "Leave" : `Remove ${member.account?.id ?? member.email}`} onClick={() => void remove(member)}>
+                          <UserMinus size={15} aria-hidden="true" />
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+                {inherited.map(member => (
+                  <li key={`via-${member.id}`} className={styles.person}>
+                    {member.account ? <Avatar name={displayName(member.account)} src={member.account.pfp_url || undefined} size="sm" /> : <span className={styles.mailIcon}><Mail size={14} aria-hidden="true" /></span>}
+                    <span className={styles.who}>
+                      <span>{member.account ? displayName(member.account) : member.email}</span>
+                      <span className={styles.id}>
+                        {member.account?.id ?? member.email} · {typeof member.via === "object" && member.via.folder ? `through the folder “${member.via.folder.name}”` : "through a folder above it"}
+                      </span>
+                    </span>
+                    <span className={styles.role}>{member.role[0].toUpperCase() + member.role.slice(1)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {data || linkOnly ? (
+            <section className={styles.public} aria-label={kind === "docs" ? "Public link" : "Folder link"}>
+              <div className={styles.publicHead}>
+                <h3 className={styles.sectionLabel}>{linkOnly ? "The link" : "Link access"}</h3>
+                <CopyButton value={link} label="Copy link" variant="plain" />
+              </div>
+              {kind === "docs" && !linkOnly ? (
+                <>
+                  <div className={styles.linkAccess}>
+                    <span className={styles.accessIcon}>
+                      {publicAccess !== "none" ? <Globe size={18} aria-hidden="true" /> : <LockKeyhole size={18} aria-hidden="true" />}
+                    </span>
+                    {isOwner ? (
+                      <div className={styles.roleField}>
+                        <Select label="Who can open the link" options={PUBLIC} value={publicAccess} onValueChange={v => void setPublic(v)} className={styles.publicSelect} />
+                      </div>
+                    ) : <span className={styles.linkLabel}>{PUBLIC.find(p => p.value === publicAccess)?.label}</span>}
+                  </div>
+                  <p className={styles.note}>{linkDescription}</p>
+                </>
+              ) : kind === "folders" ? (
+                <p className={styles.note}><Link2 size={14} aria-hidden="true" /> Only people with access can open this folder.</p>
+              ) : null}
             </section>
           ) : null}
           {isOwner ? (
-            <form className={styles.transfer} onSubmit={transfer}>
-              <span className={styles.note}>Give it to someone else:</span>
-              <input className={styles.inviteInput} value={transferTo} onChange={e => setTransferTo(e.target.value)} placeholder="c:id or si:id" aria-label="Transfer to" />
-              <Button type="submit" variant="secondary" size="sm" disabled={!transferTo.trim()}>
-                Transfer
-              </Button>
-            </form>
+            <details className={styles.transfer}>
+              <summary><ChevronRight size={14} aria-hidden="true" /> Transfer ownership</summary>
+              <div className={styles.transferBody}>
+                <p className={styles.note}>They must accept before ownership changes.</p>
+                <form className={styles.transferForm} onSubmit={transfer}>
+                  <input className={styles.inviteInput} value={transferTo} onChange={e => setTransferTo(e.target.value)} placeholder="c:id or si:id" aria-label="Transfer to" />
+                  <Button type="submit" variant="secondary" size="sm" disabled={!transferTo.trim()}>Transfer</Button>
+                </form>
+              </div>
+            </details>
           ) : null}
         </div>
       </DialogContent>

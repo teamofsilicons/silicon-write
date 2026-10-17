@@ -159,6 +159,7 @@
 .gone a { color: var(--accent-ink); }
 
 @media (max-width: 640px) { .main { padding-top: var(--space-10); } }
+@media (max-width: 860px) { .page[data-comments="present"] .main { padding-inline: 48px 16px; } }
 
 /* Side panel */
 .panel {

@@ -111,11 +111,10 @@
 .editor[data-mode="viewing"] .prose :global(ins.suggest-insert),
 .editor[data-mode="viewing"] .prose :global(del.suggest-delete) { background: none; }
 
-/* Comments: a warm tint under the commented text; the open thread's text stronger. */
-.prose :global(.comment-anchor) { background: rgb(247 200 74 / .22); border-bottom: 2px solid rgb(214 160 30 / .55); cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard); }
-.prose :global(.comment-anchor-active) { background: rgb(247 200 74 / .48); border-bottom-color: rgb(196 140 10); }
-.prose :global(.comment-anchor-block) { background: none; border-bottom: 0; box-shadow: -14px 0 0 -11px rgb(214 160 30 / .8); }
-.prose :global(.comment-anchor-block.comment-anchor-active) { box-shadow: -14px 0 0 -10px rgb(196 140 10); }
+/* The avatar in the margin carries unread state. Text is tinted only while its thread is open. */
+.prose :global(.comment-anchor) { cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard); }
+.prose :global(.comment-anchor-active) { background: var(--accent-subtle); }
+.prose :global(.comment-anchor-block) { background: none; }
 
 /* Someone else's change, a moment ago. */
 .prose :global(.remote-change) { background: var(--accent-subtle); transition: background-color 1.2s var(--ease-standard); }

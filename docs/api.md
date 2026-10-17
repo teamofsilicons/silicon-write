@@ -139,7 +139,7 @@ file is the technical reference.
 - `GET /v1/docs/{id}/threads?status=open|resolved|all` → `{ "threads": [Thread] }` where
   `Thread = { "id", "anchor": Anchor, "quote": "text when it was made", "current_quote": "text now" | null,
   "orphaned": bool, "block_index": n | null, "status": "open"|"resolved", "created_by": Account, "created_at",
-  "resolved_by": Account | null, "resolved_at", "comments": [Comment] }` and
+  "resolved_by": Account | null, "resolved_at", "activity_version": n, "unread": bool, "comments": [Comment] }` and
   `Comment = { "id", "author": Account, "body": "markdown with @c:id / @si:id", "created_at", "edited_at", "deleted": bool,
   "reactions": [{ "emoji", "accounts": [Account] }] }`.
 - `POST /v1/docs/{id}/threads` `{ "anchor": Anchor, "body" }` → `Thread`. Anchors:
@@ -152,6 +152,18 @@ file is the technical reference.
   `DELETE /v1/comments/{id}` (author) → kept in history as deleted.
 - `POST /v1/comments/{id}/reactions` `{ "emoji" }` → `Comment`: toggles the caller's reaction.
 - `POST /v1/threads/{id}/resolve`, `POST /v1/threads/{id}/reopen` → `Thread`.
+- `POST /v1/threads/{id}/read` `{ "activity_version": n }` →
+  `{ "activity_version": current, "read_version": acknowledged, "unread": bool }` (commenter or above).
+  Send the version actually displayed. A request advances the cursor at most to that version; older
+  acknowledgements do not rewind it. A newer reply arriving meanwhile remains unread. Negative and future versions are `422 invalid`.
+  `unread` is specific to the signed-in account and means activity by someone else after its read cursor.
+  A new thread starts at version 1 and is read by its creator. Replies, changed comment text, deletion,
+  reaction toggles, resolution and reopening increment the thread's version atomically; repeating an
+  unchanged edit, delete, resolve or reopen does not. Own activity does not clear earlier unread activity
+  from others. Listing threads does not mark them read. Read state persists across devices; it is separate
+  from Ting delivery receipts and document text versions. Existing threads have initial activity at version 1
+  because earlier read history was not recorded. Read changes send the usual `threads` live invalidation,
+  without disclosing who read the thread or their cursor to other accounts.
 
 ## Suggestions
 

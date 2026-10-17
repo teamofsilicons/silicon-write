@@ -8,6 +8,7 @@ use axum::http::StatusCode;
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use time::OffsetDateTime;
 use unicode_properties::UnicodeEmoji;
 use unicode_segmentation::UnicodeSegmentation;
@@ -15,7 +16,6 @@ use write_doc::ydoc;
 
 use crate::access::{self, Role};
 use crate::accounts::{self, Account};
-use crate::activity;
 use crate::auth::{Auth, Caller};
 use crate::error::{ApiError, ApiResult};
 use crate::ids;
@@ -41,9 +41,10 @@ struct ThreadRow {
     created_at: OffsetDateTime,
     resolved_by: Option<String>,
     resolved_at: Option<OffsetDateTime>,
+    activity_version: i64,
 }
 
-const THREAD_COLUMNS: &str = "id, doc_id, anchor, quote, status, created_by, created_at, resolved_by, resolved_at";
+const THREAD_COLUMNS: &str = "id, doc_id, anchor, quote, status, created_by, created_at, resolved_by, resolved_at, activity_version";
 
 #[derive(sqlx::FromRow, Clone)]
 struct CommentRow {
@@ -153,13 +154,33 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
     }).await
 }
 
-async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Vec<Value>> {
+/// Called in the same transaction as the visible change. The row update serializes
+/// activity versions; an author's own activity never acknowledges other actors.
+async fn record_activity(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    thread_id: &str,
+    actor: &str,
+) -> ApiResult<i64> {
+    let version: i64 = sqlx::query_scalar("update threads set activity_version = activity_version + 1 where id = $1 returning activity_version")
+        .bind(thread_id).fetch_one(&mut **tx).await?;
+    sqlx::query("insert into thread_activity (thread_id, account_uuid, activity_version) values ($1, $2, $3) on conflict (thread_id, account_uuid) do update set activity_version = excluded.activity_version")
+        .bind(thread_id).bind(actor).bind(version).execute(&mut **tx).await?;
+    Ok(version)
+}
+
+async fn thread_views(state: &AppState, threads: Vec<ThreadRow>, viewer: Option<&str>) -> ApiResult<Vec<Value>> {
     if threads.is_empty() {
         return Ok(vec![]);
     }
     let doc_id = threads[0].doc_id.clone();
     let places = locate(state, &doc_id, &threads).await?;
     let ids: Vec<String> = threads.iter().map(|t| t.id.clone()).collect();
+    let unread: HashSet<String> = if let Some(viewer) = viewer {
+        sqlx::query_scalar::<_, String>("select distinct a.thread_id from thread_activity a left join thread_reads r on r.thread_id = a.thread_id and r.account_uuid = $2 where a.thread_id = any($1) and a.account_uuid != $2 and a.activity_version > coalesce(r.read_version, 0)")
+            .bind(&ids).bind(viewer).fetch_all(&state.db).await?.into_iter().collect()
+    } else {
+        HashSet::new()
+    };
     let comments: Vec<CommentRow> = sqlx::query_as("select id, thread_id, author_uuid, body, created_at, edited_at, deleted_at from comments where thread_id = any($1) order by created_at")
         .bind(&ids)
         .fetch_all(&state.db)
@@ -223,6 +244,8 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Ve
             "created_at": rfc3339(&thread.created_at),
             "resolved_by": thread.resolved_by.as_deref().map(person),
             "resolved_at": thread.resolved_at.as_ref().map(rfc3339),
+            "activity_version": thread.activity_version,
+            "unread": unread.contains(&thread.id),
             "comments": thread_comments,
         }));
     }
@@ -256,7 +279,7 @@ pub async fn list(State(state): State<AppState>, Auth(caller): Auth, Path(id): P
         .bind(&id)
         .fetch_all(&state.db)
         .await?;
-    let mut views = thread_views(&state, threads).await?;
+    let mut views = thread_views(&state, threads, Some(&caller.uuid)).await?;
     // In document order; threads whose text is gone at the end.
     views.sort_by_key(|t| t.get("block_index").and_then(Value::as_u64).unwrap_or(u64::MAX));
     Ok(Json(json!({ "threads": views })))
@@ -268,7 +291,7 @@ pub async fn annotations(state: &AppState, doc_id: &str) -> ApiResult<Vec<(usize
         .bind(doc_id)
         .fetch_all(&state.db)
         .await?;
-    let views = thread_views(state, threads).await?;
+    let views = thread_views(state, threads, None).await?;
     let mut notes: Vec<(usize, String)> = vec![];
     let last_block = rooms::read(state, doc_id).await?.0.blocks.len().saturating_sub(1);
     for t in views {
@@ -500,20 +523,24 @@ async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, 
         .bind(&text)
         .execute(&mut *tx)
         .await?;
+    sqlx::query("insert into thread_activity (thread_id, account_uuid, activity_version) values ($1, $2, 1)")
+        .bind(&thread_id).bind(&caller.uuid).execute(&mut *tx).await?;
+    sqlx::query("insert into thread_reads (thread_id, account_uuid, read_version) values ($1, $2, 1)")
+        .bind(&thread_id).bind(&caller.uuid).execute(&mut *tx).await?;
     tx.commit().await?;
     let author = accounts::one(&state, &caller.uuid).await?;
     notify::comment(&state, doc, &thread_id, &comment_id, &author, &text, &quote, false, false).await?;
     state.rooms.notify(id, json!({ "type": "threads" })).await;
-    Ok((StatusCode::CREATED, Json(one_thread(&state, &thread_id).await?)))
+    Ok((StatusCode::CREATED, Json(one_thread(&state, &thread_id, Some(&caller.uuid)).await?)))
 }
 
-async fn one_thread(state: &AppState, thread_id: &str) -> ApiResult<Value> {
+async fn one_thread(state: &AppState, thread_id: &str, viewer: Option<&str>) -> ApiResult<Value> {
     let thread: ThreadRow = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {THREAD_COLUMNS} from threads where id = $1")))
         .bind(thread_id)
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(|| ApiError::not_found("This thread"))?;
-    Ok(thread_views(state, vec![thread]).await?.into_iter().next().unwrap_or(Value::Null))
+    Ok(thread_views(state, vec![thread], viewer).await?.into_iter().next().unwrap_or(Value::Null))
 }
 
 async fn thread_for(state: &AppState, caller: &Caller, thread_id: &str) -> ApiResult<(ThreadRow, access::DocRow, Role)> {
@@ -536,14 +563,17 @@ pub async fn reply(State(state): State<AppState>, Auth(caller): Auth, Path(threa
     require_active(&doc)?;
     let text = check_body(&body.body)?;
     let comment_id = ids::new_id("c");
+    let mut tx = state.db.begin().await?;
     sqlx::query("insert into comments (id, thread_id, doc_id, author_uuid, body) values ($1, $2, $3, $4, $5)")
         .bind(&comment_id)
         .bind(&thread_id)
         .bind(&thread.doc_id)
         .bind(&caller.uuid)
         .bind(&text)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
+    record_activity(&mut tx, &thread_id, &caller.uuid).await?;
+    tx.commit().await?;
     let author = accounts::one(&state, &caller.uuid).await?;
     notify::comment(&state, &doc, &thread_id, &comment_id, &author, &text, &thread.quote, true, false).await?;
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
@@ -552,7 +582,7 @@ pub async fn reply(State(state): State<AppState>, Auth(caller): Auth, Path(threa
 
 async fn comment_view(state: &AppState, comment_id: &str) -> ApiResult<Value> {
     let thread_id: String = sqlx::query_scalar("select thread_id from comments where id = $1").bind(comment_id).fetch_one(&state.db).await?;
-    let thread = one_thread(state, &thread_id).await?;
+    let thread = one_thread(state, &thread_id, None).await?;
     Ok(thread
         .get("comments")
         .and_then(Value::as_array)
@@ -596,6 +626,7 @@ pub async fn edit(State(state): State<AppState>, Auth(caller): Auth, Path(commen
     sqlx::query("update comments set body = $2, edited_at = now() where id = $1").bind(&comment_id).bind(&text).execute(&mut *tx).await?;
     sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'comment.edited', $3)")
         .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread.id, "comment": comment_id, "before": previous, "after": text })).execute(&mut *tx).await?;
+    record_activity(&mut tx, &thread.id, &caller.uuid).await?;
     tx.commit().await?;
     // Newly mentioned people hear about it (the others were told already).
     let author = accounts::one(&state, &caller.uuid).await?;
@@ -610,11 +641,15 @@ pub async fn delete(State(state): State<AppState>, Auth(caller): Auth, Path(comm
     if comment.author_uuid != caller.uuid && role != Role::Owner {
         return Err(ApiError::forbidden("Only the comment's author or the doc's owner can delete it."));
     }
+    let mut tx = state.db.begin().await?;
     let deleted: Option<String> = sqlx::query_scalar("update comments set deleted_at = now() where id = $1 and deleted_at is null returning body")
-        .bind(&comment_id).fetch_optional(&state.db).await?;
+        .bind(&comment_id).fetch_optional(&mut *tx).await?;
     if let Some(body) = deleted {
-        activity::record(&state, Some(&thread.doc_id), None, &caller.uuid, "comment.deleted", json!({ "thread": thread.id, "comment": comment_id, "body": body, "author": comment.author_uuid })).await?;
+        sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'comment.deleted', $3)")
+            .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread.id, "comment": comment_id, "body": body, "author": comment.author_uuid })).execute(&mut *tx).await?;
+        record_activity(&mut tx, &thread.id, &caller.uuid).await?;
     }
+    tx.commit().await?;
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -640,11 +675,18 @@ pub async fn react(State(state): State<AppState>, Auth(caller): Auth, Path(comme
     if !is_emoji(emoji) {
         return Err(ApiError::invalid("A reaction is one emoji."));
     }
+    let mut tx = state.db.begin().await?;
+    // Serialize toggles on this comment; each accepted toggle is one activity.
+    let deleted_at: Option<OffsetDateTime> = sqlx::query_scalar("select deleted_at from comments where id = $1 for update")
+        .bind(&comment_id).fetch_one(&mut *tx).await?;
+    if deleted_at.is_some() {
+        return Err(ApiError::conflict("This comment was deleted."));
+    }
     let removed = sqlx::query("delete from reactions where comment_id = $1 and account_uuid = $2 and emoji = $3")
         .bind(&comment_id)
         .bind(&caller.uuid)
         .bind(emoji)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?
         .rows_affected();
     if removed == 0 {
@@ -652,9 +694,11 @@ pub async fn react(State(state): State<AppState>, Auth(caller): Auth, Path(comme
             .bind(&comment_id)
             .bind(&caller.uuid)
             .bind(emoji)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
     }
+    record_activity(&mut tx, &thread.id, &caller.uuid).await?;
+    tx.commit().await?;
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok(Json(comment_view(&state, &comment_id).await?))
 }
@@ -662,21 +706,69 @@ pub async fn react(State(state): State<AppState>, Auth(caller): Auth, Path(comme
 pub async fn resolve(State(state): State<AppState>, Auth(caller): Auth, Path(thread_id): Path<String>) -> ApiResult<Json<Value>> {
     let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
     require_active(&doc)?;
-    if sqlx::query("update threads set status = 'resolved', resolved_by = $2, resolved_at = now() where id = $1 and status != 'resolved'").bind(&thread_id).bind(&caller.uuid).execute(&state.db).await?.rows_affected() != 0 {
-        activity::record(&state, Some(&thread.doc_id), None, &caller.uuid, "thread.resolved", json!({ "thread": thread_id, "quote": thread.quote })).await?;
+    let mut tx = state.db.begin().await?;
+    let changed = sqlx::query("update threads set status = 'resolved', resolved_by = $2, resolved_at = now() where id = $1 and status != 'resolved'").bind(&thread_id).bind(&caller.uuid).execute(&mut *tx).await?.rows_affected() != 0;
+    if changed {
+        sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'thread.resolved', $3)")
+            .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread_id, "quote": thread.quote })).execute(&mut *tx).await?;
+        record_activity(&mut tx, &thread_id, &caller.uuid).await?;
+    }
+    tx.commit().await?;
+    if changed {
         let resolver = accounts::one(&state, &caller.uuid).await?;
         notify::thread_resolved(&state, &doc, &thread_id, &thread.created_by, &resolver, &thread.quote).await?;
     }
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
-    Ok(Json(one_thread(&state, &thread_id).await?))
+    Ok(Json(one_thread(&state, &thread_id, Some(&caller.uuid)).await?))
 }
 
 pub async fn reopen(State(state): State<AppState>, Auth(caller): Auth, Path(thread_id): Path<String>) -> ApiResult<Json<Value>> {
     let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
     require_active(&doc)?;
-    if sqlx::query("update threads set status = 'open', resolved_by = null, resolved_at = null where id = $1 and status != 'open'").bind(&thread_id).execute(&state.db).await?.rows_affected() != 0 {
-        activity::record(&state, Some(&thread.doc_id), None, &caller.uuid, "thread.reopened", json!({ "thread": thread_id })).await?;
+    let mut tx = state.db.begin().await?;
+    if sqlx::query("update threads set status = 'open', resolved_by = null, resolved_at = null where id = $1 and status != 'open'").bind(&thread_id).execute(&mut *tx).await?.rows_affected() != 0 {
+        sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'thread.reopened', $3)")
+            .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread_id })).execute(&mut *tx).await?;
+        record_activity(&mut tx, &thread_id, &caller.uuid).await?;
     }
+    tx.commit().await?;
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
-    Ok(Json(one_thread(&state, &thread_id).await?))
+    Ok(Json(one_thread(&state, &thread_id, Some(&caller.uuid)).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Read {
+    activity_version: i64,
+}
+
+/// Acknowledge only activity the client displayed, never a concurrently arriving reply.
+pub async fn mark_read(
+    State(state): State<AppState>,
+    Auth(caller): Auth,
+    Path(thread_id): Path<String>,
+    Json(body): Json<Read>,
+) -> ApiResult<Json<Value>> {
+    let (thread, _, _) = thread_for(&state, &caller, &thread_id).await?;
+    if body.activity_version < 0 || body.activity_version > thread.activity_version {
+        return Err(ApiError::invalid(
+            "The activity version must be a version already observed on this thread.",
+        )
+        .hint("Read the thread and send its activity_version."));
+    }
+    let changed = sqlx::query("insert into thread_reads (thread_id, account_uuid, read_version) values ($1, $2, $3) on conflict (thread_id, account_uuid) do update set read_version = excluded.read_version, read_at = now() where thread_reads.read_version < excluded.read_version")
+        .bind(&thread_id).bind(&caller.uuid).bind(body.activity_version).execute(&state.db).await?.rows_affected() != 0;
+    let (activity_version, read_version, unread): (i64, i64, bool) = sqlx::query_as("select t.activity_version, r.read_version, exists(select 1 from thread_activity a where a.thread_id = t.id and a.account_uuid != $2 and a.activity_version > r.read_version) from threads t join thread_reads r on r.thread_id = t.id and r.account_uuid = $2 where t.id = $1")
+        .bind(&thread_id).bind(&caller.uuid).fetch_one(&state.db).await?;
+    if changed {
+        // Other tabs for this account refetch their own read state. No person's
+        // cursor or reading activity is sent to the other people in the room.
+        state
+            .rooms
+            .notify(&thread.doc_id, json!({ "type": "threads" }))
+            .await;
+    }
+    Ok(Json(
+        json!({ "activity_version": activity_version, "read_version": read_version, "unread": unread }),
+    ))
 }

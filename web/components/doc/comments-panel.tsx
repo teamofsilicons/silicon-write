@@ -19,6 +19,7 @@ import { formatRelative } from "@/lib/format";
 import { keys, useSuggestions, useThreads } from "@/lib/write/queries";
 import { displayName, type Account, type Doc, type Thread } from "@/lib/write/types";
 import { useMentionPeople } from "./selection-comment";
+import { useThreadRead } from "./use-thread-read";
 import styles from "./doc.module.css";
 import commentStyles from "./comments.module.css";
 
@@ -44,6 +45,7 @@ function toThreadComments(thread: Thread): ThreadComment[] {
 function ThreadCard({ thread, active, account, people, onActivate, docId }: { thread: Thread; active: boolean; account: Account; people: { id: string; name: string; avatar?: string }[]; onActivate: () => void; docId: string }) {
   const client = useQueryClient();
   const ref = useRef<HTMLDivElement>(null);
+  useThreadRead(docId, thread, ref);
   const comments = useMemo(() => toThreadComments(thread), [thread]);
   useEffect(() => {
     if (active) ref.current?.scrollIntoView({ behavior: scrollBehavior(), block: "nearest" });
@@ -151,18 +153,21 @@ function SuggestionCards({ docId, editor, canEdit }: { docId: string; editor: Ed
   );
 }
 
-export function CommentsPanel({ docId, doc, account, threads, activeThread, onActivate, editor, canEdit, onClose }: {
+export function CommentsPanel({ docId, doc, account, threads, activeThread, openThreadRequest, onActivate, editor, canEdit, onClose }: {
   docId: string;
   doc: Doc;
   account: Account;
   threads: Thread[];
   activeThread: string | null;
+  openThreadRequest: number;
   onActivate: (id: string | null) => void;
   editor: Editor | null;
   canEdit: boolean;
   onClose: () => void;
 }) {
-  const [show, setShow] = useState<"open" | "resolved">("open");
+  const [tab, setTab] = useState<{ value: "open" | "resolved"; request: number }>({ value: "open", request: openThreadRequest });
+  // A marker can request the same active thread again after the reader visits Resolved.
+  const show = tab.request === openThreadRequest ? tab.value : "open";
   const resolved = useThreads(docId, "resolved", show === "resolved");
   const list = show === "open" ? threads : resolved.data?.threads ?? [];
   const people = useMentionPeople(docId, true);
@@ -210,7 +215,7 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, onAc
           </button>
         </div>
       </div>
-      <SegmentedControl className={commentStyles.tabs} options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setShow(v as "open" | "resolved")} label="Show" size="xs" />
+      <SegmentedControl className={commentStyles.tabs} options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setTab({ value: v as "open" | "resolved", request: openThreadRequest })} label="Show" size="xs" />
       {doc.kind === "doc" ? <SuggestionCards docId={docId} editor={editor} canEdit={canEdit} /> : null}
       <div className={commentStyles.threadList}>
         {list.length === 0 ? (

@@ -458,7 +458,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
     const collapsed = !!ui.collapsed[comment.id];
     const editing = ui.editing === comment.id, confirming = ui.confirming === comment.id, picking = ui.picker === comment.id;
     return <motion.li key={comment.id} className={styles.item} {...grow}>
-      <article className={styles.comment} aria-label={comment.deleted ? t.deletedComment : `${comment.author.name}, ${comment.createdAt}`}>
+      <article className={styles.comment} data-comment-id={comment.id} aria-label={comment.deleted ? t.deletedComment : `${comment.author.name}, ${comment.createdAt}`}>
         {comment.deleted ? <span className={styles.deletedDot} aria-hidden="true" /> : <Avatar author={comment.author} size={presentation === "margin" ? 24 : 28} />}
         <div className={styles.main}>
           {comment.deleted
@@ -513,7 +513,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
                       <button type="button" className={styles.iconAction} aria-label={t.addReaction} onClick={() => setUi(current => ({ ...current, picker: comment.id, confirming: null }))}>
                         <SmilePlus size={15} strokeWidth={1.75} aria-hidden="true" />
                       </button>
-                      <button type="button" className={styles.action} onClick={() => { setReplyTo({ id: comment.id, name: comment.author.name }); setFocusKey(key => key + 1); }}>{t.reply}</button>
+                      {!isResolved && <button type="button" className={styles.action} onClick={() => { setReplyTo({ id: comment.id, name: comment.author.name }); setFocusKey(key => key + 1); }}>{t.reply}</button>}
                       {mine && <button type="button" className={styles.action} onClick={() => setUi(current => ({ ...current, editing: comment.id, confirming: null, picker: null }))}>{t.edit}</button>}
                       {mine && <button type="button" className={styles.action} onClick={() => setUi(current => ({ ...current, confirming: comment.id, editing: null, picker: null }))}>{t.delete}</button>}
                     </motion.div>}
@@ -551,14 +551,19 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
     <AutoHeight reduced={reduced} morphKey={isResolved ? "resolved" : "thread"}>
       <AnimatePresence mode="popLayout" initial={false}>
         {isResolved
-          ? <motion.div key="resolved" className={styles.resolved} {...face}>
-            <span className={styles.resolvedIcon} aria-hidden="true"><Check size={14} strokeWidth={2} /></span>
-            <span className={styles.resolvedText}>
-              <span className={styles.resolvedTitle}>{t.resolved}{title ? <> · <span className={styles.resolvedSubject}>{title}</span></> : null}</span>
-              <span className={styles.resolvedMeta}>{t.commentCount(total)} · {t.peopleCount(participants.length)}</span>
-            </span>
-            <span className={styles.stack} aria-hidden="true">{participants.slice(0, 3).map(author => <Avatar key={author.id} author={author} size={22} />)}</span>
-            <button type="button" className={styles.reopen} data-reopen onClick={() => setResolved(false)}><RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" />{t.reopen}</button>
+          ? <motion.div key="resolved" className={styles.thread} {...face}>
+            <div className={styles.resolved}>
+              <span className={styles.resolvedIcon} aria-hidden="true"><Check size={14} strokeWidth={2} /></span>
+              <span className={styles.resolvedText}>
+                <span className={styles.resolvedTitle}>{t.resolved}{title ? <> · <span className={styles.resolvedSubject}>{title}</span></> : null}</span>
+                <span className={styles.resolvedMeta}>{t.commentCount(total)} · {t.peopleCount(participants.length)}</span>
+              </span>
+              <span className={styles.stack} aria-hidden="true">{participants.slice(0, 3).map(author => <Avatar key={author.id} author={author} size={22} />)}</span>
+              <button type="button" className={styles.reopen} data-reopen onClick={() => setResolved(false)}><RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" />{t.reopen}</button>
+            </div>
+            {presentation === "margin" && list.length > 0 && <ul className={styles.list}>
+              <AnimatePresence initial={false}>{list.map(comment => renderComment(comment, 0))}</AnimatePresence>
+            </ul>}
           </motion.div>
           : <motion.div key="thread" className={styles.thread} {...face}>
             <header className={styles.header}>

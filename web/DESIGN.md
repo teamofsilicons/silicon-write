@@ -72,6 +72,15 @@ text, and compact reply, resolve, edit, and reaction controls. Hairlines separat
 `CommentThread` component opts into `presentation="margin"`; other consumers retain its default card treatment.
 Open and Resolved use quiet underlined selectors while retaining their keyboard behavior.
 
+Open comments have a small profile photo beside their anchor in the document. The photo belongs to the first
+remaining comment's author (or the thread creator if all comments were deleted), and opens the conversation.
+Its **2 px border** uses `--accent` for unread activity and `--border-strong` once read. Read state is saved per
+account by the service; fetching a document never marks its conversations read. The focused Comments panel
+acknowledges only the activity version it displayed after every comment has been visible. A later reply or edit
+from another account makes the border accent again. Own activity does not clear earlier unread activity.
+The former yellow section marks are absent; selected text receives a quiet accent tint while its thread is open.
+Phones reserve a narrow photo gutter so the controls remain visible without overlapping the writing.
+
 - Quotes are actual buttons that reveal their anchors in the document. Orphaned anchors explain that the original
   text was deleted; a visual update never silently attaches them to another copy of the same words.
 - Previous/next controls and J/K navigate threads. Empty lists disable previous/next. Navigation does not consume
@@ -186,3 +195,16 @@ Tests should follow the intended controls: open Format before clicking a toolbar
 menu; open Comments when reviewing an existing thread or proposal; read sync state from the header's status element.
 Keep assertions that readonly roles cannot edit or approve proposals. Do not change a test merely to accommodate a
 lost operation or a regression.
+
+## Sharing
+
+The Share dialog has a compact **Share** heading and the document or folder title as its subtitle. Its desktop
+width is 560 px; phones keep side gutters and place the invitation field on a full row above the role and Share
+controls. Share remains an ink primary action. Member rows use small profile photos, readable names and ids,
+hairlines, and quiet role controls. Redundant role labels stay available to assistive technology without taking
+visible space.
+
+Link access is a separate section with concise permission copy and Copy link. Only owners can change public
+access or other members’ roles; inherited access stays read-only. Ownership transfer is tucked into a collapsed,
+owner-only **Transfer ownership** disclosure and still requires the recipient to accept. Link-only visitors never
+see membership. Long titles and identities wrap without pushing controls outside the dialog.
