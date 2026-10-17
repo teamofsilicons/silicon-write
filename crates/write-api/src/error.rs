@@ -67,10 +67,11 @@ pub async fn plain_rejections(response: Response) -> Response {
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.starts_with("text/plain"));
+        .is_none_or(|v| v.starts_with("text/plain"));
     if !status.is_client_error() || !plain {
         return response;
     }
+    let allow = response.headers().get(axum::http::header::ALLOW).cloned();
     let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024).await.unwrap_or_default();
     let message = String::from_utf8_lossy(&bytes).trim().to_owned();
     let code = match status {
@@ -84,7 +85,11 @@ pub async fn plain_rejections(response: Response) -> Response {
     if code == "invalid" {
         error = error.hint("Check the request body against docs/api.md.");
     }
-    error.into_response()
+    let mut response = error.into_response();
+    if let Some(allow) = allow {
+        response.headers_mut().insert(axum::http::header::ALLOW, allow);
+    }
+    response
 }
 
 impl From<sqlx::Error> for ApiError {

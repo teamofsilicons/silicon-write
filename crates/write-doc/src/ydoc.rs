@@ -1380,16 +1380,23 @@ pub fn text_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> TextMap {
         blocks: vec![],
         texts: vec![],
     };
+    let mut root_starts = vec![];
     for (i, child) in frag.children(txn).enumerate() {
         if let XmlOut::Element(el) = child {
             if !map.text.is_empty() {
                 map.text.push(b'\n' as u16);
             }
             let start = map.text.len();
+            root_starts.push(start);
             walk_text(txn, &el, &mut map);
+            if el.tag().as_ref() == IMAGE && map.text.len() == start {
+                map.text.push(0xFFFC);
+            }
             map.blocks.push((start, map.text.len(), i));
         }
     }
+    root_starts.push(map.text.len());
+    map.child_starts.insert(AsRef::<yrs::branch::Branch>::as_ref(frag).id(), root_starts);
     map
 }
 
@@ -1421,6 +1428,70 @@ fn walk_text<T: ReadTxn>(txn: &T, el: &XmlElementRef, map: &mut TextMap) {
         }
     }
     map.child_starts.insert(AsRef::<yrs::branch::Branch>::as_ref(el).id(), starts);
+}
+
+/// The text a reader can quote, with each UTF-16 unit mapped back to its live range. Suggested
+/// insertions aren't part of that reading; inline nodes keep their visible words.
+pub fn quote_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, map: &TextMap) -> (Vec<u16>, Vec<(usize, usize)>) {
+    struct Quoted {
+        text: Vec<u16>,
+        ranges: Vec<(usize, usize)>,
+    }
+    impl Quoted {
+        fn add(&mut self, text: &str, range: impl Fn(usize) -> (usize, usize)) {
+            for (i, unit) in text.encode_utf16().enumerate() {
+                self.text.push(unit);
+                self.ranges.push(range(i));
+            }
+        }
+    }
+    fn walk<T: ReadTxn>(txn: &T, el: &XmlElementRef, map: &TextMap, out: &mut Quoted) {
+        let starts = map.child_starts.get(&AsRef::<yrs::branch::Branch>::as_ref(el).id());
+        let mut first_block = true;
+        for (i, child) in el.children(txn).enumerate() {
+            match child {
+                XmlOut::Text(text) => {
+                    let mut at = *map.starts.get(&AsRef::<yrs::branch::Branch>::as_ref(&text).id()).unwrap_or(&0);
+                    for (text, marks) in text_runs(txn, &text) {
+                        if !matches!(marks.suggestion, Some(Suggestion { kind: SuggestionKind::Insert, .. })) {
+                            out.add(&text, |i| (at + i, at + i + 1));
+                        }
+                        at += text.encode_utf16().count();
+                    }
+                }
+                XmlOut::Element(child) => {
+                    let at = starts.and_then(|s| s.get(i)).copied().unwrap_or(0);
+                    if let Some(atom) = read_atom(txn, &child) {
+                        let text = match atom {
+                            Inline::HardBreak => "\n".to_owned(),
+                            Inline::InlineMath { latex } => latex,
+                            Inline::DocLink { title, .. } => title,
+                            _ => String::new(),
+                        };
+                        out.add(&text, |_| (at, at + 1));
+                    } else {
+                        if !first_block {
+                            out.add("\n", |_| (at.saturating_sub(1), at));
+                        }
+                        first_block = false;
+                        walk(txn, &child, map, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Quoted { text: vec![], ranges: vec![] };
+    for (i, child) in frag.children(txn).enumerate() {
+        if let XmlOut::Element(el) = child {
+            let at = map.blocks.iter().find(|(_, _, index)| *index == i).map(|(start, _, _)| *start).unwrap_or(0);
+            if !out.text.is_empty() {
+                out.add("\n\n", |_| (at.saturating_sub(1), at));
+            }
+            walk(txn, &el, map, &mut out);
+        }
+    }
+    (out.text, out.ranges)
 }
 
 /// A Yjs relative position (encoded the way the editor encodes them) at an offset in the text

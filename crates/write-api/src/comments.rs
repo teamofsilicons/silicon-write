@@ -9,6 +9,8 @@ use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
+use unicode_properties::UnicodeEmoji;
+use unicode_segmentation::UnicodeSegmentation;
 use write_doc::ydoc;
 
 use crate::access::{self, Role};
@@ -55,7 +57,7 @@ fn rfc3339(t: &OffsetDateTime) -> String {
 }
 
 /// Where a thread's text is now: the current quote, whether its text is gone, and its top-level block.
-type Place = (Option<String>, bool, Option<usize>);
+type Place = (Option<String>, bool, Option<usize>, Option<usize>);
 
 /// A thread's anchor positions (start, end), as encoded Yjs relative positions.
 type Positions = (Option<Vec<u8>>, Option<Vec<u8>>);
@@ -80,7 +82,7 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
             .map(|((start, end), is_pdf)| {
                 // A comment on an area of a PDF has no text to follow.
                 if is_pdf {
-                    return (None, false, None);
+                    return (None, false, None, None);
                 }
                 let start = start.as_ref().and_then(|s| ydoc::resolve_position(&txn, &map, s));
                 let end = end.as_ref().and_then(|e| ydoc::resolve_position(&txn, &map, e));
@@ -88,13 +90,13 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
                     (Some(s), Some(e)) if e > s => {
                         let quote = map.slice(s, e).replace('\u{FFFC}', "");
                         let orphaned = quote.trim().is_empty();
-                        (Some(quote), orphaned, map.block_at(s))
+                        (Some(quote), orphaned, map.block_at(s), Some(s))
                     }
                     // A range whose start and end met: its text was deleted.
-                    (Some(s), Some(_)) => (None, true, map.block_at(s)),
+                    (Some(s), Some(_)) => (None, true, map.block_at(s), Some(s)),
                     // A point (a whole section, a cell, an image).
-                    (Some(s), None) => (None, false, map.block_at(s)),
-                    _ => (None, true, None),
+                    (Some(s), None) if end.is_none() => (None, false, map.block_at(s), Some(s)),
+                    _ => (None, true, None, None),
                 }
             })
             .collect()
@@ -128,7 +130,7 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Ve
     let people = accounts::many(state, &uuids).await?;
     let person = |uuid: &str| people.get(uuid).cloned().unwrap_or_else(|| Account::unknown(uuid));
     let mut out = vec![];
-    for (thread, (current, orphaned, block)) in threads.iter().zip(places) {
+    for (thread, (current, orphaned, block, offset)) in threads.iter().zip(places) {
         let thread_comments: Vec<Value> = comments
             .iter()
             .filter(|c| c.thread_id == thread.id)
@@ -161,6 +163,7 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Ve
             "current_quote": current,
             "orphaned": orphaned,
             "block_index": block,
+            "text_offset": offset,
             "status": thread.status,
             "created_by": person(&thread.created_by),
             "created_at": rfc3339(&thread.created_at),
@@ -169,6 +172,16 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Ve
             "comments": thread_comments,
         }));
     }
+    out.sort_by(|a, b| {
+        let order = |v: &Value| -> [f64; 3] {
+            if v.pointer("/anchor/kind").and_then(Value::as_str) == Some("pdf") {
+                [v.pointer("/anchor/rect/page"), v.pointer("/anchor/rect/y"), v.pointer("/anchor/rect/x")].map(|n| n.and_then(Value::as_f64).unwrap_or(f64::MAX))
+            } else {
+                [v.get("block_index").and_then(Value::as_f64).unwrap_or(f64::MAX), v.get("text_offset").and_then(Value::as_f64).unwrap_or(f64::MAX), 0.0]
+            }
+        };
+        order(a).into_iter().zip(order(b)).map(|(a, b)| a.total_cmp(&b)).find(|order| !order.is_eq()).unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(out)
 }
 
@@ -211,10 +224,10 @@ pub async fn annotations(state: &AppState, doc_id: &str) -> ApiResult<Vec<(usize
         let mut lines = vec![];
         for (i, c) in comments.iter().enumerate() {
             let author = c.pointer("/author/id").and_then(Value::as_str).unwrap_or("someone");
-            let body = if c.get("deleted").and_then(Value::as_bool) == Some(true) { "(deleted)".to_owned() } else { c.get("body").and_then(Value::as_str).unwrap_or("").replace('\n', " ") };
+            let body = if c.get("deleted").and_then(Value::as_bool) == Some(true) { "(deleted)".to_owned() } else { annotation_text(c.get("body").and_then(Value::as_str).unwrap_or("")) };
             if i == 0 {
                 let id = t.get("id").and_then(Value::as_str).unwrap_or("");
-                let short: String = quote.chars().take(120).collect::<String>().replace('\n', " ");
+                let short = annotation_text(&quote.chars().take(120).collect::<String>());
                 lines.push(format!("> [!comment {id} by {author} on \"{short}\"] {body}"));
             } else {
                 lines.push(format!("> ↳ {author}: {body}"));
@@ -223,6 +236,17 @@ pub async fn annotations(state: &AppState, doc_id: &str) -> ApiResult<Vec<(usize
         notes.push((block, lines.join("\n")));
     }
     Ok(notes)
+}
+
+fn annotation_text(text: &str) -> String {
+    text.chars().map(|c| if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') { ' ' } else { c }).collect()
+}
+
+fn require_active(doc: &access::DocRow) -> ApiResult<()> {
+    if doc.deleted_at.is_some() {
+        return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -248,6 +272,9 @@ fn check_body(body: &str) -> ApiResult<String> {
     if body.chars().count() > MAX_BODY {
         return Err(ApiError::invalid(format!("A comment can be at most {MAX_BODY} characters.")));
     }
+    if body.contains('\0') {
+        return Err(ApiError::invalid("A comment can't contain a NUL character."));
+    }
     Ok(body.to_owned())
 }
 
@@ -258,7 +285,7 @@ async fn anchor_by_quote(state: &AppState, doc_id: &str, quote: &str) -> ApiResu
         let frag = ydoc::fragment(y);
         let txn = yrs::Transact::transact(y);
         let map = ydoc::text_map(&txn, &frag);
-        let hay = &map.text;
+        let (hay, ranges) = ydoc::quote_map(&txn, &frag, &map);
         let mut found = vec![];
         if !needle.is_empty() && needle.len() <= hay.len() {
             for i in 0..=(hay.len() - needle.len()) {
@@ -274,8 +301,8 @@ async fn anchor_by_quote(state: &AppState, doc_id: &str, quote: &str) -> ApiResu
             [] => Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "no_match", "The quoted text isn't in the doc.").hint("Quote the doc's text exactly as it reads (without Markdown formatting characters).")),
             [_, _, ..] => Err(ApiError::new(StatusCode::CONFLICT, "not_unique", "The quoted text appears more than once.").hint("Quote more of the surrounding text so it appears once.")),
             [at] => {
-                let start = ydoc::position_at(&txn, &map, *at, false);
-                let end = ydoc::position_at(&txn, &map, at + needle.len(), true);
+                let start = ydoc::position_at(&txn, &map, ranges[*at].0, false);
+                let end = ydoc::position_at(&txn, &map, ranges[at + needle.len() - 1].1, true);
                 match (start, end) {
                     (Some(s), Some(e)) => Ok((B64.encode(s), B64.encode(e))),
                     _ => Err(ApiError::invalid("That text can't be commented on (it spans more than one paragraph).").hint("Quote text from within one paragraph.")),
@@ -288,15 +315,24 @@ async fn anchor_by_quote(state: &AppState, doc_id: &str, quote: &str) -> ApiResu
 
 pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<NewThread>) -> ApiResult<(StatusCode, Json<Value>)> {
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
+    require_active(&doc)?;
     let text = check_body(&body.body)?;
     let kind = body.anchor.kind.clone().unwrap_or_else(|| "text".into());
     if !["text", "block", "cell", "image", "pdf"].contains(&kind.as_str()) {
         return Err(ApiError::invalid("The anchor kind must be text, block, cell, image or pdf."));
     }
     if kind == "pdf" {
+        if doc.kind != "pdf" {
+            return Err(ApiError::invalid("A page area needs a PDF doc."));
+        }
         let rect = body.anchor.rect.clone().ok_or_else(|| ApiError::invalid("A comment on a PDF needs the area (`rect` with x, y, w, h and page)."))?;
+        check_rect(&rect)?;
         let page = rect.get("page").and_then(Value::as_u64).ok_or_else(|| ApiError::invalid("A comment on a PDF needs the page (`rect.page`)."))?;
-        let _ = page;
+        let (bytes, _, _) = crate::content::original_file(&state, &doc).await?;
+        let pages = crate::convert::pdf_pages(&state, &bytes).await?;
+        if page == 0 || page > pages {
+            return Err(ApiError::invalid(format!("Choose a page from 1 to {pages}.")));
+        }
         let anchor = json!({ "kind": "pdf", "rect": rect });
         return create_thread(&state, &caller, &doc, &id, anchor, body.anchor.quote.clone().unwrap_or_default(), text).await;
     }
@@ -307,7 +343,8 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
                     return Err(ApiError::invalid("The anchor's positions must be base64 Yjs relative positions."));
                 }
             }
-            (start.clone(), body.anchor.end.clone(), body.anchor.quote.clone().unwrap_or_default())
+            let quote = quote_at_positions(&state, &id, start, body.anchor.end.as_deref()).await?;
+            (start.clone(), body.anchor.end.clone(), quote)
         }
         (None, Some(quote)) if !quote.is_empty() => {
             let (s, e) = anchor_by_quote(&state, &id, quote).await?;
@@ -320,9 +357,39 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
         anchor["end"] = json!(end);
     }
     if let Some(rect) = body.anchor.rect {
+        if kind != "image" {
+            return Err(ApiError::invalid("An area needs an image or PDF page."));
+        }
+        check_rect(&rect)?;
         anchor["rect"] = rect;
     }
     create_thread(&state, &caller, &doc, &id, anchor, quote, text).await
+}
+
+fn check_rect(rect: &Value) -> ApiResult<()> {
+    let number = |key| rect.get(key).and_then(Value::as_f64).filter(|n| n.is_finite() && *n >= 0.0 && *n <= 1.0)
+        .ok_or_else(|| ApiError::invalid("An area needs numeric x, y, w and h fractions between 0 and 1."));
+    let (x, y, w, h) = (number("x")?, number("y")?, number("w")?, number("h")?);
+    if w <= 0.0 || h <= 0.0 || x + w > 1.0 || y + h > 1.0 {
+        return Err(ApiError::invalid("The area must fit inside its image or page."));
+    }
+    Ok(())
+}
+
+async fn quote_at_positions(state: &AppState, doc_id: &str, start: &str, end: Option<&str>) -> ApiResult<String> {
+    let start = B64.decode(start).map_err(|_| ApiError::invalid("Invalid comment position."))?;
+    let end = end.map(|s| B64.decode(s)).transpose().map_err(|_| ApiError::invalid("Invalid comment position."))?;
+    rooms::with_ydoc(state, doc_id, |y, _| {
+        let frag = ydoc::fragment(y);
+        let txn = yrs::Transact::transact(y);
+        let map = ydoc::text_map(&txn, &frag);
+        let from = ydoc::resolve_position(&txn, &map, &start).ok_or_else(|| ApiError::invalid("The comment's start isn't in this doc."))?;
+        let to = match &end {
+            Some(end) => ydoc::resolve_position(&txn, &map, end).filter(|to| *to > from).ok_or_else(|| ApiError::invalid("The comment's range isn't in this doc."))?,
+            None => map.blocks.iter().find(|(s, e, _)| from >= *s && from <= *e).map(|(_, e, _)| *e).ok_or_else(|| ApiError::invalid("The comment isn't on a block in this doc."))?,
+        };
+        Ok(map.slice(from, to).replace('\u{FFFC}', ""))
+    }).await?
 }
 
 async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, id: &str, anchor: Value, quote: String, text: String) -> ApiResult<(StatusCode, Json<Value>)> {
@@ -349,7 +416,7 @@ async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, 
         .await?;
     tx.commit().await?;
     let author = accounts::one(&state, &caller.uuid).await?;
-    notify::comment(&state, doc, &thread_id, &comment_id, &author, &text, &quote, false).await?;
+    notify::comment(&state, doc, &thread_id, &comment_id, &author, &text, &quote, false, false).await?;
     state.rooms.notify(id, json!({ "type": "threads" })).await;
     Ok((StatusCode::CREATED, Json(one_thread(&state, &thread_id).await?)))
 }
@@ -380,6 +447,7 @@ pub struct Body {
 
 pub async fn reply(State(state): State<AppState>, Auth(caller): Auth, Path(thread_id): Path<String>, Json(body): Json<Body>) -> ApiResult<(StatusCode, Json<Value>)> {
     let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
+    require_active(&doc)?;
     let text = check_body(&body.body)?;
     let comment_id = ids::new_id("c");
     sqlx::query("insert into comments (id, thread_id, doc_id, author_uuid, body) values ($1, $2, $3, $4, $5)")
@@ -391,7 +459,7 @@ pub async fn reply(State(state): State<AppState>, Auth(caller): Auth, Path(threa
         .execute(&state.db)
         .await?;
     let author = accounts::one(&state, &caller.uuid).await?;
-    notify::comment(&state, &doc, &thread_id, &comment_id, &author, &text, &thread.quote, true).await?;
+    notify::comment(&state, &doc, &thread_id, &comment_id, &author, &text, &thread.quote, true, false).await?;
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok((StatusCode::CREATED, Json(comment_view(&state, &comment_id).await?)))
 }
@@ -418,6 +486,7 @@ async fn comment_for(state: &AppState, caller: &Caller, comment_id: &str) -> Api
 
 pub async fn edit(State(state): State<AppState>, Auth(caller): Auth, Path(comment_id): Path<String>, Json(body): Json<Body>) -> ApiResult<Json<Value>> {
     let (comment, thread, doc, _) = comment_for(&state, &caller, &comment_id).await?;
+    require_active(&doc)?;
     if comment.author_uuid != caller.uuid {
         return Err(ApiError::forbidden("Only the comment's author can edit it."));
     }
@@ -426,17 +495,25 @@ pub async fn edit(State(state): State<AppState>, Auth(caller): Auth, Path(commen
     }
     let text = check_body(&body.body)?;
     let mut tx = state.db.begin().await?;
-    sqlx::query("insert into comment_revisions (comment_id, body) values ($1, $2)").bind(&comment_id).bind(&comment.body).execute(&mut *tx).await?;
+    // Serialize replacements so every accepted text is the current body or a revision.
+    let previous: Option<(String, Option<OffsetDateTime>)> = sqlx::query_as("select body, deleted_at from comments where id = $1 for update")
+        .bind(&comment_id).fetch_optional(&mut *tx).await?;
+    let (previous, deleted_at) = previous.ok_or_else(|| ApiError::not_found("This comment"))?;
+    if deleted_at.is_some() {
+        return Err(ApiError::conflict("This comment was deleted."));
+    }
+    if previous == text {
+        tx.rollback().await?;
+        return Ok(Json(comment_view(&state, &comment_id).await?));
+    }
+    sqlx::query("insert into comment_revisions (comment_id, body) values ($1, $2)").bind(&comment_id).bind(&previous).execute(&mut *tx).await?;
     sqlx::query("update comments set body = $2, edited_at = now() where id = $1").bind(&comment_id).bind(&text).execute(&mut *tx).await?;
+    sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'comment.edited', $3)")
+        .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread.id, "comment": comment_id, "before": previous, "after": text })).execute(&mut *tx).await?;
     tx.commit().await?;
     // Newly mentioned people hear about it (the others were told already).
     let author = accounts::one(&state, &caller.uuid).await?;
-    let is_reply: bool = sqlx::query_scalar("select exists(select 1 from comments where thread_id = $1 and created_at < $2)")
-        .bind(&thread.id)
-        .bind(comment.created_at)
-        .fetch_one(&state.db)
-        .await?;
-    notify::comment(&state, &doc, &thread.id, &comment_id, &author, &text, &thread.quote, is_reply).await?;
+    notify::comment(&state, &doc, &thread.id, &comment_id, &author, &text, &thread.quote, false, true).await?;
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok(Json(comment_view(&state, &comment_id).await?))
 }
@@ -446,9 +523,10 @@ pub async fn delete(State(state): State<AppState>, Auth(caller): Auth, Path(comm
     if comment.author_uuid != caller.uuid && role != Role::Owner {
         return Err(ApiError::forbidden("Only the comment's author or the doc's owner can delete it."));
     }
-    if comment.deleted_at.is_none() {
-        sqlx::query("update comments set deleted_at = now() where id = $1").bind(&comment_id).execute(&state.db).await?;
-        activity::record(&state, Some(&thread.doc_id), None, &caller.uuid, "comment.deleted", json!({ "thread": thread.id, "comment": comment_id, "body": comment.body, "author": comment.author_uuid })).await?;
+    let deleted: Option<String> = sqlx::query_scalar("update comments set deleted_at = now() where id = $1 and deleted_at is null returning body")
+        .bind(&comment_id).fetch_optional(&state.db).await?;
+    if let Some(body) = deleted {
+        activity::record(&state, Some(&thread.doc_id), None, &caller.uuid, "comment.deleted", json!({ "thread": thread.id, "comment": comment_id, "body": body, "author": comment.author_uuid })).await?;
     }
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok(StatusCode::NO_CONTENT)
@@ -459,10 +537,20 @@ pub struct Reaction {
     emoji: String,
 }
 
+fn is_emoji(emoji: &str) -> bool {
+    emoji.graphemes(true).count() == 1
+        && emoji.chars().all(|c| c.is_emoji_char_or_emoji_component())
+        && emoji.chars().any(|c| (!c.is_ascii() && c.is_emoji_char() && !matches!(c, '\u{1f3fb}'..='\u{1f3ff}')) || c == '\u{20e3}')
+}
+
 pub async fn react(State(state): State<AppState>, Auth(caller): Auth, Path(comment_id): Path<String>, Json(body): Json<Reaction>) -> ApiResult<Json<Value>> {
-    let (_, thread, _, _) = comment_for(&state, &caller, &comment_id).await?;
+    let (comment, thread, doc, _) = comment_for(&state, &caller, &comment_id).await?;
+    require_active(&doc)?;
+    if comment.deleted_at.is_some() {
+        return Err(ApiError::conflict("This comment was deleted."));
+    }
     let emoji = body.emoji.trim();
-    if emoji.is_empty() || emoji.chars().count() > 16 {
+    if !is_emoji(emoji) {
         return Err(ApiError::invalid("A reaction is one emoji."));
     }
     let removed = sqlx::query("delete from reactions where comment_id = $1 and account_uuid = $2 and emoji = $3")
@@ -486,8 +574,8 @@ pub async fn react(State(state): State<AppState>, Auth(caller): Auth, Path(comme
 
 pub async fn resolve(State(state): State<AppState>, Auth(caller): Auth, Path(thread_id): Path<String>) -> ApiResult<Json<Value>> {
     let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
-    if thread.status != "resolved" {
-        sqlx::query("update threads set status = 'resolved', resolved_by = $2, resolved_at = now() where id = $1").bind(&thread_id).bind(&caller.uuid).execute(&state.db).await?;
+    require_active(&doc)?;
+    if sqlx::query("update threads set status = 'resolved', resolved_by = $2, resolved_at = now() where id = $1 and status != 'resolved'").bind(&thread_id).bind(&caller.uuid).execute(&state.db).await?.rows_affected() != 0 {
         activity::record(&state, Some(&thread.doc_id), None, &caller.uuid, "thread.resolved", json!({ "thread": thread_id, "quote": thread.quote })).await?;
         let resolver = accounts::one(&state, &caller.uuid).await?;
         notify::thread_resolved(&state, &doc, &thread_id, &thread.created_by, &resolver, &thread.quote).await?;
@@ -497,9 +585,9 @@ pub async fn resolve(State(state): State<AppState>, Auth(caller): Auth, Path(thr
 }
 
 pub async fn reopen(State(state): State<AppState>, Auth(caller): Auth, Path(thread_id): Path<String>) -> ApiResult<Json<Value>> {
-    let (thread, _, _) = thread_for(&state, &caller, &thread_id).await?;
-    if thread.status != "open" {
-        sqlx::query("update threads set status = 'open', resolved_by = null, resolved_at = null where id = $1").bind(&thread_id).execute(&state.db).await?;
+    let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
+    require_active(&doc)?;
+    if sqlx::query("update threads set status = 'open', resolved_by = null, resolved_at = null where id = $1 and status != 'open'").bind(&thread_id).execute(&state.db).await?.rows_affected() != 0 {
         activity::record(&state, Some(&thread.doc_id), None, &caller.uuid, "thread.reopened", json!({ "thread": thread_id })).await?;
     }
     state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
