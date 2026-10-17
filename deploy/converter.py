@@ -22,7 +22,11 @@ def command(name, args, cwd):
     if not cwd.startswith("/tmp/"):
         raise ValueError("Converters require a temporary working directory")
     result = ["/usr/bin/bwrap", "--die-with-parent", "--new-session", "--unshare-all", "--clearenv"]
-    for path in ["/usr", "/bin", "/lib", "/lib64", "/etc/fonts", "/etc/alternatives", "/etc/ld.so.cache"]:
+    # LibreOffice's registry links into /etc, and its user-profile initialization
+    # needs the host's public identity databases even with HOME inside the sandbox.
+    for path in ["/usr", "/bin", "/lib", "/lib64", "/etc/fonts", "/etc/alternatives",
+                 "/etc/ld.so.cache", "/etc/libreoffice", "/etc/passwd", "/etc/group",
+                 "/etc/nsswitch.conf"]:
         if Path(path).exists():
             result += ["--ro-bind", path, path]
     result += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",

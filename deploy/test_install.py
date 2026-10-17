@@ -113,10 +113,21 @@ class ConverterTests(unittest.TestCase):
         bindings = [(argv[i + 1], argv[i + 2]) for i, value in enumerate(argv) if value == "--bind"]
         self.assertEqual(bindings, [("/tmp/write-job", "/tmp/write-job")])
         reads = [argv[i + 1] for i, value in enumerate(argv) if value == "--ro-bind"]
-        self.assertTrue(set(reads).issubset({"/usr", "/bin", "/lib", "/lib64", "/etc/fonts", "/etc/alternatives", "/etc/ld.so.cache"}))
+        self.assertTrue(set(reads).issubset({
+            "/usr", "/bin", "/lib", "/lib64", "/etc/fonts", "/etc/alternatives", "/etc/ld.so.cache",
+            "/etc/libreoffice", "/etc/passwd", "/etc/group", "/etc/nsswitch.conf",
+        }))
         for path in ["/", "/etc", "/home", "/var/lib/silicon-write", "/etc/silicon-write", "/proc"]:
             self.assertNotIn(path, reads)
         self.assertEqual(argv[argv.index("--chdir") + 1], "/tmp/write-job")
+
+    def test_office_registry_and_user_lookup_files_are_available(self):
+        # Ubuntu's Office registry is a symlink into /etc, and profile startup
+        # requires the public user/group lookup files even with HOME supplied.
+        with mock.patch.object(Path, "exists", return_value=True):
+            argv = self.argv(program="soffice")
+        reads = [argv[i + 1] for i, value in enumerate(argv) if value == "--ro-bind"]
+        self.assertTrue({"/etc/libreoffice", "/etc/passwd", "/etc/group", "/etc/nsswitch.conf"}.issubset(reads))
 
     def test_input_arguments_cannot_become_sandbox_options(self):
         malicious = ["--share-net", "--ro-bind", "/etc", "/etc"]
