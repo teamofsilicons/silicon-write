@@ -8,6 +8,7 @@ import { Folder as FolderIcon, Home } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/silicon-ui/dialog/dialog";
 import { Button } from "@/components/silicon-ui/button/button";
 import { notifyError } from "@/lib/notify";
+import { useSessionView } from "@/lib/client/session";
 import { useAllFolders } from "@/lib/write/queries";
 import { atLeast, type Folder } from "@/lib/write/types";
 import styles from "./library.module.css";
@@ -23,6 +24,7 @@ export function MoveDialog({ open, onOpenChange, title, owner, current, exclude,
   onMove: (folder: string | null) => Promise<unknown>;
 }) {
   const { data } = useAllFolders(open);
+  const canMoveToTopLevel = useSessionView().account?.uuid === owner;
   const [choice, setChoice] = useState<string | null>(current);
   const [moving, setMoving] = useState(false);
   const folders = useMemo(() => {
@@ -61,11 +63,11 @@ export function MoveDialog({ open, onOpenChange, title, owner, current, exclude,
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title={title} description="A doc or folder can move into folders with the same owner.">
         <ul className={styles.moveList} role="listbox" aria-label="Where to">
-          <li>
+          {canMoveToTopLevel ? <li>
             <button type="button" role="option" aria-selected={choice === null} className={styles.moveRow} data-selected={choice === null ? "" : undefined} onClick={() => setChoice(null)}>
               <Home size={16} aria-hidden="true" /> Top level
             </button>
-          </li>
+          </li> : null}
           {folders.map(f => (
             <li key={f.id}>
               <button type="button" role="option" aria-selected={choice === f.id} className={styles.moveRow} data-selected={choice === f.id ? "" : undefined} style={{ paddingInlineStart: `${12 + f.depth * 18}px` }} onClick={() => setChoice(f.id)}>
