@@ -16,9 +16,10 @@
 // Things the contract promises that aren't built yet are `todo` tests: they run and report, but
 // don't fail the suite until the product has them.
 //
-// A few tests also look at the service's database (read only) for evidence that something is
-// really gone. They skip that part when psql or the database isn't reachable
-// (WRITE_TEST_PSQL, WRITE_TEST_DATABASE_URL).
+// A few tests also look at the service's database (read only) and its uploaded files for evidence
+// that something is really gone. They skip that part when psql or the database isn't reachable
+// (WRITE_TEST_PSQL, WRITE_TEST_DATABASE_URL), or the files aren't where the service keeps them
+// (WRITE_DATA_DIR, as the service has it).
 
 import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -154,7 +155,9 @@ async function upload(who, path, fields, file, filename, type) {
   return who.api.raw("POST", path, form);
 }
 
-// The service's database, read only, for evidence that something is really gone.
+// The service's database, read only, and its uploaded files, for evidence that something is
+// really gone.
+const DATA_DIR = process.env.WRITE_DATA_DIR ?? join(ROOT, ".dev/data");
 const PSQL = process.env.WRITE_TEST_PSQL ?? "/opt/homebrew/opt/postgresql@16/bin/psql";
 const DATABASE = process.env.WRITE_TEST_DATABASE_URL ?? "postgres://postgres@127.0.0.1:5471/silicon_write";
 const READ_ONLY = { ...process.env, PGOPTIONS: "-c default_transaction_read_only=on" };
@@ -741,6 +744,21 @@ describe("renaming and moving", () => {
     assert.ok(docMove.status >= 400 && docMove.status < 500, `moving a doc into a folder in the trash answered ${docMove.status}`);
     assert.ok(folderMove.status >= 400 && folderMove.status < 500, `moving a folder into a folder in the trash answered ${folderMove.status}`);
   });
+
+  test("two folders moved into each other at the same moment never end up inside each other", async () => {
+    const owner = await carbon("owner");
+    for (let round = 0; round < 8; round++) {
+      const a = await newFolder(owner, `A${round}`);
+      const b = await newFolder(owner, `B${round}`);
+      const [aIntoB, bIntoA] = await Promise.all([
+        owner.api.patch(`/v1/folders/${a.id}`, { parent_id: b.id }),
+        owner.api.patch(`/v1/folders/${b.id}`, { parent_id: a.id }),
+      ]);
+      assert.deepEqual([aIntoB.status, bIntoA.status].sort(), [200, 422], `round ${round}: A into B answered ${aIntoB.status} ${show(aIntoB.body)}, B into A ${bIntoA.status} ${show(bIntoA.body)}`);
+      const parents = [(await getFolder(owner, a.id)).parent_id, (await getFolder(owner, b.id)).parent_id];
+      assert.ok(parents.includes(null), `round ${round}: neither is at the top level any more (parents ${show(parents)})`);
+    }
+  });
 });
 
 // ------------------------------------------------------------------------------------------
@@ -1106,14 +1124,23 @@ describe("the trash", () => {
     assert.ok((await restoreDoc(owner, doc.id)).deleted_at === null, "and can restore it");
   });
 
-  test("the owner can see what a folder in the trash holds before deleting it for good", { todo: "gap: a folder in the trash lists as empty, and the trash only lists the folder itself" }, async () => {
+  test("the owner can see what a folder in the trash holds before deleting it for good", async () => {
     const owner = await carbon("owner");
+    const member = await carbon("member");
     const folder = await newFolder(owner, "Old project");
     const sub = await newFolder(owner, "Drafts", folder.id);
     const doc = await newDoc(owner, { title: "Plan", folder_id: folder.id });
+    const inSub = await newDoc(owner, { title: "Draft", folder_id: sub.id });
+    const alone = await newDoc(owner, { title: "Deleted on its own before", folder_id: folder.id });
+    await share(owner, "folders", folder.id, member, "editor");
+    await trashDoc(owner, alone.id);
     await trashFolder(owner, folder.id);
     const inside = await library(owner, { view: "trash", folder: folder.id });
-    assert.deepEqual([ids(inside.folders), ids(inside.docs)], [[sub.id], [doc.id]], `a folder in the trash, opened from the trash, shows ${show(inside)}`);
+    assert.deepEqual([ids(inside.folders), ids(inside.docs)], [[sub.id], [doc.id]], `a folder in the trash, opened from the trash, shows what went there with it: ${show(inside)}`);
+    assert.ok(inside.folder.deleted_at && inside.docs.every(d => d.deleted_at), "all of it marked deleted");
+    assert.deepEqual(ids((await library(owner, { view: "trash", folder: sub.id })).docs), [inSub.id], "and so does a folder inside it");
+    assert.deepEqual(ids((await library(owner, { view: "trash" })).docs), [alone.id], "what was deleted on its own before is listed on its own");
+    expectError(await member.api.get(`/v1/library?folder=${folder.id}`), 404, "not_found", "a member listing the folder in the trash");
   });
 });
 
@@ -1158,8 +1185,9 @@ describe("permanent deletion", () => {
     expectStatus(await owner.api.put(`/v1/docs/${doc.id}/versions/1/name`, { name: "First" }), 200, "a version name");
     await share(owner, "docs", doc.id, member, "editor");
     expectStatus(await owner.api.post(`/v1/docs/${doc.id}/transfer`, { to: offeredTo.id }), 200, "an offer");
-    expectStatus(await anonymous.get(`/v1/assets/${asset.id}`), 200, "the image before");
-    const assetFile = join(ROOT, ".dev/data/assets", asset.id.slice(2, 4), asset.id);
+    // docs/api.md: an image is for whoever can open a doc that shows (or showed) it, here the owner.
+    expectStatus(await owner.api.get(`/v1/assets/${asset.id}`), 200, "the image before");
+    const assetFile = join(DATA_DIR, "assets", asset.id.slice(2, 4), asset.id);
     const fileBefore = existsSync(assetFile);
     await trashDoc(owner, doc.id);
     expectStatus(await owner.api.del(`/v1/docs/${doc.id}/permanently?confirm=${doc.id}`), 204, "deleting permanently");
@@ -1168,7 +1196,7 @@ describe("permanent deletion", () => {
     expectError(await owner.api.get(`/v1/docs/${doc.id}/versions`), 404, "not_found", "its versions");
     expectError(await owner.api.post(`/v1/docs/${doc.id}/restore`), 404, "not_found", "restoring it");
     expectError(await member.api.get(`/v1/docs/${doc.id}`), 404, "not_found", "the member opening it");
-    expectError(await anonymous.get(`/v1/assets/${asset.id}`), 404, "not_found", "its image");
+    expectError(await owner.api.get(`/v1/assets/${asset.id}`), 404, "not_found", "its image");
     if (fileBefore) assert.ok(!existsSync(assetFile), `its image file is still on disk: ${assetFile}`);
     assert.deepEqual((await library(owner, { view: "trash" })).docs, []);
     assert.deepEqual((await transfersOf(offeredTo)).incoming, [], "the offer is gone");
@@ -1253,6 +1281,23 @@ describe("permanent deletion", () => {
     assert.deepEqual([ids(left.folders), ids(left.docs)], [[aloneSub.id], [alone.id]]);
   });
 
+  test("what was deleted on its own inside a folder deleted for good keeps its whole history, and comes back at the top level", async () => {
+    const owner = await carbon("owner");
+    const folder = await newFolder(owner, "Going");
+    const doc = await newDoc(owner, { title: "Staying", folder_id: folder.id, markdown: "Kept." });
+    await patchDoc(owner, doc.id, { title: "Staying, renamed" });
+    await trashDoc(owner, doc.id);
+    const before = await activity(owner, "docs", doc.id);
+    assert.deepEqual(before.map(e => e.kind), ["doc.trashed", "doc.renamed", "doc.created"]);
+    await trashFolder(owner, folder.id);
+    expectStatus(await owner.api.del(`/v1/folders/${folder.id}/permanently?confirm=${folder.id}`), 204, "deleting the folder for good");
+    const after = await activity(owner, "docs", doc.id);
+    assert.deepEqual(after.map(e => [e.id, e.kind]), before.map(e => [e.id, e.kind]), "the doc's history lost what the folder's history shared with it");
+    assert.equal((await readMarkdown(owner, doc.id)).trim(), "Kept.");
+    const restored = await restoreDoc(owner, doc.id);
+    assert.deepEqual([restored.folder_id, restored.title], [null, "Staying, renamed"], "it comes back at the top level");
+  });
+
   test("a permanently deleted doc or folder leaves nothing behind in folder histories", async () => {
     const owner = await carbon("owner");
     const f = await newFolder(owner, "F");
@@ -1292,6 +1337,29 @@ describe("permanent deletion", () => {
     expectStatus(await owner.api.del(`/v1/docs/${doc.id}/permanently?confirm=${doc.id}`), 204, "the owner deleting the original for good");
     const after = await reader.api.get(`/v1/assets/${image.id}`);
     assert.equal(after.status, 200, `the image in the reader's copy is gone with the original (HTTP ${after.status} ${show(after.body)}); the copy still reads: ${JSON.stringify(await readMarkdown(reader, copy.id))}`);
+    assert.deepEqual(after.body, fixture("dot.png"));
+    // Once the last doc that shows it is deleted for good, the image is gone too.
+    const imageFile = join(DATA_DIR, "assets", image.id.slice(2, 4), image.id);
+    const fileBefore = existsSync(imageFile);
+    await trashDoc(reader, copy.id);
+    expectStatus(await reader.api.del(`/v1/docs/${copy.id}/permanently?confirm=${copy.id}`), 204, "the reader deleting the copy for good");
+    expectError(await reader.api.get(`/v1/assets/${image.id}`), 404, "not_found", "the image once no doc shows it");
+    if (fileBefore) assert.ok(!existsSync(imageFile), `the image's file is still on disk: ${imageFile}`);
+    if (canReadDatabase()) assert.equal(dbScalar(`select count(*) from assets where id = '${safeId(image.id)}'`), "0", "the image's row is gone");
+  });
+
+  test("deleting a PDF permanently leaves its copies whole", async () => {
+    const owner = await carbon("owner");
+    const reader = await carbon("reader");
+    const pdf = fixture("hello.pdf");
+    const original = expectStatus(await upload(owner, "/v1/docs/import", {}, pdf, "paper.pdf", "application/pdf"), 201, "opening a PDF");
+    await share(owner, "docs", original.id, reader, "viewer");
+    const copy = expectStatus(await reader.api.post(`/v1/docs/${original.id}/copy`, {}), 201, "the reader copying it");
+    await trashDoc(owner, original.id);
+    expectStatus(await owner.api.del(`/v1/docs/${original.id}/permanently?confirm=${original.id}`), 204, "the owner deleting the original for good");
+    const file = await reader.api.get(`/v1/docs/${copy.id}/original`);
+    assert.equal(file.status, 200, `the copy lost its PDF with the original: ${file.status} ${show(file.body)}`);
+    assert.deepEqual(file.body, pdf);
   });
 });
 
@@ -1644,6 +1712,11 @@ describe("transfers", () => {
     );
     const giverTrash = await library(from, { view: "trash" });
     assert.deepEqual(sorted([...ids(giverTrash.docs), ...ids(giverTrash.folders)]), sorted([secret.id, oldSub.id]), "the giver's trash keeps what they deleted");
+    const restored = await restoreDoc(from, secret.id);
+    assert.deepEqual([restored.owner.uuid, restored.folder_id], [from.uuid, null], "restored, it is still the giver's, at their top level rather than in the folder they gave away");
+    expectError(await to.api.get(`/v1/docs/${secret.id}`), 404, "not_found", "the taker opening it after it was restored");
+    const sub = await restoreFolder(from, oldSub.id);
+    assert.deepEqual([sub.owner.uuid, sub.parent_id], [from.uuid, null], "the same for the subfolder");
   });
 
   test("a transfer keeps the doc's history and comments, and lists the previous owner as an editor", async () => {
