@@ -463,9 +463,20 @@ pub async fn convert_pdf(State(state): State<AppState>, Auth(caller): Auth, Path
 // Links, authorship, search
 // ------------------------------------------------------------------------------------------
 
+/// The docs the caller can open that link here: `[[its title]]`, or for an untitled doc
+/// `[[its first line]]`, the whole line, as [`resolve_link`] reads a link (the name shown for an
+/// untitled doc is cut short, the name it is linked by isn't).
 pub async fn backlinks(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Viewer).await?;
-    let title = doc.display_title().trim().to_lowercase();
+    let name = match doc.title.trim() {
+        "" => doc.plain_text.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or(""),
+        title => title,
+    };
+    // An empty doc with no title has no name a link could use.
+    if name.is_empty() {
+        return Ok(Json(json!({ "docs": [] })));
+    }
+    let title = name.to_lowercase();
     let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
     let docs: Vec<DocRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {DOC_COLUMNS} from docs where id = any($1) and id <> $2 and links @> array[$3]::text[] order by updated_at desc")))
         .bind(&ids)
@@ -476,12 +487,21 @@ pub async fn backlinks(State(state): State<AppState>, Auth(caller): Auth, Path(i
     Ok(Json(json!({ "docs": views::doc_views(&state, docs, &caller).await? })))
 }
 
-/// Resolves `[[title]]` links from a doc to the docs the caller can open.
+/// Resolves `[[title]]` links from a doc to the docs the caller can open: the doc with that title,
+/// or an untitled doc whose first line (its first line with text, trimmed) it is, ignoring case;
+/// of several, the one changed last. An empty `[[ ]]` opens nothing.
 pub async fn resolve_link(State(state): State<AppState>, Auth(caller): Auth, Query(q): Query<std::collections::HashMap<String, String>>) -> ApiResult<Json<Value>> {
-    let title = q.get("title").map(|t| t.trim().to_lowercase()).unwrap_or_default();
+    // Titles never keep a NUL, so a link never needs one either.
+    let title = q.get("title").map(|t| t.replace('\0', "").trim().to_lowercase()).unwrap_or_default();
+    if title.is_empty() {
+        return Ok(Json(json!({ "doc": null })));
+    }
     let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
     let doc: Option<DocRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "select {DOC_COLUMNS} from docs where id = any($1) and (lower(title) = $2 or (title = '' and lower(split_part(plain_text, E'\\n', 1)) = $2)) order by updated_at desc limit 1"
+        "select {DOC_COLUMNS} from docs where id = any($1) and (
+            lower(title) = $2
+            or (title = '' and lower(regexp_replace(substring(plain_text from '^\\s*([^\\n]*)'), '\\s+$', '')) = $2)
+         ) order by updated_at desc limit 1"
     )))
     .bind(&ids)
     .bind(&title)
@@ -540,7 +560,8 @@ pub struct SearchQuery {
 }
 
 pub async fn search(State(state): State<AppState>, Auth(caller): Auth, Query(q): Query<SearchQuery>) -> ApiResult<Json<Value>> {
-    let query = q.q.unwrap_or_default();
+    // A NUL can't be in a doc's indexed text or title, nor sent to the database.
+    let query = q.q.unwrap_or_default().replace('\0', "");
     let query = query.trim();
     if query.is_empty() {
         return Ok(Json(json!({ "results": [] })));
