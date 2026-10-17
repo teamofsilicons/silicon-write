@@ -1,20 +1,17 @@
 "use client";
 
 /**
- * The doc's top bar: where it is (back to its folder), its title (editors rename it in place), who else is here, the
- * mode (editing, suggesting, viewing), comments, Share (the one primary action) and the doc's menu.
+ * A quiet document bar: back, connection state, writing tools and the actions that belong to the whole doc.
  */
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Editor } from "@tiptap/react";
-import { ArrowLeft, Copy, Download, FileInput, FolderInput, History, Link2, MessageSquare, MoreHorizontal, Search, Trash2, RotateCcw, Users } from "lucide-react";
+import { useEditorState, type Editor } from "@tiptap/react";
+import { ArrowLeft, ChevronDown, Copy, Download, Eye, FileInput, FolderInput, History, Link2, MessageSquare, MoreHorizontal, PencilLine, Search, Trash2, RotateCcw, Type as TypeIcon, Users } from "lucide-react";
 import { AppGlyph } from "@/components/foundation/brand/app-mark";
 import { Button } from "@/components/silicon-ui/button/button";
 import { AvatarGroup } from "@/components/silicon-ui/avatar-group/avatar-group";
-import { InlineEdit } from "@/components/silicon-ui/inline-edit/inline-edit";
-import SegmentedControl from "@/components/silicon-ui/segmented-control/segmented-control";
 import {
   DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/silicon-ui/dropdown-menu/dropdown-menu";
@@ -26,9 +23,11 @@ import type { LiveDoc } from "@/lib/write/live";
 import { keys, useRefreshLibrary } from "@/lib/write/queries";
 import type { Account, Doc } from "@/lib/write/types";
 import type { EditMode } from "@/components/editor/editor";
+import { suggestionsIn } from "@/components/editor/suggestions";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { MoveDialog } from "@/components/library/move-dialog";
 import type { Panel } from "./doc-page";
+import { SyncState } from "./status-bar";
 import styles from "./doc.module.css";
 
 const FORMATS: { format: string; label: string }[] = [
@@ -85,23 +84,21 @@ export interface TopBarProps {
   onPanel: (panel: Panel) => void;
   onFind: () => void;
   openThreads: number;
+  formatOpen: boolean;
+  onFormat: () => void;
+  liveError: string | null;
 }
 
-export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, panel, onPanel, onFind, openThreads }: TopBarProps) {
+export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canComment, panel, onPanel, onFind, openThreads, formatOpen, onFormat, liveError }: TopBarProps) {
   const client = useQueryClient();
   const router = useRouter();
   const refreshLibrary = useRefreshLibrary();
   const people = usePresence(live);
+  const pendingSuggestions = useEditorState({ editor, selector: ({ editor: current }) => current ? suggestionsIn(current.state.doc).length : 0 }) ?? 0;
   const [shareOpen, setShareOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const back = doc.path.length ? { href: `/library/${doc.path[doc.path.length - 1].id}`, label: doc.path[doc.path.length - 1].name } : { href: doc.role === "owner" ? "/library" : "/shared", label: doc.role === "owner" ? "My docs" : "Shared with me" };
-
-  const rename = async (title: string) => {
-    await api.patch(`/v1/docs/${seg(doc.id)}`, { title });
-    client.invalidateQueries({ queryKey: keys.doc(doc.id) });
-    refreshLibrary();
-  };
 
   const download = (format: string) => {
     // A download, not a page: a link the browser saves.
@@ -156,70 +153,92 @@ export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, 
     ? [
         { value: "editing", label: "Editing" },
         { value: "suggesting", label: "Suggesting" },
-        { value: "viewing", label: "Viewing" },
+        { value: "viewing", label: "Reading" },
       ]
     : [
         { value: "viewing", label: "Commenting" },
         { value: "suggesting", label: "Suggesting" },
       ];
+  const currentMode = canEdit ? mode : mode === "suggesting" ? "suggesting" : "viewing";
+  const modeLabel = modes.find(option => option.value === currentMode)?.label ?? "Reading";
+  const canFormat = doc.kind === "doc" && !doc.deleted_at && mode !== "viewing" && (canEdit || canComment && mode === "suggesting");
+  const reviewCount = openThreads + pendingSuggestions;
+  const reviewDescription = `${openThreads} open comment ${openThreads === 1 ? "thread" : "threads"}, ${pendingSuggestions} pending ${pendingSuggestions === 1 ? "suggestion" : "suggestions"}`;
 
   return (
     <header className={styles.topBar}>
       <div className={styles.topLeft}>
         {account ? (
-          <Link href={back.href} className={styles.back} aria-label={`Back to ${back.label}`}>
+          <Link href={back.href} className={styles.back} data-sq="control" aria-label={`Back to ${back.label}`} title={`Back to ${back.label}`}>
             <ArrowLeft size={16} aria-hidden="true" />
-            <span>{back.label}</span>
           </Link>
         ) : (
-          <Link href="/" className={styles.back} aria-label="Silicon Write home">
+          <Link href="/" className={styles.back} data-sq="control" aria-label="Silicon Write home" title="Silicon Write home">
             <AppGlyph size={16} />
-            <span className={styles.wordmark}>Silicon Write</span>
           </Link>
         )}
-        <div className={styles.titleWrap}>
-          {canEdit && doc.kind === "doc" ? (
-            <InlineEdit value={doc.title} onSave={rename} label="Title" placeholder="Untitled" as="h1" className={styles.title} validate={v => (v.length > 300 ? "A title can be at most 300 characters." : null)} />
-          ) : (
-            <h1 className={styles.title}>{doc.title}</h1>
-          )}
-          {doc.public_access !== "none" ? <span className={styles.publicTag}>Public</span> : null}
-        </div>
+        <span className={styles.docKind}>{doc.kind === "pdf" ? "PDF" : "Doc"}</span>
+        {doc.kind === "doc" && !doc.deleted_at ? <SyncState live={live} error={liveError} /> : null}
       </div>
       <div className={styles.topRight}>
-        {people.length ? <AvatarGroup members={people.map(p => ({ name: p.name, src: p.src, status: "online" }))} max={4} size="sm" label="Here now" /> : null}
+        {people.length ? <div className={styles.presence}><AvatarGroup members={people.map(p => ({ name: p.name, src: p.src, status: "online" }))} max={4} size="sm" label="Here now" /></div> : null}
+        {canFormat ? (
+          <Button variant="ghost" size="sm" className={styles.formatToggle} aria-label="Format" aria-expanded={formatOpen} aria-controls="doc-formatting" disabled={!editor} onClick={onFormat}>
+            <TypeIcon size={16} aria-hidden="true" /><span className={styles.actionLabel}>Format</span>
+          </Button>
+        ) : null}
         {(canEdit || canComment) && doc.kind === "doc" && !doc.deleted_at ? (
-          <SegmentedControl options={modes} value={canEdit ? mode : mode === "suggesting" ? "suggesting" : "viewing"} onValueChange={(v: string) => onMode(v as EditMode)} label="Mode" size="xs" className={styles.modes} />
+          <DropdownMenuRoot>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" aria-label={`Mode: ${modeLabel}`} title="Mode" className={styles.modeButton}>
+                {currentMode === "viewing" ? <Eye size={16} aria-hidden="true" /> : <PencilLine size={16} aria-hidden="true" />}
+                <span className={styles.actionLabel}>{modeLabel}</span><ChevronDown size={12} className={styles.modeChevron} aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuRadioGroup value={currentMode} onValueChange={value => onMode(value as EditMode)}>
+                {modes.map(option => <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenuRoot>
+        ) : null}
+        {canEdit && doc.kind === "doc" ? (
+          <Tooltip content="Version history">
+            <Button variant="ghost" size="sm" className={styles.historyButton} aria-label="Version history" aria-pressed={panel === "versions"} onClick={() => onPanel(panel === "versions" ? null : "versions")}>
+              <History size={16} aria-hidden="true" />
+            </Button>
+          </Tooltip>
         ) : null}
         {canComment ? (
-          <Tooltip content={panel === "comments" ? "Hide comments" : "Comments"}>
-            <Button variant="ghost" size="sm" aria-pressed={panel === "comments"} aria-label="Comments" onClick={() => onPanel(panel === "comments" ? null : "comments")}>
+          <Tooltip content={`${panel === "comments" ? "Hide comments" : "Comments"} · ${reviewDescription}`}>
+            <Button variant="ghost" size="sm" aria-pressed={panel === "comments"} aria-label="Comments" aria-description={reviewDescription} onClick={() => onPanel(panel === "comments" ? null : "comments")}>
               <MessageSquare size={16} aria-hidden="true" />
-              {openThreads ? <span className={styles.count}>{openThreads}</span> : null}
+              {reviewCount ? <span className={styles.count}>{reviewCount}</span> : null}
             </Button>
           </Tooltip>
         ) : null}
         {account ? (
-          <Button variant="primary" size="sm" onClick={() => setShareOpen(true)}>
+          <Button variant="primary" size="sm" className={styles.shareButton} onClick={() => setShareOpen(true)}>
             <Users size={15} aria-hidden="true" /> Share
           </Button>
         ) : (
-          <Button variant="primary" size="sm" onClick={() => beginSignIn(window.location.pathname)}>
+          <Button variant="primary" size="sm" className={styles.shareButton} onClick={() => beginSignIn(window.location.pathname)}>
             Sign in
           </Button>
         )}
         <DropdownMenuRoot>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" aria-label="More">
+            <Button variant="secondary" size="sm" aria-label="More" className={styles.moreButton}>
               <MoreHorizontal size={18} aria-hidden="true" />
+              <span className={styles.actionLabel}>More</span><ChevronDown size={12} className={styles.modeChevron} aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             {(canEdit || canComment) && doc.kind === "doc" && !doc.deleted_at ? (
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger className={styles.modeMenu}>Mode</DropdownMenuSubTrigger>
+                <DropdownMenuSubTrigger>Mode</DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuRadioGroup value={canEdit ? mode : mode === "suggesting" ? "suggesting" : "viewing"} onValueChange={value => onMode(value as EditMode)}>
+                  <DropdownMenuRadioGroup value={currentMode} onValueChange={value => onMode(value as EditMode)}>
                     {modes.map(option => <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>)}
                   </DropdownMenuRadioGroup>
                 </DropdownMenuSubContent>

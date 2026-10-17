@@ -20,6 +20,7 @@ import { expect, test, type Browser, type BrowserContext, type Locator, type Pag
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { accountsSession, runAccounts, sameOrigin, sessionOf, signIn, type Who } from "./support";
+import { chooseDocMode, docSyncState, openComments, openFormatting } from "./doc-support";
 
 const SHOTS = "test-results/web-editor";
 
@@ -210,7 +211,6 @@ async function newSilicon(label: string) {
 
 const editorOf = (page: Page) => page.locator(".ProseMirror").first();
 const toolbarOf = (page: Page) => page.getByRole("toolbar", { name: "Formatting" });
-const modeButton = (page: Page, name: string) => page.getByRole("group", { name: "Mode" }).getByRole("button", { name, exact: true });
 const newCommentBox = (page: Page) => page.getByRole("dialog", { name: "New comment" });
 const threadCards = (page: Page) => page.locator("[data-thread-card]");
 const suggestionsList = (page: Page) => page.getByRole("region", { name: "Suggestions" });
@@ -219,7 +219,7 @@ const statusBar = (page: Page) => page.getByRole("contentinfo");
 async function openDoc(page: Page, docId: string) {
   await page.goto(`/d/${docId}`);
   await expect(editorOf(page)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("Every change saved")).toBeVisible({ timeout: 30_000 });
+  await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced", { timeout: 30_000 });
 }
 
 async function shot(page: Page, name: string) {
@@ -459,6 +459,7 @@ test.describe("writing", () => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Formats ${tag()}`);
     await openDoc(page, doc.id);
+    await openFormatting(page);
     const editor = editorOf(page);
     await expect(editor.locator("p.is-editor-empty")).toHaveAttribute("data-placeholder", "Start writing, or type / for blocks");
     await editor.click();
@@ -532,6 +533,7 @@ test.describe("writing", () => {
     const doc = await newDoc(page, `Unformat ${tag()}`, start);
     await expectMarkdown(page, doc.id, start);
     await openDoc(page, doc.id);
+    await openFormatting(page);
     const editor = editorOf(page);
     const toolbar = toolbarOf(page);
     const button = (name: string) => toolbar.getByRole("button", { name, exact: true });
@@ -585,6 +587,7 @@ test.describe("writing", () => {
     const doc = await newDoc(page, `Safe links ${tag()}`, "Click here please.\n\n[Sneaky](javascript:alert(document.domain))");
     const before = await markdownOf(page, doc.id);
     await openDoc(page, doc.id);
+    await openFormatting(page);
     const editor = editorOf(page);
     // A link a Silicon wrote in Markdown is shown, but never with an address that runs script.
     await expect(editor).toContainText("Sneaky");
@@ -605,6 +608,7 @@ test.describe("writing", () => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Shortcuts ${tag()}`);
     await openDoc(page, doc.id);
+    await openFormatting(page);
     const editor = editorOf(page);
     await editor.click();
     const line = async (text: string, enters = 1) => {
@@ -680,6 +684,7 @@ test.describe("writing", () => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Menus keep the keyboard ${tag()}`, "Plain line\n\nLast line");
     await openDoc(page, doc.id);
+    await openFormatting(page);
     const editor = editorOf(page);
     const toolbar = toolbarOf(page);
     /** Closes whatever a stray keystroke opened, and waits for the keyboard to be handed back. */
@@ -877,6 +882,7 @@ test.describe("writing", () => {
     await caretAfter(page, "Above");
     await page.keyboard.press("Enter");
     const chooser = page.waitForEvent("filechooser");
+    await openFormatting(page);
     await toolbarOf(page).getByRole("button", { name: "Insert" }).click();
     await page.getByRole("menuitem", { name: "Image" }).click();
     await (await chooser).setFiles({ name: "editor-photo.png", mimeType: "image/png", buffer: picture });
@@ -939,6 +945,7 @@ test.describe("writing", () => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Undo ${tag()}`, "Keep this.");
     await openDoc(page, doc.id);
+    await openFormatting(page);
     const toolbar = toolbarOf(page);
     const undo = toolbar.getByRole("button", { name: "Undo" });
     const redo = toolbar.getByRole("button", { name: "Redo" });
@@ -1051,18 +1058,18 @@ test.describe("together", () => {
     await openDoc(page, doc.id);
     online = false;
     for (const ws of sockets.splice(0)) await ws.close({ code: 4000, reason: "dropped (test)" });
-    await expect(statusBar(page)).toContainText(/Offline|Connecting/);
+    await expect(docSyncState(page)).toContainText(/Offline|Connecting/);
     await caretAfter(page, "Typed online.");
     await page.keyboard.type(" Typed while offline.");
     // Meanwhile the doc changes elsewhere.
     await ok(page, "POST", `/v1/docs/${doc.id}/edits`, { edits: [{ old: "Changed elsewhere.", new: "Changed elsewhere, meanwhile." }] });
     await page.waitForTimeout(1_500);
     expect(await markdownOf(page, doc.id), "nothing reaches the service while the connection is down").toBe("Typed online.\n\nChanged elsewhere, meanwhile.\n");
-    await expect(statusBar(page)).not.toContainText("Every change saved");
+    await expect(docSyncState(page)).not.toHaveAccessibleName("Connected and synced");
     await shot(page, "offline");
     // Back: both changes are kept, on the page and in the service.
     online = true;
-    await expect(statusBar(page)).toContainText("Every change saved", { timeout: 20_000 });
+    await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced", { timeout: 20_000 });
     await expectMarkdown(page, doc.id, "Typed online. Typed while offline.\n\nChanged elsewhere, meanwhile.\n");
     await expect.poll(() => docText(page)).toBe("Typed online. Typed while offline.\nChanged elsewhere, meanwhile.");
     await shot(page, "back-online");
@@ -1176,12 +1183,12 @@ test.describe("together", () => {
 /* ---------------------------------------------------------------------------------------------------------------- */
 
 test.describe("comments", () => {
-  test("in Viewing mode, selecting text opens the comment box at once and Enter posts it", async ({ browser }) => {
+  test("in Reading mode, selecting text opens the comment box at once and Enter posts it", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
-    const doc = await newDoc(page, `Viewing ${tag()}`, "Opening line.\n\nThe quick brown fox jumps over the lazy dog.");
+    const doc = await newDoc(page, `Reading ${tag()}`, "Opening line.\n\nThe quick brown fox jumps over the lazy dog.");
     await openDoc(page, doc.id);
-    await modeButton(page, "Viewing").click();
-    await expect(modeButton(page, "Viewing")).toHaveAttribute("aria-pressed", "true");
+    await chooseDocMode(page, "Reading");
+    await expect(page.getByRole("button", { name: "Mode: Reading", exact: true })).toBeVisible();
     await expect(toolbarOf(page)).toBeHidden();
     await expect(editorOf(page)).toHaveAttribute("contenteditable", "false");
     // Escape closes the box without posting anything.
@@ -1263,6 +1270,7 @@ test.describe("comments", () => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Section comment ${tag()}`, "First section text.\n\nSecond section text.");
     await openDoc(page, doc.id);
+    await openFormatting(page);
     await caretAfter(page, "Second section");
     await toolbarOf(page).getByRole("button", { name: "Comment", exact: true }).click();
     const box = newCommentBox(page);
@@ -1324,7 +1332,7 @@ test.describe("comments", () => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Margin comment ${tag()}`, "First section text.\n\nSecond section text.");
     await openDoc(page, doc.id);
-    await modeButton(page, "Viewing").click();
+    await chooseDocMode(page, "Reading");
     const paragraph = editorOf(page).locator("p", { hasText: "Second section text." });
     const box = (await paragraph.boundingBox())!;
     // The margin left of the reading column, level with the section.
@@ -1351,6 +1359,7 @@ test.describe("comments", () => {
     const src = await uploadImage(page, doc.id, "chart.png", png(240, 120));
     await ok(page, "PUT", `/v1/docs/${doc.id}/markdown`, { markdown: `Intro line.\n\n| Name | Role |\n| --- | --- |\n| Ada | Writer |\n\n![chart](${src})\n\nOutro line.\n` });
     await openDoc(page, doc.id);
+    await openFormatting(page);
     const editor = editorOf(page);
     const composer = newCommentBox(page);
 
@@ -1430,6 +1439,8 @@ test.describe("comments", () => {
     const created = await ok<Thread>(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "text", quote: "needs work" }, body: "What kind of work?" });
     const thread = async () => (await threadsOf(page, doc.id)).find(t => t.id === created.id)!;
     await openDoc(page, doc.id);
+    await expect(page.getByRole("complementary", { name: "Comments", exact: true })).toBeHidden();
+    await openComments(page);
     const card = threadCards(page).filter({ hasText: "What kind of work?" });
     await expect(card).toBeVisible();
     await expect(editorOf(page).locator(".comment-anchor")).toHaveText("needs work");
@@ -1489,6 +1500,7 @@ test.describe("comments", () => {
       ids.push((await ok<Thread>(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "text", quote: `${word} paragraph` }, body: `About ${word}.` })).id);
     }
     await openDoc(page, doc.id);
+    await openComments(page);
     await expect(threadCards(page)).toHaveCount(3);
     const active = page.locator("[data-thread-card][data-active]");
     await page.getByRole("heading", { name: "Comments" }).click();
@@ -1528,7 +1540,8 @@ test.describe("suggestions and roles", () => {
     const doc = await newDoc(page, `Suggest ${tag()}`, "The draft plan is ready.");
     await openDoc(page, doc.id);
     const editor = editorOf(page);
-    await modeButton(page, "Suggesting").click();
+    await chooseDocMode(page, "Suggesting");
+    await openFormatting(page);
     await expect(toolbarOf(page)).toContainText("Suggesting: your changes are proposed for review.");
     await caretAfter(page, "ready");
     await page.keyboard.type(" today");
@@ -1545,6 +1558,9 @@ test.describe("suggestions and roles", () => {
     await expect.poll(async () => (await markdownOf(page, doc.id, "?suggestions=critic")).replace(/\+\+\}\{\+\+/g, "")).toBe("The {--draft --}plan is ready{++ today++}.\n");
     expect.soft(await markdownOf(page, doc.id, "?suggestions=critic"), "the suggestions in CriticMarkup").toBe("The {--draft --}plan is ready{++ today++}.\n");
 
+    await expect(page.getByRole("button", { name: "Comments", exact: true })).toHaveAccessibleDescription("0 open comment threads, 2 pending suggestions");
+    await expect(page.getByRole("button", { name: "Comments", exact: true })).toContainText("2");
+    await openComments(page);
     const list = suggestionsList(page);
     const cards = list.locator('[class*="suggestionCard"]');
     await expect(list).toBeVisible();
@@ -1583,6 +1599,7 @@ test.describe("suggestions and roles", () => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `All at once ${tag()}`, "One two three.\n\nFour five six.");
     await openDoc(page, doc.id);
+    await openComments(page);
     const list = suggestionsList(page);
     // Two suggestions arrive while the doc is open (made through the API, as the write CLI makes them).
     await ok(page, "POST", `/v1/docs/${doc.id}/edits`, { edits: [{ old: "two", new: "2" }], suggest: true });
@@ -1613,9 +1630,11 @@ test.describe("suggestions and roles", () => {
     await share(owner.page, doc.id, friend.account.id, "commenter");
     const page = friend.page;
     await openDoc(page, doc.id);
-    const modes = page.getByRole("group", { name: "Mode" });
-    await expect(modes.getByRole("button")).toHaveText(["Commenting", "Suggesting"]);
-    await expect(modeButton(page, "Commenting")).toHaveAttribute("aria-pressed", "true");
+    const mode = page.getByRole("button", { name: "Mode: Commenting", exact: true });
+    await mode.click();
+    await expect(page.getByRole("menuitemradio")).toHaveText(["Commenting", "Suggesting"]);
+    await expect(page.getByRole("menuitemradio", { name: "Commenting", exact: true })).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
     await expect(toolbarOf(page)).toBeHidden();
     await expect(editorOf(page)).toHaveAttribute("contenteditable", "false");
     // Selecting opens the comment box straight away.
@@ -1626,7 +1645,8 @@ test.describe("suggestions and roles", () => {
     await expect(threadCards(page)).toHaveCount(1);
     expect((await threadsOf(owner.page, doc.id)).map(t => [t.quote, t.created_by.uuid])).toEqual([["reads this line", friend.account.uuid]]);
 
-    await modeButton(page, "Suggesting").click();
+    await chooseDocMode(page, "Suggesting");
+    await openFormatting(page);
     await expect(toolbarOf(page)).toContainText("Suggesting: your changes are proposed for review.");
     await caretAfter(page, "reads");
     await page.keyboard.type(" closely");
@@ -1643,6 +1663,7 @@ test.describe("suggestions and roles", () => {
     await expect(suggestionsList(page)).toBeVisible();
     await expect(suggestionsList(page).getByRole("button", { name: /^(Accept|Reject)/ })).toHaveCount(0);
     await openDoc(owner.page, doc.id);
+    await openComments(owner.page);
     const list = suggestionsList(owner.page);
     await expect(list).toContainText(friend.account.display_name || friend.account.id);
     await list.getByRole("button", { name: /^Reject(?: all)?$/ }).first().click();
@@ -1694,6 +1715,7 @@ test.describe("suggestions and roles", () => {
     await page.getByRole("menuitem", { name: "Mode", exact: true }).click();
     await expect(page.getByRole("menuitemradio", { name: "Editing", exact: true })).toHaveCount(0);
     await page.getByRole("menuitemradio", { name: "Suggesting", exact: true }).click();
+    await openFormatting(page);
     await expect(toolbarOf(page)).toBeVisible();
     await expect(editorOf(page)).toHaveAttribute("contenteditable", "true");
     await caretAfter(page, "Read");
@@ -1727,7 +1749,7 @@ test.describe("suggestions and roles", () => {
     await share(owner.page, doc.id, friend.account.id, "viewer");
     const page = friend.page;
     await openDoc(page, doc.id);
-    await expect(page.getByRole("group", { name: "Mode" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Mode: / })).toHaveCount(0);
     await expect(toolbarOf(page)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Comments", exact: true })).toHaveCount(0);
     await expect(editorOf(page)).toHaveAttribute("contenteditable", "false");

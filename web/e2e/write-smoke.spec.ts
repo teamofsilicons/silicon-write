@@ -4,6 +4,7 @@
  */
 import { expect, test } from "@playwright/test";
 import { accountsSession, runAccounts, signIn } from "./support";
+import { chooseDocMode, docSyncState } from "./doc-support";
 
 test("write a doc and comment on it", async ({ browser }) => {
   const context = await accountsSession(browser, "carbon");
@@ -15,7 +16,7 @@ test("write a doc and comment on it", async ({ browser }) => {
     await page.waitForURL(/\/d\/d_/);
     const editor = page.locator(".ProseMirror");
     await expect(editor).toBeVisible();
-    await expect(page.getByText("Every change saved")).toBeVisible({ timeout: 20_000 });
+    await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced", { timeout: 20_000 });
     await editor.click();
     await page.keyboard.type("Plan for the launch");
     await page.keyboard.press("Enter");
@@ -25,8 +26,8 @@ test("write a doc and comment on it", async ({ browser }) => {
     await expect
       .poll(async () => (await (await page.request.get(`/api/v1/docs/${docId}/markdown`)).json()).markdown as string, { timeout: 15_000 })
       .toContain("The quick brown fox");
-    // Viewing mode: selecting text opens the comment box straight away.
-    await page.getByRole("button", { name: "Viewing", exact: true }).click();
+    // Reading mode: selecting text opens the comment box straight away.
+    await chooseDocMode(page, "Reading");
     const sentence = editor.getByText("The quick brown fox jumps over the lazy dog.");
     await sentence.selectText();
     const box = page.getByRole("dialog", { name: "New comment" });

@@ -20,6 +20,11 @@ import { keys, useSuggestions, useThreads } from "@/lib/write/queries";
 import { displayName, type Account, type Doc, type Thread } from "@/lib/write/types";
 import { useMentionPeople } from "./selection-comment";
 import styles from "./doc.module.css";
+import commentStyles from "./comments.module.css";
+
+function scrollBehavior(): ScrollBehavior {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
 
 function toThreadComments(thread: Thread): ThreadComment[] {
   const [first, ...rest] = thread.comments;
@@ -41,7 +46,7 @@ function ThreadCard({ thread, active, account, people, onActivate, docId }: { th
   const ref = useRef<HTMLDivElement>(null);
   const comments = useMemo(() => toThreadComments(thread), [thread]);
   useEffect(() => {
-    if (active) ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (active) ref.current?.scrollIntoView({ behavior: scrollBehavior(), block: "nearest" });
   }, [active]);
   const refresh = () => client.invalidateQueries({ queryKey: ["threads", docId] });
 
@@ -59,15 +64,16 @@ function ThreadCard({ thread, active, account, people, onActivate, docId }: { th
 
   const quote = thread.orphaned ? thread.quote : thread.current_quote ?? thread.quote;
   return (
-    <div ref={ref} className={styles.threadCard} data-active={active ? "" : undefined} data-thread-card={thread.id} onClick={onActivate}>
-      <div className={styles.threadQuote}>
-        {thread.anchor.kind === "block" ? <span className={styles.threadKind}>Section</span> : null}
-        {thread.anchor.kind === "cell" ? <span className={styles.threadKind}>Cell</span> : null}
-        {thread.anchor.kind === "image" ? <span className={styles.threadKind}>{thread.anchor.rect ? "Image area" : "Image"}</span> : null}
-        {thread.anchor.kind === "pdf" ? <span className={styles.threadKind}>Page {thread.anchor.rect?.page}</span> : null}
+    <div ref={ref} className={commentStyles.threadCard} data-active={active ? "" : undefined} data-thread-card={thread.id} onClick={onActivate}>
+      <button type="button" className={commentStyles.threadQuote} title="Show comment in document" onClick={event => { event.stopPropagation(); onActivate(); }}>
+        {thread.anchor.kind === "block" ? <span className={commentStyles.threadKind}>Section</span> : null}
+        {thread.anchor.kind === "cell" ? <span className={commentStyles.threadKind}>Cell</span> : null}
+        {thread.anchor.kind === "image" ? <span className={commentStyles.threadKind}>{thread.anchor.rect ? "Image area" : "Image"}</span> : null}
+        {thread.anchor.kind === "pdf" ? <span className={commentStyles.threadKind}>Page {thread.anchor.rect?.page}</span> : null}
         {quote ? <q>{quote.slice(0, 140)}{quote.length > 140 ? "…" : ""}</q> : null}
-        {thread.orphaned ? <span className={styles.orphaned}>The text this was on was deleted.</span> : null}
-      </div>
+        {!quote && thread.anchor.kind === "text" ? <span className={commentStyles.threadKind}>Comment on document</span> : null}
+        {thread.orphaned ? <span className={commentStyles.orphaned}>The text this was on was deleted.</span> : null}
+      </button>
       <CommentThread
         comments={comments}
         onCommentsChange={(next, event) => void onChange(next, event)}
@@ -83,8 +89,8 @@ function ThreadCard({ thread, active, account, people, onActivate, docId }: { th
           refresh();
         }}
         maxDepth={1}
+        presentation="margin"
         placeholder="Reply, or @mention someone"
-        className={styles.thread}
       />
     </div>
   );
@@ -106,33 +112,35 @@ function SuggestionCards({ docId, editor, canEdit }: { docId: string; editor: Ed
   const reveal = (id: string) => {
     if (!editor) return;
     const el = editor.view.dom.querySelector(`[data-suggestion="${CSS.escape(id)}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
   };
   return (
-    <section className={styles.suggestions} aria-label="Suggestions">
-      <div className={styles.panelSubhead}>
+    <section className={commentStyles.suggestions} aria-label="Suggestions">
+      <div className={commentStyles.panelSubhead}>
         <span>{suggestions.length === 1 ? "1 suggestion" : `${suggestions.length} suggestions`}</span>
         {canEdit && suggestions.length > 1 ? (
-          <span className={styles.subheadActions}>
-            <button type="button" className={styles.textButton} onClick={() => void decide("accept-all")}>Accept all</button>
-            <button type="button" className={styles.textButton} onClick={() => void decide("reject-all")}>Reject all</button>
+          <span className={commentStyles.subheadActions}>
+            <button type="button" className={commentStyles.textButton} onClick={() => void decide("accept-all")}>Accept all</button>
+            <button type="button" className={commentStyles.textButton} onClick={() => void decide("reject-all")}>Reject all</button>
           </span>
         ) : null}
       </div>
       {suggestions.map(s => (
-        <div key={s.id} className={styles.suggestionCard} onClick={() => reveal(s.id)} data-sq="panel">
-          <div className={styles.suggestionWho}>
-            {s.author ? <Avatar name={displayName(s.author)} src={s.author.pfp_url || undefined} size="sm" /> : null}
-            <span>{s.author ? displayName(s.author) : "Someone"}</span>
-          </div>
-          {s.deleted ? <p className={styles.suggestionText}><span className={styles.label}>Delete</span> <del>{s.deleted.slice(0, 200)}</del></p> : null}
-          {s.inserted ? <p className={styles.suggestionText}><span className={styles.label}>Add</span> <ins>{s.inserted.slice(0, 200)}</ins></p> : null}
+        <div key={s.id} className={commentStyles.suggestionCard}>
+          <button type="button" className={commentStyles.suggestionPreview} title="Show suggestion in document" onClick={() => reveal(s.id)}>
+            <span className={commentStyles.suggestionWho}>
+              {s.author ? <Avatar name={displayName(s.author)} src={s.author.pfp_url || undefined} size="sm" /> : null}
+              <span>{s.author ? displayName(s.author) : "Someone"}</span>
+            </span>
+            {s.deleted ? <span className={commentStyles.suggestionText}><span className={commentStyles.label}>Delete</span> <del>{s.deleted.slice(0, 200)}</del></span> : null}
+            {s.inserted ? <span className={commentStyles.suggestionText}><span className={commentStyles.label}>Add</span> <ins>{s.inserted.slice(0, 200)}</ins></span> : null}
+          </button>
           {canEdit ? (
-            <div className={styles.suggestionActions}>
-              <Button variant="secondary" size="sm" onClick={e => { e.stopPropagation(); void decide(`${seg(s.id)}/accept`); }}>
+            <div className={commentStyles.suggestionActions}>
+              <Button variant="secondary" size="sm" onClick={() => void decide(`${seg(s.id)}/accept`)}>
                 <Check size={14} aria-hidden="true" /> Accept
               </Button>
-              <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); void decide(`${seg(s.id)}/reject`); }}>
+              <Button variant="ghost" size="sm" onClick={() => void decide(`${seg(s.id)}/reject`)}>
                 <X size={14} aria-hidden="true" /> Reject
               </Button>
             </div>
@@ -163,7 +171,7 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, onAc
   const step = (delta: number) => {
     if (!list.length) return;
     const index = list.findIndex(t => t.id === activeThread);
-    const next = list[(index + delta + list.length) % list.length];
+    const next = list[index === -1 ? (delta > 0 ? 0 : list.length - 1) : (index + delta + list.length) % list.length];
     onActivate(next.id);
   };
 
@@ -187,33 +195,33 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, onAc
   });
 
   return (
-    <aside ref={panel} className={styles.panel} aria-label="Comments">
-      <div className={styles.panelHead}>
+    <aside ref={panel} className={`${styles.panel} ${commentStyles.panel}`} aria-label="Comments">
+      <div className={commentStyles.panelHead}>
         <h2>Comments</h2>
-        <div className={styles.panelHeadActions}>
-          <button type="button" className={styles.iconButton} aria-label="Previous comment (K)" onClick={() => step(-1)}>
-            <ChevronUp size={16} />
+        <div className={commentStyles.panelHeadActions}>
+          <button type="button" className={commentStyles.iconButton} aria-label="Previous comment (K)" disabled={!list.length} onClick={() => step(-1)} data-sq="control">
+            <ChevronUp size={16} aria-hidden="true" />
           </button>
-          <button type="button" className={styles.iconButton} aria-label="Next comment (J)" onClick={() => step(1)}>
-            <ChevronDown size={16} />
+          <button type="button" className={commentStyles.iconButton} aria-label="Next comment (J)" disabled={!list.length} onClick={() => step(1)} data-sq="control">
+            <ChevronDown size={16} aria-hidden="true" />
           </button>
-          <button type="button" className={styles.iconButton} aria-label="Close comments" onClick={onClose}>
-            <X size={16} />
+          <button type="button" className={commentStyles.iconButton} aria-label="Close comments" onClick={onClose} data-sq="control">
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
       </div>
-      <SegmentedControl options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setShow(v as "open" | "resolved")} label="Show" size="xs" />
+      <SegmentedControl className={commentStyles.tabs} options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setShow(v as "open" | "resolved")} label="Show" size="xs" />
       {doc.kind === "doc" ? <SuggestionCards docId={docId} editor={editor} canEdit={canEdit} /> : null}
-      <div className={styles.threadList}>
+      <div className={commentStyles.threadList}>
         {list.length === 0 ? (
-          <p className={styles.panelEmpty}>{show === "open" ? "No open comments. Select text to comment on it." : "No resolved comments yet."}</p>
+          <p className={commentStyles.panelEmpty}>{show === "open" ? "No open comments. Select text to comment on it." : "No resolved comments yet."}</p>
         ) : (
           list.map(thread => (
             <ThreadCard key={thread.id} thread={thread} active={thread.id === activeThread} account={account} people={people} onActivate={() => onActivate(thread.id)} docId={docId} />
           ))
         )}
       </div>
-      {list.length ? <p className={styles.panelFoot}>{list.length === 1 ? "1 thread" : `${list.length} threads`} · J and K move between them · updated {formatRelative(list[list.length - 1].created_at)}</p> : null}
+      {list.length ? <p className={commentStyles.panelFoot}>{list.length === 1 ? "1 thread" : `${list.length} threads`} · J and K move between them · updated {formatRelative(list[list.length - 1].created_at)}</p> : null}
     </aside>
   );
 }

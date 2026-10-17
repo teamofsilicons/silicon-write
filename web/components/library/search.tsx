@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Page, PageHeader } from "@/components/foundation/layout/layout";
+import { Page } from "@/components/foundation/layout/layout";
 import { SearchField } from "@/components/silicon-ui/search-field/search-field";
 import { api } from "@/lib/client/api";
 import { formatRelative } from "@/lib/format";
@@ -38,8 +38,12 @@ export function Search() {
   const { data, isFetching } = useQuery({ queryKey: ["search", query], queryFn: () => api.get<{ results: { doc: Doc; snippet: string }[] }>("/v1/search", { query: { q: query } }), enabled: query.trim().length > 0 });
   const results = data?.results ?? [];
   return (
-    <Page>
-      <PageHeader title="Search" description="The text of every doc you can open." />
+    <Page className={styles.libraryPage}>
+      <header className={styles.libraryHeader}>
+        <p className={styles.eyebrow}>Silicon Write</p>
+        <h1>Search</h1>
+        <p className={styles.description}>Find a thought in any doc you can open.</p>
+      </header>
       <div className={styles.searchBox}>
         <SearchField label="Search docs" value={q} onValueChange={setQ} placeholder="Words in a doc or its title" autoFocus />
       </div>

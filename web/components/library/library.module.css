@@ -1,30 +1,33 @@
-/* The library: one list style for folders and docs, hairlines between rows, actions in a menu. */
-.crumbs { margin-bottom: var(--space-2); }
+/* Writings' reading column, scoped to the library rather than the shared layout primitives. */
+.libraryPage.libraryPage { display: block; width: min(100%, 768px); max-width: none; margin-inline: auto; padding: 32px 24px 96px; }
+.libraryHeader { min-width: 0; }
+.eyebrow { margin: 0 0 20px; color: var(--text-muted); font: 400 .75rem/1.4 var(--font-pixel); text-transform: uppercase; letter-spacing: .025em; }
+.libraryHeader h1 { margin: 0; color: var(--accent-ink); font: 400 3rem/1.12 var(--font-serif); letter-spacing: -.025em; overflow-wrap: anywhere; }
+.description { max-width: 62ch; margin: 10px 0 0; color: var(--text-secondary); font-size: 1.125rem; line-height: 1.5; text-wrap: pretty; }
+.crumbs { margin: 0 0 24px; }
 .crumbs li { min-width: 0; max-width: 100%; }
 .crumbs li > [data-label] { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.headerActions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.list { list-style: none; margin: var(--space-4) 0 0; padding: 0; }
-.row {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 52px;
-  padding: var(--space-1) var(--space-2);
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 12px;
-}
-.row:hover { background: var(--surface-muted); }
-.rowIcon { color: var(--text-muted); }
-.rowTitle { color: var(--foreground); font-weight: 500; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-a.rowTitle:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: .2em; }
-.rowMeta { min-width: 0; color: var(--text-muted); font-size: .82rem; white-space: nowrap; }
-.more { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 0; background: none; color: var(--text-muted); border-radius: 10px; cursor: pointer; }
-.more:hover, .more[data-state="open"] { background: var(--surface-pressed); color: var(--foreground); }
-.trashActions { display: flex; gap: var(--space-2); align-items: center; }
+.libraryActions { margin-top: 36px; }
+.libraryActions:empty { display: none; }
+.headerActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.newDoc { --primary: var(--foreground); --primary-hover: #383731; --primary-pressed: #45433D; }
+.list { list-style: none; margin: 28px 0 0; padding: 0; border-top: 1px solid var(--border-subtle); }
+.list:empty { display: none; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; min-width: 0; padding: 24px 0; border-bottom: 1px solid var(--border-subtle); }
+.rowText { display: grid; min-width: 0; gap: 8px; }
+.rowTitle { min-width: 0; color: var(--foreground); font: 400 1.5rem/1.3 var(--font-serif); letter-spacing: -.012em; text-decoration: none; overflow-wrap: anywhere; }
+a.rowTitle:hover { color: var(--accent-ink); }
+a.rowTitle:focus-visible, .result a:focus-visible { color: var(--accent-ink); background: var(--surface-muted); outline: none; text-decoration: underline; text-underline-offset: .15em; }
+.folderTitle { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
+.folderTitle .rowTitle { font: 400 1.125rem/1.4 var(--font-body); letter-spacing: 0; }
+.rowIcon { flex: none; align-self: center; color: var(--text-muted); }
+.rowMeta { min-width: 0; color: var(--text-muted); font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.more { --sq-r: 9px; --sq-fill: transparent; display: inline-grid; flex: none; place-items: center; width: 34px; height: 34px; margin-top: -2px; border: 0; background: var(--sq-fill); color: var(--text-muted); cursor: pointer; }
+.more:hover, .more:focus-visible, .more[data-state="open"] { --sq-fill: var(--surface-pressed); color: var(--foreground); outline: none; }
+.trashActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .loading { color: var(--text-muted); }
 .error { color: var(--danger); }
-.transfers { display: grid; gap: var(--space-2); margin: var(--space-4) 0; }
+.transfers { display: grid; gap: var(--space-2); margin: 28px 0; }
 .transfer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-left: 2px solid var(--accent); background: var(--accent-subtle); border-radius: 0 12px 12px 0; }
 .transferText { flex: 1; min-width: 200px; }
 .nameForm { display: grid; gap: var(--space-4); }
@@ -36,16 +39,19 @@ a.rowTitle:hover { color: var(--accent-ink); text-decoration: underline; text-un
 .moveRow > svg { flex: none; }
 .moveRow:hover { background: var(--surface-muted); }
 .moveRow[data-selected] { background: var(--surface-pressed); font-weight: 500; }
-.searchBox { max-width: 640px; margin-top: var(--space-4); }
-.result { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); padding: var(--space-3) var(--space-2); border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
-.result .rowMeta { white-space: normal; }
-.result a { color: var(--foreground); font-weight: 500; text-decoration: none; }
-.result a:hover { color: var(--accent-ink); text-decoration: underline; }
-.snippet { margin: 0; color: var(--text-secondary); font: 400 .92rem/1.5 "Iowan Old Style", Georgia, serif; }
-.snippet strong { background: rgb(31 92 177 / .12); font-weight: 600; color: var(--foreground); }
+.searchBox { margin-top: 36px; }
+.result { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 24px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+.result a { color: var(--foreground); font: 400 1.5rem/1.3 var(--font-serif); letter-spacing: -.012em; text-decoration: none; }
+.result a:hover { color: var(--accent-ink); }
+.snippet { margin: 0; color: var(--text-secondary); font: 400 1rem/1.6 var(--font-body); }
+.snippet strong { background: rgb(31 92 177 / .12); font-weight: 500; color: var(--foreground); }
 
 @media (max-width: 640px) {
-  .row { grid-template-columns: 24px minmax(0, 1fr) auto; }
-  .row .rowMeta { grid-column: 2 / -1; grid-row: 2; white-space: normal; overflow-wrap: anywhere; }
+  .libraryPage.libraryPage { padding: 28px 20px 80px; }
+  .libraryHeader h1 { font-size: 2.5rem; }
+  .description { font-size: 1rem; }
+  .eyebrow { margin-bottom: 16px; }
+  .row { gap: 12px; }
   .trashActions { grid-column: 1 / -1; }
+  .transferText { min-width: 0; flex-basis: calc(100% - 32px); overflow-wrap: anywhere; }
 }

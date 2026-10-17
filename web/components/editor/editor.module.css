@@ -1,19 +1,19 @@
-/* The doc: one calm reading column on paper. Titles in Hedvig Letters Serif, text in a reading serif, the interface
+/* The doc: one calm reading column on paper. Titles in Hedvig Letters Serif, text in BDO Grotesk, the interface
    (menus, notes) in BDO Grotesk. Comments, suggestions and other people's changes are tints, never boxes. */
 
 .editor {
-  --reading: "Iowan Old Style", "Charter", "Hedvig Letters Serif", Georgia, serif;
+  --reading: var(--font-body);
   width: 100%;
 }
 
 .prose {
   font-family: var(--reading);
-  font-size: 1.125rem;
+  font-size: 1.1875rem;
   line-height: 1.7;
   color: var(--foreground);
   outline: none;
-  min-height: 60vh;
-  padding-bottom: 30vh;
+  min-height: 45vh;
+  padding-bottom: var(--space-20);
   caret-color: var(--accent);
   word-wrap: break-word;
   overflow-wrap: anywhere;
@@ -21,18 +21,18 @@
 
 .prose > * + * { margin-top: .75em; }
 .prose p { margin: 0; }
-.prose p + p { margin-top: .85em; }
+.prose p + p { margin-top: 1em; }
 
 .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
-  font-family: var(--font-serif);
-  font-weight: 400;
+  font-family: var(--font-body);
+  font-weight: 500;
   letter-spacing: -.015em;
   line-height: 1.2;
   margin: 1.6em 0 .5em;
   text-wrap: balance;
 }
-.prose h1 { font-size: 2.1rem; color: var(--accent-ink); }
-.prose h2 { font-size: 1.6rem; }
+.prose h1 { font-size: 2.1rem; color: var(--foreground); }
+.prose h2 { font-size: 1.75rem; }
 .prose h3 { font-size: 1.3rem; }
 .prose h4, .prose h5, .prose h6 { font-size: 1.1rem; }
 .prose > :first-child { margin-top: 0; }
@@ -53,7 +53,7 @@
   line-height: 1.65;
   background: var(--surface-muted);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 6px;
   padding: var(--space-4) var(--space-5);
   overflow-x: auto;
   white-space: pre;
@@ -63,8 +63,10 @@
 .prose blockquote {
   margin: 1em 0;
   padding-left: 1.1em;
-  border-left: 2px solid var(--border-strong);
-  color: var(--text-secondary);
+  border-left: 2px solid var(--foreground);
+  color: var(--foreground);
+  font-family: var(--font-serif);
+  font-style: italic;
 }
 
 .prose ul, .prose ol { padding-left: 1.5em; margin: .6em 0; }

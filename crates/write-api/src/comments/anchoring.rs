@@ -340,3 +340,62 @@ pub(super) fn recover(
     }
     Ok(tracked.into_iter().map(|(range, _)| range).collect())
 }
+
+/// Section comments are points, but formatting may recreate the entire containing block.
+/// Recover its original text through the same causal history as a text comment, then keep a
+/// point inside the one surviving section. Never turn a section into a text-range comment or
+/// guess between multiple sections after a split.
+pub(super) fn recover_section(
+    updates: &[StoredUpdate],
+    restoring: &std::collections::HashSet<i64>,
+    seq: i64,
+    start: &str,
+) -> Result<Option<String>, write_doc::history::HistoryError> {
+    let y = write_doc::history::replay(
+        updates
+            .iter()
+            .filter(|u| u.seq <= seq)
+            .map(|u| u.update.as_slice()),
+    )?;
+    let fragment = ydoc::fragment(&y);
+    let ranges = {
+        let txn = y.transact();
+        let map = ydoc::text_map(&txn, &fragment);
+        let Some(at) = B64
+            .decode(start)
+            .ok()
+            .and_then(|position| ydoc::resolve_position(&txn, &map, &position))
+        else {
+            return Ok(None);
+        };
+        let Some(&(from, to, _)) = map
+            .blocks
+            .iter()
+            .find(|&&(from, to, _)| at >= from && at <= to)
+        else {
+            return Ok(None);
+        };
+        capture(&txn, &map, from, to)
+    };
+    let recovered = recover(updates, restoring, seq, &ranges)?;
+    let current = write_doc::history::replay(updates.iter().map(|u| u.update.as_slice()))?;
+    let fragment = ydoc::fragment(&current);
+    let txn = current.transact();
+    let map = ydoc::text_map(&txn, &fragment);
+    let surviving: Vec<_> = recovered
+        .iter()
+        .filter_map(|range| resolve(&txn, &map, range).map(|(from, to)| (range, from, to)))
+        .collect();
+    let Some((first, from, _)) = surviving.iter().min_by_key(|(_, from, _)| *from) else {
+        return Ok(None);
+    };
+    let Some(block) = map.block_at(*from) else {
+        return Ok(None);
+    };
+    if surviving.iter().any(|(_, from, to)| {
+        map.block_at(*from) != Some(block) || map.block_at(to.saturating_sub(1)) != Some(block)
+    }) {
+        return Ok(None);
+    }
+    Ok(Some(first.start.clone()))
+}

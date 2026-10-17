@@ -1,12 +1,12 @@
 "use client";
 
-/** Word count and whether everything is saved. */
-import { useEffect, useState } from "react";
+/** Quiet document counts and the live connection's actual sync state. */
+import { useCallback, useSyncExternalStore } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
 import type { LiveDoc } from "@/lib/write/live";
 import styles from "./doc.module.css";
 
-export function StatusBar({ editor, live }: { editor: Editor; live: LiveDoc | null }) {
+export function StatusBar({ editor }: { editor: Editor }) {
   const counts = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -14,24 +14,31 @@ export function StatusBar({ editor, live }: { editor: Editor; live: LiveDoc | nu
       return { words: storage?.words() ?? 0, characters: storage?.characters() ?? 0 };
     },
   });
-  const [status, setStatus] = useState<"connected" | "connecting" | "disconnected">(() => (live?.provider.wsconnected ? "connected" : "connecting"));
-  const [synced, setSynced] = useState(() => Boolean(live?.provider.synced));
-  useEffect(() => {
-    if (!live) return;
-    const onStatus = ({ status: next }: { status: "connected" | "connecting" | "disconnected" }) => setStatus(next);
-    const onSync = (value: boolean) => setSynced(value);
-    live.provider.on("status", onStatus);
-    live.provider.on("sync", onSync);
-    return () => {
-      live.provider.off("status", onStatus);
-      live.provider.off("sync", onSync);
-    };
-  }, [live]);
-  const saved = status === "connected" && synced ? "Every change saved" : status === "disconnected" ? "Offline: your changes will be saved when you're back" : "Connecting…";
   return (
     <footer className={styles.statusBar}>
       <span>{counts.words === 1 ? "1 word" : `${counts.words.toLocaleString()} words`} · {counts.characters.toLocaleString()} characters</span>
-      <span data-status={status} className={styles.saveState}>{saved}</span>
     </footer>
   );
+}
+
+export function SyncState({ live, error }: { live: LiveDoc | null; error?: string | null }) {
+  const subscribe = useCallback((changed: () => void) => {
+    if (!live) return () => {};
+    live.provider.on("status", changed);
+    live.provider.on("sync", changed);
+    return () => {
+      live.provider.off("status", changed);
+      live.provider.off("sync", changed);
+    };
+  }, [live]);
+  const snapshot = useCallback(() => {
+    if (error) return "error";
+    if (!live || live.provider.wsconnecting) return "connecting";
+    if (!live.provider.wsconnected) return "disconnected";
+    return live.provider.synced ? "synced" : "connecting";
+  }, [live, error]);
+  const status = useSyncExternalStore(subscribe, snapshot, () => "connecting");
+  const label = status === "synced" ? "Synced" : status === "disconnected" ? "Offline" : status === "error" ? "Couldn't connect" : "Connecting…";
+  const detail = status === "synced" ? "Connected and synced" : status === "disconnected" ? "Offline: your changes will be saved when you're back" : error || "Connecting to the doc";
+  return <span role="status" aria-label={detail} title={detail} data-status={status} className={styles.saveState}><span className={styles.saveDot} aria-hidden="true" /><span className={styles.saveLabel}>{label}</span></span>;
 }

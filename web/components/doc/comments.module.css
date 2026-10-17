@@ -1,0 +1,157 @@
+/* Comments share the document's placement, but read like notes in its margin. */
+.panel,
+.composerCard,
+.commentPill {
+  --foreground: #171717;
+  --surface: #fff;
+  --surface-muted: #f7f5f1;
+  --border: #e7e4df;
+  --border-subtle: #e7e4df;
+  --text-secondary: #625e58;
+  --text-muted: #6b675f;
+  --radius-control: 6px;
+  --radius-container: 6px;
+  --comment-blue: #2f68b8;
+}
+
+.panel.panel {
+  gap: 20px;
+  padding: 24px;
+  background: var(--surface);
+  font-family: var(--font-body);
+}
+.panelHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.panelHead h2 { margin: 0; font: 500 18px/1.4 var(--font-body); letter-spacing: -.02em; }
+.panelHeadActions { display: flex; gap: 4px; }
+.iconButton {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  corner-shape: superellipse(1.5);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.iconButton:last-child { margin-left: 4px; background: var(--surface-muted); }
+.iconButton:disabled { opacity: .35; cursor: default; }
+
+/* Keep the existing segmented control's keyboard behavior, with quiet tab rules. */
+.panel .tabs {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.panel .tabs[data-size] > div { gap: 24px; padding: 0; border-radius: 0; }
+.panel .tabs[data-size] button {
+  min-height: 35px;
+  padding: 0 0 10px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-size: 13px;
+  font-weight: 400;
+}
+.panel .tabs[data-size] button[aria-pressed="true"] { border-bottom-color: var(--foreground); }
+.panel .tabs button > span[aria-hidden] { display: none; }
+
+.threadList { display: grid; min-width: 0; }
+.threadCard { min-width: 0; padding: 20px 0; border-top: 1px solid var(--border); }
+.threadCard:first-child { padding-top: 0; border-top: 0; }
+.threadCard:last-child { padding-bottom: 0; }
+.threadQuote,
+.suggestionPreview {
+  display: grid;
+  width: 100%;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.threadQuote {
+  margin: 0 0 14px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--comment-blue) 55%, white);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.threadCard[data-active] .threadQuote { border-left-color: var(--comment-blue); }
+.threadQuote q,
+.composerQuote {
+  color: var(--text-secondary);
+  font: 400 15px/1.55 var(--font-serif);
+  quotes: "“" "”";
+}
+.threadKind,
+.composerKind,
+.label { color: var(--text-muted); font: 400 11px/1.5 var(--font-body); }
+.orphaned { color: var(--text-muted); font: 400 12px/1.5 var(--font-body); }
+.panelEmpty { margin: 0; padding: 4px 0 16px; color: var(--text-muted); font-size: 13px; line-height: 1.7; }
+.panelFoot { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+
+.suggestions { display: grid; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.panelSubhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--text-muted); font-size: 12px; }
+.subheadActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.textButton { padding: 3px 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; font: inherit; }
+.suggestionCard { display: grid; gap: 10px; min-width: 0; }
+.suggestionCard + .suggestionCard { padding-top: 16px; border-top: 1px solid var(--border); }
+.suggestionPreview { gap: 10px; border-radius: 4px; }
+.suggestionWho { display: flex; min-width: 0; align-items: center; gap: 8px; font-size: 13px; }
+.suggestionWho > :first-child { flex: none; }
+.suggestionText { display: block; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.label { margin-right: 5px; }
+.suggestionText del { color: var(--danger); text-decoration-thickness: 1px; }
+.suggestionText ins { color: var(--success); text-decoration: none; }
+.suggestionActions { display: flex; gap: 6px; }
+.suggestionActions > button { min-height: 30px; border-radius: 6px; font-size: 12px; }
+
+.composerCard.composerCard {
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  corner-shape: superellipse(1.5);
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(30 25 15 / 10%);
+}
+.composerQuote { max-height: 4.65em; overflow: hidden; margin: 0; padding-left: 12px; border-left: 2px solid var(--comment-blue); overflow-wrap: anywhere; }
+.composerKind { margin: 0; }
+.composerInput { --text-base: 14px; --space-group: 8px; --space-inset: 10px; }
+.composerInput > div:first-child { border-color: transparent; background: var(--surface-muted); }
+.composerInput > div:first-child[data-focused] { border-color: var(--comment-blue); }
+.composerActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.composerHint { flex: 1 0 100%; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.composerActions .inkButton { border-color: var(--foreground); background: var(--foreground); color: #fff; }
+.composerActions .inkButton:hover:not(:disabled) { border-color: #333; background: #333; }
+.commentPill > button { border-radius: 6px; background: var(--surface); }
+
+.panel :is(button, textarea):focus-visible,
+.composerCard button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--comment-blue);
+}
+.panel .threadQuote:focus-visible { background: #f3f6fb; }
+@media (hover: hover) and (pointer: fine) {
+  .iconButton:hover:not(:disabled) { background: var(--surface-muted); color: var(--foreground); }
+  .threadQuote:hover { border-left-color: var(--comment-blue); background: #f8faff; }
+  .textButton:hover { color: var(--foreground); }
+}
+@media (max-width: 600px) {
+  .panel.panel { padding: 20px; }
+  .iconButton { width: 36px; height: 36px; }
+  .composerCard.composerCard { max-width: calc(100vw - 32px); }
+  .composerInput { --text-base: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .threadQuote { transition: none; }
+}

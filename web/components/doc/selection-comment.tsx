@@ -15,6 +15,7 @@ import { notifyError } from "@/lib/notify";
 import { useSharing } from "@/lib/write/queries";
 import type { Account, Anchor, Thread } from "@/lib/write/types";
 import styles from "./doc.module.css";
+import commentStyles from "./comments.module.css";
 
 export interface PendingComment {
   anchor: Anchor;
@@ -71,6 +72,8 @@ export function SelectionComment({
   const [pill, setPill] = useState<{ top: number; left: number } | null>(null);
   const [value, setValue] = useState<MentionValue>({ text: "", mentions: [] });
   const [sending, setSending] = useState(false);
+  const [maxRows, setMaxRows] = useState(8);
+  const [composerPosition, setComposerPosition] = useState<{ pending: PendingComment; top: number; left: number; width: number } | null>(null);
   const input = useRef<MentionInputHandle>(null);
   const card = useRef<HTMLDivElement>(null);
   const people = useMentionPeople(docId, Boolean(account));
@@ -110,6 +113,43 @@ export function SelectionComment({
     if (pending) input.current?.focus();
   }, [pending]);
 
+  // Fit the actual composer, including a quote and the on-screen keyboard. Keep
+  // overflow visible so the mention picker can extend beyond the paper surface.
+  useLayoutEffect(() => {
+    const node = card.current;
+    if (!pending || !node) return;
+    const viewport = window.visualViewport;
+    const fit = () => {
+      const width = viewport?.width ?? window.innerWidth;
+      const height = viewport?.height ?? window.innerHeight;
+      const top = viewport?.offsetTop ?? 0;
+      const left = viewport?.offsetLeft ?? 0;
+      setMaxRows(Math.max(2, Math.min(8, Math.floor((height - 240) / 24))));
+      const cardWidth = Math.min(340, width - 32);
+      const next = {
+        pending,
+        top: Math.max(top + 16, Math.min(pending.top + 8, top + height - node.offsetHeight - 16)),
+        left: Math.max(left + 16, Math.min(pending.left - 24, left + width - cardWidth - 16)),
+        width: cardWidth,
+      };
+      // Keep one source of truth for the rendered position. Direct style writes
+      // would compete with React when the input's row count or draft changes.
+      setComposerPosition(current => current?.pending === pending && current.top === next.top && current.left === next.left && current.width === next.width ? current : next);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(node);
+    window.addEventListener("resize", fit);
+    viewport?.addEventListener("resize", fit);
+    viewport?.addEventListener("scroll", fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+      viewport?.removeEventListener("resize", fit);
+      viewport?.removeEventListener("scroll", fit);
+    };
+  }, [pending]);
+
   // Escape closes the box.
   useEffect(() => {
     if (!pending) return;
@@ -146,21 +186,25 @@ export function SelectionComment({
     const maxTop = typeof window === "undefined" ? top : window.innerHeight - 220;
     return { top: Math.max(72, Math.min(top + 8, maxTop)), left: Math.max(16, Math.min(left - 24, maxLeft)) };
   };
+  const composerStyle = pending && composerPosition?.pending === pending
+    ? { top: composerPosition.top, left: composerPosition.left, width: composerPosition.width }
+    : pending ? position(pending.top, pending.left) : undefined;
 
   return (
     <>
       {pill && !pending ? (
-        <div className={styles.commentPill} style={position(pill.top - 8, pill.left)}>
+        <div className={`${styles.commentPill} ${commentStyles.commentPill}`} style={position(pill.top - 8, pill.left)}>
           <Button variant="secondary" size="sm" onMouseDown={e => e.preventDefault()} onClick={() => onStart()}>
             <MessageSquarePlus size={15} aria-hidden="true" /> Comment
           </Button>
         </div>
       ) : null}
       {pending ? (
-        <div ref={card} className={styles.composerCard} style={position(pending.top, pending.left)} role="dialog" aria-label="New comment" data-sq="panel">
-          {pending.anchor.quote ? <p className={styles.composerQuote}>“{pending.anchor.quote.slice(0, 160)}{pending.anchor.quote.length > 160 ? "…" : ""}”</p> : null}
-          {pending.anchor.kind !== "text" ? <p className={styles.composerKind}>{pending.anchor.kind === "block" ? "On this section" : pending.anchor.kind === "cell" ? "On this cell" : pending.anchor.kind === "pdf" ? "On this area of the page" : pending.anchor.rect ? "On this area of the image" : "On this image"}</p> : null}
+        <div ref={card} className={`${styles.composerCard} ${commentStyles.composerCard}`} style={composerStyle} role="dialog" aria-label="New comment" data-sq="panel">
+          {pending.anchor.quote ? <p className={commentStyles.composerQuote}>“{pending.anchor.quote.slice(0, 160)}{pending.anchor.quote.length > 160 ? "…" : ""}”</p> : null}
+          {pending.anchor.kind !== "text" ? <p className={commentStyles.composerKind}>{pending.anchor.kind === "block" ? "On this section" : pending.anchor.kind === "cell" ? "On this cell" : pending.anchor.kind === "pdf" ? "On this area of the page" : pending.anchor.rect ? "On this area of the image" : "On this image"}</p> : null}
           <MentionInput
+            className={commentStyles.composerInput}
             ref={input}
             value={value}
             onChange={setValue}
@@ -169,15 +213,15 @@ export function SelectionComment({
             onSubmit={v => void submit(v)}
             placeholder="Comment, or @mention someone"
             minRows={2}
-            maxRows={8}
+            maxRows={maxRows}
             aria-label="Comment"
           />
-          <div className={styles.composerActions}>
-            <span className={styles.composerHint}>Enter to post · Shift+Enter for a new line</span>
+          <div className={commentStyles.composerActions}>
+            <span className={commentStyles.composerHint}>Enter to post · Shift+Enter for a new line</span>
             <Button variant="ghost" size="sm" onClick={() => { onPending(null); setValue({ text: "", mentions: [] }); }}>
               Cancel
             </Button>
-            <Button variant="primary" size="sm" loading={sending} disabled={!value.text.trim()} onClick={() => void submit()}>
+            <Button variant="primary" size="sm" className={commentStyles.inkButton} loading={sending} disabled={!value.text.trim()} onClick={() => void submit()}>
               Comment
             </Button>
           </div>

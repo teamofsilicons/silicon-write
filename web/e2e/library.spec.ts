@@ -17,6 +17,7 @@ import { join, resolve } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { Doc, Folder, Library, Member, Sharing, Transfer } from "../lib/write/types";
 import { ACCOUNTS, API, BASE, accountsSession, runAccounts, sameOrigin, signIn, signInOnHostedPages, watchErrors, type Who } from "./support";
+import { docSyncState, openFormatting } from "./doc-support";
 
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
@@ -308,8 +309,9 @@ test("New doc opens the editor, and My docs then lists the doc by its first line
   const editor = page.locator(".ProseMirror");
   await expect(editor).toBeVisible();
   await expect(editor).toHaveAttribute("contenteditable", "true");
-  await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
-  await expect(page.getByText("Every change saved")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeHidden();
+  await openFormatting(page);
+  await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced", { timeout: 20_000 });
   const doc = await must<Doc>(page, "GET", `/v1/docs/${id}`);
   expect(doc.role).toBe("owner");
   expect(doc.owner.id).toBe(carbon.id);
@@ -797,6 +799,7 @@ test("the share dialog: share with the friend by c:id, they open it from Shared 
   await expect.poll(async () => (await must<Doc>(friend.page, "GET", `/v1/docs/${doc.id}`)).role).toBe("editor");
   await friend.page.reload();
   await expect(editor).toHaveAttribute("contenteditable", "true");
+  await openFormatting(friend.page);
   await expect(friend.page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
 
   // Then a commenter.

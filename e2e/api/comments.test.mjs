@@ -959,6 +959,42 @@ describe("comments stay on their text as the doc changes", () => {
     }
   });
 
+  test("a section point follows quote wrapping and unwrapping but not a later copy", async () => {
+    const owner = await solo();
+    const text = "A café 👩‍💻 stays in its section.";
+    const doc = await newDoc(owner, `Intro.\n\n${text}\n\nEnd.\n`);
+    const client = await live(owner, doc.id);
+    try {
+      const thread = await comment(owner, doc.id, editorView(client.fragment).section(1), "On this whole section");
+      assert.equal(thread.anchor.end, undefined);
+      for (const wrap of [true, false]) {
+        await liveChange(owner, doc.id, () => client.ydoc.transact(() => {
+          const old = client.fragment.get(1);
+          const replacement = wrap ? new Y.XmlElement("blockquote") : old.get(0).clone();
+          if (wrap) replacement.insert(0, [old.clone()]);
+          client.fragment.delete(1, 1);
+          client.fragment.insert(1, [replacement]);
+        }));
+        // The second read exercises the cached point, as a reopened panel does.
+        for (let read = 0; read < 2; read++) {
+          const placed = await threadNow(owner, doc.id, thread.id);
+          assert.deepEqual([placed.orphaned, placed.block_index, placed.anchor.kind, placed.anchor.end], [false, 1, "block", undefined], `wrap=${wrap}, read=${read}`);
+          assert.equal(placed.quote, text);
+          const { mapping, doc: pm } = yTiptap.initProseMirrorDoc(client.fragment, schema());
+          const at = yTiptap.relativePositionToAbsolutePosition(client.ydoc, client.fragment, Y.decodeRelativePosition(Buffer.from(placed.anchor.start, "base64")), mapping);
+          assert.notEqual(at, null, "the returned point resolves in the real editor binding");
+          assert.equal(pm.resolve(at).node(1).textContent, text);
+        }
+      }
+      await liveChange(owner, doc.id, () => client.fragment.delete(1, 1));
+      assert.equal((await threadNow(owner, doc.id, thread.id)).orphaned, true);
+      await liveChange(owner, doc.id, () => client.fragment.insert(1, [paragraph(text)]));
+      assert.equal((await threadNow(owner, doc.id, thread.id)).orphaned, true, "a later identical paragraph is not the original section");
+    } finally {
+      client.close();
+    }
+  });
+
   test("a comment on an image, or on an area of it, is on the image (not orphaned)", async () => {
     const owner = await carbon("live-image");
     const doc = await newDoc(owner, "Intro.\n\n![Diagram](https://example.com/diagram.png)\n\nAfter.\n");

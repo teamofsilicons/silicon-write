@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * The signed-in workspace's frame: the sidebar (the app's mark and name, its sections, its docs and store page), a
- * sticky top bar (the current section, ⌘K search, the theme switch and the account menu), the page, and the ⌘K palette.
- * Below 900 px the sidebar folds into a menu sheet opened from the top bar. Page changes slide along the sections.
+ * The signed-in workspace: a slim horizontal navigation bar, the page, and the ⌘K palette.
+ * Below 900 px navigation moves into a menu sheet. The account and search stay within reach.
  *
  * The workspace layout (a Server Component) has already checked the session, so the shell renders signed in from its
  * first frame: no loading flash, no client-side "who am I" request.
@@ -11,7 +10,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ViewTransition, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BookOpen, CircleUserRound, LogOut, Menu, Search } from "lucide-react";
+import { BookOpen, CircleUserRound, LogOut, Menu, Search, Store } from "lucide-react";
 import { Drawer, DrawerContent } from "@/components/silicon-ui/drawer/drawer";
 import { BRAND_NAME, Wordmark } from "@/components/foundation/brand/app-mark";
 import type { SessionAccount } from "@/lib/account";
@@ -49,7 +48,6 @@ export function AppShell({ account, accountsUrl, children }: AppShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const section = navItemFor(pathname);
-  const SectionIcon = section?.icon;
 
   // The top bar shows a hairline once the page scrolls under it.
   useEffect(() => {
@@ -77,6 +75,7 @@ export function AppShell({ account, accountsUrl, children }: AppShellProps) {
       return { id: `go.${item.href}`, label: item.label, group: "Go to", icon: <Icon size={16} strokeWidth={1.75} />, keywords: item.keywords, run: () => router.push(item.href, { transitionTypes: [navigationType(window.location.pathname, item.href)] }) };
     }),
     { id: "go.docs", label: `${appConfig.name} docs`, description: "Opens in a new tab", group: "Go to", icon: <BookOpen size={16} strokeWidth={1.75} />, keywords: ["docs", "help", "guide"], run: () => void window.open(appConfig.links.docs, "_blank", "noopener") },
+    { id: "go.store", label: "Write in the Silicon Apps store", description: "Opens in a new tab", group: "Go to", icon: <Store size={16} strokeWidth={1.75} />, keywords: ["store", "install", "cli"], run: () => void window.open(appConfig.links.store, "_blank", "noopener") },
     { id: "go.account", label: "Your account", description: "Silicon Accounts, in a new tab", group: "Go to", icon: <CircleUserRound size={16} strokeWidth={1.75} />, keywords: ["account", "profile", "photo"], run: () => void window.open(accountsUrl, "_blank", "noopener") },
     { id: "account.signout", label: "Sign out", description: `Sign this browser out of ${appConfig.name}`, group: "Account", icon: <LogOut size={16} strokeWidth={1.75} />, keywords: ["logout", "log out", "sign out"], run: () => void signOut().catch(failure => notifyError(failure, "Could not sign out")) },
   ], [router, accountsUrl, signOut]);
@@ -84,38 +83,19 @@ export function AppShell({ account, accountsUrl, children }: AppShellProps) {
   return (
     <div className={styles.shell}>
       <a className="skip-link" data-sq="surface" href="#main">Skip to content</a>
-      <div className={styles.rail} data-vt="sidebar">
-        <aside className={styles.sidebar} aria-label={`${appConfig.name} navigation`}>
-          <div className={styles.sidebarHead}>
-            <Link href={appConfig.home} data-sq="surface" className={styles.brand} aria-label={`${BRAND_NAME}, home`}>
-              <Wordmark />
-            </Link>
-          </div>
-          <nav className={styles.nav} aria-label={appConfig.name}>
-            <NavList id="sidebar" />
-            <OutsideLinks />
-          </nav>
-          <div className={styles.sidebarFoot}>
-            Signed in with <a href={accountsUrl} target="_blank" rel="noopener">Silicon Accounts</a>
-          </div>
-        </aside>
-      </div>
-
       <div className={styles.column}>
         <header className={styles.top} data-vt="topbar" data-scrolled={scrolled ? "" : undefined}>
           <div className={styles.topStart}>
             <button type="button" data-sq="surface" className={`${styles.iconButton} ${styles.menuButton}`} onClick={() => setMenuOpen(true)} aria-label="Open the menu" aria-expanded={menuOpen}>
               <Menu size={20} strokeWidth={1.75} aria-hidden="true" />
             </button>
-            <Link href={appConfig.home} data-sq="surface" className={`${styles.brand} ${styles.mobileBrand}`} aria-label={`${BRAND_NAME}, home`}>
+            <Link href={appConfig.home} data-sq="surface" className={styles.brand} aria-label={`${BRAND_NAME}, home`}>
               <Wordmark />
             </Link>
-            {section && SectionIcon ? (
-              <span className={styles.section}>
-                <SectionIcon size={16} strokeWidth={1.75} aria-hidden="true" />
-                <span>{section.label}</span>
-              </span>
-            ) : null}
+            <nav className={styles.desktopNav} aria-label={appConfig.name}>
+              <NavList id="header" />
+              <a className={styles.guideLink} href={appConfig.links.docs} target="_blank" rel="noopener" data-sq="surface">Docs<span className="sr-only"> (opens in a new tab)</span></a>
+            </nav>
           </div>
           <div className={styles.topEnd}>
             <button data-sq="surface" type="button" className={styles.search} onClick={openCommandPalette} aria-keyshortcuts={isApple ? "Meta+K" : "Control+K"}>

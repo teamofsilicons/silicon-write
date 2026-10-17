@@ -1,4 +1,5 @@
-use super::{Range, capture, recover, resolve};
+use super::{B64, Range, capture, recover, recover_section, resolve};
+use base64::Engine;
 use std::collections::HashSet;
 use write_doc::history::StoredUpdate;
 use write_doc::{Block, Doc, Inline, Marks, Suggestion, SuggestionKind, ydoc};
@@ -280,4 +281,62 @@ fn a_later_structural_accept_cannot_reuse_offsets_of_text_already_deleted_in_pla
         None,
         "the accepted heading keeps the shortened text, not the deleted passage"
     );
+}
+
+fn section_block(history: &History, start: &str) -> Option<usize> {
+    let current = recover_section(&history.updates, &HashSet::new(), 1, start).unwrap()?;
+    let fragment = ydoc::fragment(&history.y);
+    let txn = history.y.transact();
+    let map = ydoc::text_map(&txn, &fragment);
+    let at = ydoc::resolve_position(&txn, &map, &B64.decode(current).unwrap())?;
+    map.block_at(at)
+}
+
+#[test]
+fn section_points_follow_quote_wrapping_and_unwrapping_without_becoming_text_ranges() {
+    let text = "A café 👩‍💻 stays in its section.";
+    let mut history = History::new(text);
+    let start = history.anchor(text)[0].start.clone();
+    history.reconstruct(vec![Block::Blockquote {
+        blocks: vec![paragraph(text)],
+    }]);
+    assert_eq!(section_block(&history, &start), Some(0));
+    history.reconstruct(vec![paragraph(text)]);
+    assert_eq!(section_block(&history, &start), Some(0));
+}
+
+#[test]
+fn section_points_do_not_follow_later_copies_or_ambiguous_replacements() {
+    let mut history = History::new(ORIGINAL);
+    let start = history.anchor(ORIGINAL)[0].start.clone();
+    history.change(|txn, fragment| fragment.remove_range(txn, 0, 1));
+    history.reconstruct(vec![paragraph(ORIGINAL)]);
+    assert_eq!(section_block(&history, &start), None);
+
+    let mut history = History::new(ORIGINAL);
+    let start = history.anchor(ORIGINAL)[0].start.clone();
+    history.reconstruct(vec![paragraph(ORIGINAL), paragraph(ORIGINAL)]);
+    assert_eq!(section_block(&history, &start), None);
+}
+
+#[test]
+fn a_section_point_does_not_guess_between_two_accepted_split_sections() {
+    let mut history = History::new(ORIGINAL);
+    let start = history.anchor(ORIGINAL)[0].start.clone();
+    history.reconstruct(vec![
+        proposed("s_split", SuggestionKind::Delete, paragraph(ORIGINAL)),
+        proposed(
+            "s_split",
+            SuggestionKind::Insert,
+            paragraph("The commenter"),
+        ),
+        proposed(
+            "s_split",
+            SuggestionKind::Insert,
+            paragraph(" reads this line."),
+        ),
+    ]);
+    assert_eq!(section_block(&history, &start), Some(0));
+    history.decide("s_split", true);
+    assert_eq!(section_block(&history, &start), None);
 }

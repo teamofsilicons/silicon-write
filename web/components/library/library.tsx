@@ -7,8 +7,8 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, FilePlus2, FileText, FileUp, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users, FileType2 } from "lucide-react";
-import { PageHeader, Page } from "@/components/foundation/layout/layout";
+import { ArrowLeftRight, FilePlus2, FileText, FileUp, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users } from "lucide-react";
+import { Page } from "@/components/foundation/layout/layout";
 import { Button } from "@/components/silicon-ui/button/button";
 import { Breadcrumb } from "@/components/silicon-ui/breadcrumb/breadcrumb";
 import { EmptyState } from "@/components/silicon-ui/empty-state/empty-state";
@@ -28,7 +28,7 @@ import styles from "./library.module.css";
 export type LibraryView = "mine" | "shared" | "recent" | "trash";
 
 const TITLES: Record<LibraryView, { title: string; description: string }> = {
-  mine: { title: "My docs", description: "Your docs and folders." },
+  mine: { title: "My docs", description: "A place for your thoughts, drafts and docs. Just yours, until you share them." },
   shared: { title: "Shared with me", description: "Docs and folders other Carbons and Silicons shared with you." },
   recent: { title: "Recent", description: "Your latest docs, most recently changed first." },
   trash: { title: "Trash", description: "Deleted docs and folders stay here, with their full history, until you delete them for good." },
@@ -165,36 +165,37 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const empty = !isLoading && !error && !folders.length && !docs.length;
 
   return (
-    <Page>
+    <Page className={styles.libraryPage}>
       {crumbs ? <div className={styles.crumbs}><Breadcrumb items={crumbs} /></div> : null}
-      <PageHeader
-        title={heading.title}
-        description={heading.description}
-        actions={
-          canAdd ? (
-            <div className={styles.headerActions}>
-              <Button variant="primary" size="md" onClick={newDoc}>
-                <FilePlus2 size={16} aria-hidden="true" /> New doc
-              </Button>
-              <Button variant="secondary" size="md" onClick={() => setDialog({ kind: "newFolder" })}>
-                <FolderPlus size={16} aria-hidden="true" /> New folder
-              </Button>
-              <Button variant="ghost" size="md" onClick={() => fileInput.current?.click()}>
-                <FileUp size={16} aria-hidden="true" /> Open a file
-              </Button>
-              {folder && atLeast(folder.role, "editor") ? (
-                <Button variant="ghost" size="md" onClick={() => setDialog({ kind: "share", type: "folders", id: folder.id, title: folder.name })}>
-                  <Users size={16} aria-hidden="true" /> Share folder
-                </Button>
-              ) : null}
-            </div>
-          ) : folder && !inTrash ? (
-            <Button variant="ghost" size="md" onClick={() => setDialog({ kind: "share", type: "folders", id: folder.id, title: folder.name })}>
-              <Users size={16} aria-hidden="true" /> People
+      <header className={styles.libraryHeader}>
+        <p className={styles.eyebrow}>{folder ? "Folder" : "Silicon Write"}</p>
+        <h1>{heading.title}</h1>
+        {heading.description ? <p className={styles.description}>{heading.description}</p> : null}
+      </header>
+      <div className={styles.libraryActions}>
+        {canAdd ? (
+          <div className={styles.headerActions}>
+            <Button className={styles.newDoc} variant="primary" size="sm" onClick={newDoc}>
+              <FilePlus2 size={16} aria-hidden="true" /> New doc
             </Button>
-          ) : undefined
-        }
-      />
+            <Button variant="secondary" size="sm" onClick={() => setDialog({ kind: "newFolder" })}>
+              <FolderPlus size={16} aria-hidden="true" /> New folder
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => fileInput.current?.click()}>
+              <FileUp size={16} aria-hidden="true" /> Open a file
+            </Button>
+            {folder && atLeast(folder.role, "editor") ? (
+              <Button variant="ghost" size="sm" onClick={() => setDialog({ kind: "share", type: "folders", id: folder.id, title: folder.name })}>
+                <Users size={16} aria-hidden="true" /> Share folder
+              </Button>
+            ) : null}
+          </div>
+        ) : folder && !inTrash ? (
+          <Button variant="ghost" size="sm" onClick={() => setDialog({ kind: "share", type: "folders", id: folder.id, title: folder.name })}>
+            <Users size={16} aria-hidden="true" /> People
+          </Button>
+        ) : undefined}
+      </div>
       {view === "mine" && !folderId ? <Transfers transfers={transfers.data?.incoming ?? []} onDone={refresh} /> : null}
       {error ? <p className={styles.error}>{(error as Error).message}</p> : null}
       {isLoading ? <p className={styles.loading}>Loading…</p> : null}
@@ -202,16 +203,20 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
         <EmptyState
           title={view === "trash" ? "The trash is empty" : view === "shared" ? "Nothing shared with you yet" : folder ? "This folder is empty" : "No docs yet"}
           description={inTrash ? "Restore this folder from Trash before adding anything to it." : view === "trash" ? "Deleted docs and folders come here first." : view === "shared" ? "When someone shares a doc or folder with you, it shows here." : "Make a doc, or open a Word, Markdown, text or PDF file."}
-          action={canAdd ? <Button variant="primary" size="md" onClick={newDoc}>New doc</Button> : undefined}
+          action={canAdd ? <Button className={styles.newDoc} variant="primary" size="sm" onClick={newDoc}>New doc</Button> : undefined}
           icon={<FileText size={22} aria-hidden="true" />}
         />
       ) : null}
       <ul className={styles.list} aria-label={heading.title}>
         {folders.map(f => (
           <li key={f.id} className={styles.row}>
-            <FolderIcon size={18} className={styles.rowIcon} aria-hidden="true" />
-            {view === "trash" ? <span className={styles.rowTitle}>{f.name}</span> : <Link href={`/library/${f.id}`} className={styles.rowTitle}>{f.name}</Link>}
-            <span className={styles.rowMeta}>{f.owner.uuid !== me ? f.owner.id : ""}</span>
+            <div className={styles.rowText}>
+              <div className={styles.folderTitle}>
+                <FolderIcon size={18} className={styles.rowIcon} aria-hidden="true" />
+                {view === "trash" ? <span className={styles.rowTitle}>{f.name}</span> : <Link href={`/library/${f.id}`} className={styles.rowTitle}>{f.name}</Link>}
+              </div>
+              <span className={styles.rowMeta}>Folder{f.owner.uuid !== me ? ` · ${f.owner.id}` : ""}</span>
+            </div>
             {view === "trash" ? (
               <span className={styles.trashActions}>
                 <Button variant="secondary" size="sm" onClick={() => void act("It couldn't be restored", () => api.post(`/v1/folders/${seg(f.id)}/restore`), `Restored “${f.name}”`)}>
@@ -222,7 +227,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
             ) : !inTrash ? (
               <DropdownMenuRoot>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" className={styles.more} aria-label={`More for ${f.name}`}><MoreHorizontal size={18} /></button>
+                  <button type="button" data-sq="surface" className={styles.more} aria-label={`More for ${f.name}`}><MoreHorizontal size={18} /></button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuItem icon={<Share2 size={16} />} onSelect={() => setDialog({ kind: "share", type: "folders", id: f.id, title: f.name })}>Share</DropdownMenuItem>
@@ -241,13 +246,15 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
         ))}
         {docs.map(d => (
           <li key={d.id} className={styles.row}>
-            {d.kind === "pdf" ? <FileType2 size={18} className={styles.rowIcon} aria-hidden="true" /> : <FileText size={18} className={styles.rowIcon} aria-hidden="true" />}
-            {view === "trash" ? <span className={styles.rowTitle}>{d.title}</span> : <Link href={`/d/${d.id}`} className={styles.rowTitle}>{d.title}</Link>}
-            <span className={styles.rowMeta}>
-              {d.owner.uuid !== me ? `${d.owner.id} · ` : ""}
-              {d.created_by.uuid !== d.owner.uuid ? `created by ${d.created_by.id} · ` : ""}
-              {view === "trash" && d.deleted_at ? `deleted ${formatRelative(d.deleted_at)}` : `edited ${formatRelative(d.updated_at)}`}
-            </span>
+            <div className={styles.rowText}>
+              {view === "trash" ? <span className={styles.rowTitle}>{d.title}</span> : <Link href={`/d/${d.id}`} className={styles.rowTitle}>{d.title}</Link>}
+              <span className={styles.rowMeta}>
+                {d.kind === "pdf" ? "PDF · " : ""}
+                {d.owner.uuid !== me ? `${d.owner.id} · ` : ""}
+                {d.created_by.uuid !== d.owner.uuid ? `created by ${d.created_by.id} · ` : ""}
+                {view === "trash" && d.deleted_at ? `deleted ${formatRelative(d.deleted_at)}` : `edited ${formatRelative(d.updated_at)}`}
+              </span>
+            </div>
             {view === "trash" ? (
               <span className={styles.trashActions}>
                 <Button variant="secondary" size="sm" onClick={() => void act("It couldn't be restored", () => api.post(`/v1/docs/${seg(d.id)}/restore`), `Restored “${d.title}”`)}>
@@ -258,7 +265,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
             ) : !inTrash ? (
               <DropdownMenuRoot>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" className={styles.more} aria-label={`More for ${d.title}`}><MoreHorizontal size={18} /></button>
+                  <button type="button" data-sq="surface" className={styles.more} aria-label={`More for ${d.title}`}><MoreHorizontal size={18} /></button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuItem icon={<Share2 size={16} />} onSelect={() => setDialog({ kind: "share", type: "docs", id: d.id, title: d.title })}>Share</DropdownMenuItem>

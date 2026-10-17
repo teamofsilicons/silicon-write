@@ -1,258 +1,188 @@
-# The Silicon design system (as Silicon Write uses it)
+# Silicon Write design
 
-> **2026-10-12: the Writings look, light only, no telemetry.** The site now looks like Silicon Writings, the Silicon
-> Apps store and Silicon Accounts: warm paper `#FFFDF9`, ink `#1E1E1C`, Hedvig Letters Serif for titles (page titles in
-> blue `#1F5CB1`), BDO Grotesk for text, Geist Pixel for the wordmark and small labels, the current item on beige
-> `#EDE8E0`, filled buttons in the calm blue. The mark is the app's glyph in ink beside the wordmark; icons draw it on a
-> cream square (`lib/brand-svg.ts`). It is light only (`lib/theme.ts` pins light; no theme switch anywhere), profile
-> photos are squircles, and the landing page is one calm column (Sign in, Read the docs, For Carbons, For Silicons).
-> The site records no telemetry: `appConfig.api.telemetryOptOut` names the service's opt-out header, and every call the
-> web server makes to the service sends it as "off". Where this document describes the older palette or a theme
-> switch, the note wins.
+Write follows the layout and visual language of [Silicon Writings](https://writings.teamofsilicons.com/p/mv2o9xtfokwzjv6f),
+reviewed on 17 October 2026: warm paper, a restrained header, a generous reading column, and notes in the margin.
+It keeps Write's document model and operations: private docs, folders, sharing, suggestions, version history, imports,
+exports, and collaboration between Carbons and Silicons. The reference's publishing and timeline concepts do not
+become Write features.
 
-What the developer site (developers.teamofsilicons.com), the account site (accounts.teamofsilicons.com) and the store
-(apps.teamofsilicons.com) have in common, written down so every app's web frontend looks like part of the same
-family. The kit implements all of it; this page is the reasoning and the rules for what you add.
+This guide describes the current design. The source of truth for shared colours and fonts is `styles/tokens.css`;
+page composition lives in `components/doc/`, `components/editor/`, `components/library/`, and
+`components/foundation/shell/`. The site is light only, with no theme switch and no telemetry.
 
 ## Principles
 
-1. **One look, two modes.** Light and dark (or the device's), nothing else. Every colour is a token with a value in
-   both; a page never hard-codes a colour.
-2. **Calm chrome, content first.** Bars and sidebars sit on the page colour with hairlines, not boxes. The page's own
-   title is the loudest thing on screen.
-3. **Brand blue is where you act.** Filled blue is for the one primary action of a surface, the current item's
-   indicator and links. Never for decoration, never for two buttons side by side.
-4. **Every rounded surface is a squircle.** Controls, cards, chips, menus, photos: the same superellipse curve at a few
-   sizes.
-5. **Borders, not shadows.** Things that rest on the page have a 1 px border; only floating layers (menus, dialogs,
-   toasts, the palette) cast a shadow.
-6. **Words for Carbons and Silicons.** Plain, exact, in sentence case; errors say what happened, why, and what to do.
-7. **Everyone can use it.** WCAG 2.2 AA: 4.5:1 text, a visible keyboard position on every control, reduced motion
-   respected, nothing told by colour alone.
+1. **The writing comes first.** Keep the document centered and its title with its text. Navigation and tools should
+   leave room for reading rather than surround it with persistent controls.
+2. **One quiet header.** Use compact navigation and actions on the paper background. Make the available writing mode
+   clear; reveal detailed formatting when requested.
+3. **Few boxes.** Lists and conversations use whitespace and hairlines. Menus, dialogs, fields, and floating panels
+   have edges; ordinary document content does not look like a card.
+4. **A restrained palette.** Ink carries the document and primary actions. Blue carries library titles, links, and
+   selection feedback. Status colours convey meaning and always have a text equivalent.
+5. **Keep the behavior.** A visual change must preserve roles, keyboard commands, comment anchors, pending
+   suggestions, live edits, version history, and file fidelity.
+6. **Accessible at every size.** Text contrast, visible focus, readable wrapping, target sizes, and reduced motion
+   are requirements, including inside menus and comment composers.
 
-## Colour
+## Document composition
 
-Use the semantic tokens (`styles/tokens.css`), never the hex values.
+The document has its own frame rather than the library navigation. Its centered reading column is **700 px** wide,
+with responsive side gutters. The title and editor share the same left edge. Opening comments must not move the
+writing to a different column on a wide screen.
 
-| Token | Light | Dark | For |
-| --- | --- | --- | --- |
-| `--background` | `#F7F8FA` | `#02040A` | the page |
-| `--surface` | `#FFFFFF` | `#0B0F18` | cards, panels, fields |
-| `--surface-raised` | `#FFFFFF` | `#121826` | menus, dialogs, popovers |
-| `--surface-muted` | `#EEF0F4` | `#1A2130` | hover fills, tracks, code chips |
-| `--foreground` | `#292929` | `#F7F8FA` | text, icons that matter |
-| `--text-secondary` | `#4C5260` | `#C2C8D3` | descriptions, secondary values |
-| `--text-muted` | `#5C6370` | `#9BA4B4` | hints, timestamps, placeholders |
-| `--border` / `-subtle` / `-strong` | `#E2E5EB` / `#EBEDF1` / `#CBD0D8` | `#1F2635` / `#161C28` / `#2F394B` | edges, dividers, hovered edges |
-| `--primary` (`-hover`, `-pressed`) | `#1F5FB8` | `#1F5FB8` | filled primary buttons (with `--primary-foreground`) |
-| `--accent` | `#1F5FB8` | `#6AA0EE` | indicators, selected states, focus edges |
-| `--accent-ink` | `#1F5FB8` | `#7DAEF4` | accent-coloured text (links, eyebrows) |
-| `--accent-subtle` | blue at 10 % | blue at 24 % | tinted fills (feature icons, Silicon markers) |
-| `--success`, `--warning`, `--danger` | `#18703F`, `#93560A`, `#B42318` | `#4CC38A`, `#E9B24F`, `#FF8A80` | status text and icons |
+- **Header:** 56 px, sticky, with a back link and quiet connection state on the left. Presence, Format, the mode menu,
+  history, Comments, Share, and More sit on the right. Share is an ink-filled primary action. On narrow screens,
+  secondary labels and presence collapse; the controls retain accessible names. History remains available in More.
+- **Title:** belongs above the body, not inside the header. A small uppercase line identifies the file and its
+  visibility or trash state. The title is Hedvig Letters Serif, weight 400, up to **56 px**, with 1.12 line height.
+  It scales down on phones and wraps long names. Editors can rename a live doc in place; Enter saves and Escape
+  cancels. Read-only docs and PDFs show a static title.
+- **Body:** BDO Grotesk at 19 px with 1.7 line height. Paragraphs have room between them. Content headings use BDO
+  Grotesk at medium weight; blockquotes use an italic serif and a simple vertical rule. Code retains its monospace
+  face and horizontal scrolling where necessary. Tables, images, equations, and imported formatting keep their
+  document meaning.
+- **Formatting:** collapsed initially. Format reveals the existing toolbar beneath the header; it can be hidden
+  again without changing the document. Keyboard formatting remains available. The link shortcut reveals its
+  toolbar anchor before opening the link popover. Formatting is available in Editing and Suggesting when the
+  document role allows it, and absent in Reading or Commenting.
+- **Modes:** a compact menu replaces the segmented mode selector. Editors have Editing, Suggesting, and Reading;
+  commenters have Commenting and Suggesting. Reading and Commenting share the read-only document behavior while
+  retaining the appropriate comment permissions. The internal `viewing` value is unchanged.
+- **Status:** connection/sync state is in the header. The small footer beneath the document contains word and
+  character counts. A connection indicator must reflect the live provider, including connecting, offline, and
+  error states; it is not a substitute for persistence checks.
 
-Every text token clears 4.5:1 on every surface token in its mode (measured; see the comment in `tokens.css`). Keep it
-so: a new pair needs checking before it ships.
+The formatting toolbar remains mounted while collapsed so its keyboard behavior is available. Its height joins
+the header height when positioning Find and side panels. Sticky controls must not cover focused content or jump
+targets. The page provides a keyboard-visible skip link to its main landmark.
 
-An app with its own colour sets `appConfig.accent`. It becomes `--app-accent`, which tints the app's mark and the
-landing page's wash, and nothing else: actions, links and focus stay brand blue on every Silicon site.
+## Comments, suggestions, and side panels
 
-```css
-/* Do */
-.notice { --sq-fill: var(--surface-muted); color: var(--text-secondary); }
-.count[data-over] { color: var(--danger); }
+Comments are closed on an ordinary document visit. A `?thread=` deep link opens them, as does activating an anchor
+or starting a text comment. Posting an image or PDF-area comment also opens its resulting thread.
 
-/* Don't: a colour that has no dark value, and blue as decoration */
-.notice { background: #eef0f4; color: #4c5260; }
-.sectionTitle { color: var(--primary); }
-```
+At wide desktop sizes, comments occupy the right margin beside the centered document. Below 1440 px, the panel
+becomes a floating surface; at phone widths it becomes a bottom panel. Each layout keeps its close control visible,
+scrolls long conversations within the panel, and leaves the document available. Version history and backlinks use
+the same panel placement, with wider space for version detail where needed.
 
-## Type
+A thread is a flat conversation: a quoted passage with a blue rule, small author photo and name, readable comment
+text, and compact reply, resolve, edit, and reaction controls. Hairlines separate threads. The shared
+`CommentThread` component opts into `presentation="margin"`; other consumers retain its default card treatment.
+Open and Resolved use quiet underlined selectors while retaining their keyboard behavior.
 
-Two faces. **BDO Grotesk** (self-hosted, SIL OFL; 400, 500, 600, 700) is the display face: page titles, section
-titles on the public pages, the wordmark, big numbers. Text uses the system face first (SF Pro on Apple devices, whose
-licence does not allow serving it) and BDO Grotesk where there is none.
+- Quotes are actual buttons that reveal their anchors in the document. Orphaned anchors explain that the original
+  text was deleted; a visual update never silently attaches them to another copy of the same words.
+- Previous/next controls and J/K navigate threads. Empty lists disable previous/next. Navigation does not consume
+  typing in an editor or comment field.
+- Selecting text in Reading or Commenting opens the composer; Editing offers a Comment button and the comment
+  keyboard shortcut. The composer preserves mentions, Enter to post, Shift+Enter for a new line, and Escape to
+  cancel. Its height and width stay within the viewport, including when the keyboard or a long quote reduces room.
+- Suggestions remain reviewable in the Comments panel. Their previews reveal the proposed changes. Authorized
+  editors can accept or reject one proposal or all proposals; commenters cannot approve their own changes.
+- Scrolling to a thread or suggestion respects reduced motion. PDF deep links wait until the target page is ready
+  and must not pull the reader back after they scroll elsewhere.
 
-| Use | Size | Weight | Tracking, leading |
-| --- | --- | --- | --- |
-| Landing headline (h1) | `clamp(2.5rem, 1.6rem + 4vw, 4.25rem)` | 600 display | −0.035em, 1.02 |
-| Page title (`PageHeader`) | `clamp(2.25rem, 4.8vw, 3.25rem)` | 600 display | −0.025em, 1.02 |
-| Title someone typed (`size="entity"`) | `clamp(1.75rem, 3.2vw, 2.5rem)` | 600 display | −0.025em, 1.08 |
-| Landing section title (h2) | `clamp(1.875rem, 1.35rem + 2vw, 2.75rem)` | 600 display | −0.03em, 1.08 |
-| Section title in the workspace (h2) | `--text-lg` 1.125rem | 500 text | −0.01em, 1.3 |
-| Body | `--text-base` 1rem | 400 | −0.01em, 1.4 (long reading 1.6) |
-| Secondary text, table cells, buttons | `--text-sm` 0.875rem | 400 / 500 | 1.4 |
-| Labels, hints, badges | `--text-xs` 0.75rem | 500 | 1.4 |
-| Code | `--font-mono`, 0.8125 to 0.92em | 400 | 0, 1.7 in blocks |
+## Library and navigation
 
-- One `h1` per page, then `h2` per section; never skip a level for size (style the right level instead).
-- Emphasis is weight 500 (`strong` is 500 in `base.css`); 600 only in the display face; never 700 in running text.
-- Numbers that line up (counts, times in tables) use `font-variant-numeric: tabular-nums` (`.tabular`).
-- Titles balance (`text-wrap: balance`); paragraphs `pretty`; a line of running text stays under about 70 characters.
+The desktop library uses a **56 px horizontal header**, with the wordmark and My docs, Shared with me, Recent,
+Search, and Trash on the left, and search/account actions on the right. Docs remains a direct resource link; the
+command palette also reaches the Apps store. Below 900 px, navigation moves into the existing menu drawer. The
+account menu, sign-out behavior, and ⌘K / Ctrl+K palette retain their existing operations.
 
-```tsx
-// Do: the page's title through PageHeader, sections through Section
-<PageHeader title="Reminders" description="What is due, and what you shared." />
-<Section title="Due today">…</Section>
+The library and search use a scoped **720 px content column**, centered on the page with roughly 32 px of space
+below the header. This does not change the shared `Page` primitive's widths for unrelated pages.
 
-// Don't: a second h1, a heading picked for its size, a bold paragraph as a title
-<h1>Reminders</h1> <h1 className={styles.small}>Due today</h1>
-<p><b>Due today</b></p>
-```
+- A small uppercase eyebrow precedes a blue Hedvig title at 48 px, then an 18 px description. Phones use smaller
+  type and side gutters.
+- New doc is the ink primary action. New folder, Open a file, and applicable sharing actions remain compact and
+  accessible near the heading. Folder breadcrumbs wrap long names without pushing actions off screen.
+- Documents are an airy list, with 24 px serif titles and smaller metadata below. Rows have hairlines rather than
+  card frames. Long titles and account ids wrap. Document icons do not repeat on every row; PDFs have a type label
+  and folders retain a distinct folder glyph.
+- Existing permissions and actions remain intact: rename, move, copy, share, ownership transfer, import, trash,
+  restore, and permanent deletion. Trash actions wrap on phones and keep the hold-to-confirm safeguard.
+- Search uses the same heading and reading width. Snippets wrap, mark matching text, and open the result without
+  a delayed query update cancelling navigation.
 
-## Space and layout
+## Colour and type
 
-The 4 px scale: `--space-1` 4, `-2` 8, `-3` 12, `-4` 16, `-5` 20, `-6` 24, `-8` 32, `-10` 40, `-12` 48, `-16` 64,
-`-20` 80, `-24` 96 px. Nothing in between.
+Use semantic tokens rather than reproducing palette values in each component. Scoped comment surfaces may tune
+these tokens to match the reference, but every foreground/background pair must still meet its contrast target.
 
-- **Page**: one `<Page>` per page: `--page-max` 1240 px, `--gutter` (16 to 32 px) at the edges, 32 to 48 px between
-  sections. `width="narrow"` (720 px) for settings and forms, `"reading"` (880 px) for one thing's details.
-- **Surfaces**: 24 px inside (20 px on phones); 16 px between a section's title and its content. Never nest a
-  `Surface` in a `Surface`: inside one, separate with hairlines (`--border-subtle`).
-- **Settings**: one `SettingsGroup` per subject, rows of label and description with the control at the end, at least
-  64 px tall. A switch stays beside its text on phones (`inline`).
-- **The workspace frame**: a 248 px sidebar and a 64 px sticky top bar; below 900 px the sidebar becomes the menu sheet.
-- **Phones (390 px)**: one column, full-width primary actions at the end of forms, tables fold into rows that say what
-  each value is, nothing scrolls sideways except code.
-
-## Shape: squircles
-
-Every rounded surface is a squircle (`styles/squircle.css`, `lib/squircle/`): browsers with `corner-shape` draw it
-natively, others get an SVG-path fallback painted from the same variables.
-
-| Radius | Value | For |
+| Token | Light value | Use |
 | --- | --- | --- |
-| `--radius-control` | 18 px | buttons, fields, selects, the share field |
-| `--radius-panel` | 26 px | settings groups, landing panels, menus |
-| `--radius-surface` | 34 px | page surfaces, cards, dialogs, empty-state frames |
-| `--radius-pill` | 9999 px | chips, badges, the search pill |
-| small parts | 6 to 12 px | kbd, icon tiles (11 px at 38 px), the mark (about 32 % of its size) |
+| `--background` | `#FFFDF9` | Warm page paper |
+| `--surface` | `#FFFFFF` | Fields and raised conversation surfaces |
+| `--surface-muted` | `#F6F2EA` | Quiet fills and hover feedback |
+| `--surface-pressed` | `#EDE8E0` | Selected and pressed fills |
+| `--foreground` | `#1E1E1C` | Body text, important icons, ink actions |
+| `--text-secondary` | `#57544D` | Descriptions and secondary content |
+| `--text-muted` | `#6B675F` | Hints, timestamps, and placeholders |
+| `--border` / `--border-subtle` / `--border-strong` | `#E7E3D8` / `#EFEBE2` / `#D6D0C1` | Edges and hairlines |
+| `--accent` / `--accent-ink` | `#1F5CB1` | Links, library titles, selected content |
+| `--success` / `--warning` / `--danger` | `#2B7148` / `#8F560D` / `#B42318` | Status and review meaning |
 
-```tsx
-// Do: mark it, give it a radius, paint through the variables (so hover and the fallback follow)
-<div data-sq="surface" className={styles.card}>…</div>
-.card { --sq-r: var(--radius-surface); --sq-fill: var(--surface); --sq-stroke: var(--border);
-        border: 1px solid var(--sq-stroke); background: var(--sq-fill); }
-.card:hover { --sq-stroke: var(--border-strong); }
+**Hedvig Letters Serif** is the title and quotation face, always weight 400. **BDO Grotesk** is the interface and
+reading face. **Geist Pixel Square** is used for the wordmark and small library labels. Fonts are self-hosted with
+their licenses under `public/fonts/`; code uses the monospace stack.
 
-// Don't: border-radius on a squircled element, or colours set directly (the fallback cannot follow them)
-.card { border-radius: 34px; background: white; border-color: #e2e5eb; }
-```
+The document title is ink; the library title is blue. Keep document headings semantically faithful to the content,
+with one separate page title. Use tabular numerals where counts or dates need alignment. Interface emphasis is
+usually weight 500; do not simulate a bold weight for Hedvig.
 
-Photos and logos use `data-sq="clip"`; an element that draws with its own `::before`/`::after` uses `data-sq-native`.
-Profile photos are 30 % squircles (Silicon UI's `Avatar`), never circles.
+## Shape, spacing, and controls
 
-## Depth
+Use the shared 4 px spacing scale for composition. The document and comment controls use smaller, restrained
+corners, generally 6 px, while dialogs and larger panels retain the shared geometry. Current shared panel and
+surface radius tokens are 14 and 18 px. Do not restore the former oversized rounded cards or sidebar layout.
 
-- Resting things: `--shadow-resting` at most (the current nav item, a selected segment). Cards: a border, no shadow.
-- Raised: `--shadow-raised` for something that lifts on hover (a landing product card) or a hero code block.
-- Floating: `--shadow-floating` for menus, dialogs, the palette, toasts, sheets; with the `--overlay` scrim behind modal
-  layers.
+Rounded surfaces use the Silicon squircle system (`data-sq` and `--sq-*`) or the component's native corner-shape
+support. Photos use the shared avatar treatment. Resting lists need no shadow; floating menus, dialogs, composers,
+and panels may use the floating shadow. Focus changes the painted fill or edge, not a decorative outer ring.
 
-## Density and controls
+Use compact buttons in headers, toolbars, and rows; larger controls belong in forms. Every icon-only action needs
+an accessible name. Targets are at least 24 × 24 px and should be larger on touch screens. New doc, Share, and
+comment submission use ink primaries in their respective contexts; secondary actions use an outline or quiet text.
+Destructive operations keep their existing confirmation behavior and never become the primary action.
 
-| Control | Height | Notes |
-| --- | --- | --- |
-| Button `sm` / `md` / `lg` | 36 / 44 / 50 px | `md` in forms and headers, `lg` for the landing page and sign-in, `sm` in toolbars and rows |
-| Field (input, select, search, share) | 44 px | label above (500, 0.875rem), hint and error below (0.75rem) |
-| Icon button | 36 to 38 px, 12 px squircle | always with an `aria-label` |
-| Nav item | 38 px, 11 px squircle | icon 18 px at 1.75 stroke, label 0.875rem 500 |
-| Table row | about 52 px | primary column in `--foreground` 500, the rest `--text-secondary` |
+## Motion and accessibility
 
-- **One primary action per surface.** Everything else is secondary (bordered), ghost (text), or in a menu.
-- **Destructive actions** never fire on one click: `HoldToConfirm` (tone `danger`) for deleting things, `ConfirmMorph`
-  for asking in place. They never sit as the primary button.
-- **Icons** are lucide at 16 px (inline, menus) or 18 px (nav, feature tiles), stroke 1.75; decorative icons are
-  `aria-hidden`.
+Motion clarifies a change rather than decorating the page: a menu appears from its trigger, an inline title becomes
+an editor in place, and the selected drawer item can move between destinations. All transitions and scroll effects
+respect reduced motion. There is no theme animation because there is no theme choice.
 
-## Motion
+- Normal text, including placeholders and tiny timestamps, needs at least 4.5:1 contrast. Check scoped tokens against
+  actual field fills as well as the page. Do not rely on a colour's contrast against white alone.
+- Keyboard focus is always visible through a fill, edge, or underline. Each page has a main landmark, a skip link,
+  and labelled navigation or complementary panels where appropriate.
+- Visible control labels appear in their accessible names. Menus preserve their standard keyboard behavior; hidden
+  toolbars and responsive labels must not leave unreachable or unnamed controls.
+- Fields expose their names, errors, and hints. Errors explain what happened and how to recover. Connection state
+  uses a quiet status announcement rather than repeated alerts.
+- Test 1440 px and 390 px layouts, long titles and ids, empty states, loaded documents, dialogs, and reduced motion.
+  A dark device preference must still receive the light site. Only deliberately scrollable document content, such
+  as code or a wide table, may overflow its reading area.
 
-Silicon UI's motion language: things glide, morph and settle on springs; nothing bounces for show.
+## Copy and accounts
 
-| Token | Value | For |
-| --- | --- | --- |
-| `--duration-instant` / `-fast` / `-standard` / `-considered` | 120 / 160 / 240 / 480 ms | presses / hovers and fades / most transitions / page-level entrances |
-| `--ease-enter` | `cubic-bezier(.16, 1, .3, 1)` | things arriving |
-| `--ease-standard` | `cubic-bezier(.22, 1, .36, 1)` | things changing |
-| `--ease-exit` | `cubic-bezier(.7, 0, .84, 0)` | things leaving (shorter than entering) |
-| `motionTokens.spring.snappy` / `smooth` / `morph` | 0.26 s (bounce .12) / 0.4 s (0) / 0.42 s (.16) | presses and toggles / panels and height / shared highlights and shape changes |
+Use Carbons and Silicons, and their public `c:` / `si:` ids. Never expose a UUID as the account's name. Show a known
+display name and profile photo, with Carbon or Silicon where the kind matters. Sharing targets exact accounts or
+email invitations and follows the service's permission rules.
 
-- Shared highlights glide between items (the sidebar's current item, tabs, segmented controls); text that changes
-  rises in with a small blur; layers grow from where they were opened; pages slide in the direction of travel.
-- The theme change is the eclipse: the next appearance crosses the page as a disc from the switch.
-- **Reduced motion**: Motion follows the device (`reducedMotion: "user"` in the providers); CSS transitions are switched
-  off under `@media (prefers-reduced-motion: reduce)` (or only declared under `no-preference`). Movement becomes an
-  instant change or a short fade. Never rely on motion to say something.
+Use sentence case and concrete action labels: New doc, Open a file, Move to the trash. Do not borrow publishing
+terms from Writings for Write operations. Errors state what failed, why, and the next action. Relative dates work
+in library rows; detailed timestamps belong in version history and other detailed views.
 
-```css
-/* Do */
-.item { transition: background-color var(--duration-fast) var(--ease-standard); }
-@media (prefers-reduced-motion: reduce) { .item { transition: none; } }
+## Validation when changing the design
 
-/* Don't: a long, linear, unconditional animation */
-.item { transition: all 600ms linear; }
-```
+Run `pnpm typecheck`, `pnpm lint`, and `pnpm build`, then verify the affected journeys in the real browser against the
+local stack. Check writing, formatting, keyboard links, mode changes, selection comments, image/PDF comments,
+suggestion decisions, title editing, folder navigation, sharing, and responsive overflow as appropriate to the diff.
+Backend persistence and raw document round trips remain separate evidence from visual success.
 
-## Focus and accessibility
-
-- **No outline rings.** Keyboard focus shows as a fill (`--surface-muted`) or an edge (`--sq-stroke: var(--accent)`
-  or `--border-strong`), or an underline on plain links. Every control has one, always different from its resting look
-  (`e2e/a11y.spec.ts` checks the shell's).
-- Every page has a skip link to `#main`, one `main`, labelled `nav`s, one `h1`.
-- Every control has a name a person would say ("Hold to delete", "Remove c:ada", "Account menu, Ada Lovelace"); its
-  visible words are part of that name.
-- Errors are announced (`role="alert"`) and tied to their field (`aria-invalid`, `aria-describedby`); quiet updates
-  use `role="status"`.
-- Never by colour alone: a Silicon's marker says "Silicon", a status badge says its status, an error has words.
-- Targets are at least 24 × 24 px (WCAG 2.5.8); most are 36 px or more.
-- `pnpm test:e2e` runs axe-core's WCAG 2.2 A and AA rules on every page in both themes on desktop and phone.
-
-## Accounts on screen
-
-Since there are no groups of accounts any more, accounts appear one by one, always the same way (`AccountChip`): the
-profile photo from Silicon Accounts (`pfp_url`; initials while it loads or when there is none), the display name when
-the app knows it, the `c:` or `si:` id, and the word Carbon or Silicon. Sharing names exact accounts
-(`ShareWithAccounts`): the id is checked as it is typed and the service says who it is.
-
-```tsx
-// Do
-<AccountChip account={item.owner} note={mine ? "You" : undefined} />
-<ShareWithAccounts label="Share with" ids={ids} onIdsChange={setIds} resolve={resolveAccount} selfId={account.id} />
-
-// Don't: an uuid on screen, an id without its kind, a "Share with everyone" switch
-<span>{item.owner.uuid}</span>
-<Switch label="Visible to everyone who signed in" />
-```
-
-## Pages
-
-- **Public pages** (landing, sign-in, not-found) are server-rendered HTML with plain links and tiny islands (the theme
-  switch, copy buttons); they load no motion library, no query client.
-- **The landing page** follows the family's order: a badge ("For Carbons and Silicons"), the headline, a lede, the
-  primary action (sign in) and the docs, a code block "As a Silicon" with the install and sign-in commands; then what it
-  does for Carbons and for Silicons; three steps; a closing call to action; the footer with the theme choice.
-- **Workspace pages**: `PageHeader` (title, one line of context, at most one primary action), then sections. Lists have
-  search and filters above, an empty state for "nothing yet" and for "nothing matches", and open to a detail page.
-  Detail pages: a back link, the title in the entity size, status and time, tabs for the parts, the destructive action
-  last. Settings: groups of rows that save as you change them, or one save bar for a form.
-- **Loading**: skeletons in the final layout (`loading.tsx`, `SkeletonBlock`), never a page spinner. **Failure**: an
-  `ErrorAlert` where it happened, with the service's words and a way to try again.
-
-## Copy
-
-- Carbons and Silicons; a Silicon's custodian is a Carbon. Never "AI agent", "human", "user account", "organization",
-  "org", "team" for a group of accounts; never Honeycomb or IAM.
-- Sentence case for every title, button and menu item. Buttons say what happens ("Save sharing", not "Submit").
-- Short and exact: "Nothing was shared with Remind, and you are not signed in." Errors: what and why, then what to do,
-  in the service's words ("The handle "ab" is 2 characters; it must be 3 to 30.").
-- Times: "3 hours ago" in lists, "Oct 10, 2026, 14:05" in details (`lib/format.ts`).
-
-## Checklist for a new screen
-
-- [ ] Tokens only; nothing hard-coded that has no dark value.
-- [ ] Squircles through `data-sq` and `--sq-*`; no `border-radius` on them.
-- [ ] One primary action; destructive actions hold or ask in place.
-- [ ] Type from the scale; one `h1`; sections as `h2`.
-- [ ] An empty state, a loading state, an error state.
-- [ ] Keyboard all the way; visible focus; names that match what is shown.
-- [ ] Light and dark, 1440 and 390 wide, reduced motion: all looked at.
-- [ ] Words for Carbons and Silicons.
+Tests should follow the intended controls: open Format before clicking a toolbar tool; choose a mode through its
+menu; open Comments when reviewing an existing thread or proposal; read sync state from the header's status element.
+Keep assertions that readonly roles cannot edit or approve proposals. Do not change a test merely to accommodate a
+lost operation or a regression.

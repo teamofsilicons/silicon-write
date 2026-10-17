@@ -28,6 +28,7 @@ import { VersionsPanel } from "./versions-panel";
 import { LinksPanel } from "./links-panel";
 import { PdfView } from "./pdf-view";
 import { StatusBar } from "./status-bar";
+import { DocHeading } from "./doc-heading";
 import { ImageAreas } from "./image-areas";
 import { SectionGutter } from "./section-gutter";
 import styles from "./doc.module.css";
@@ -56,10 +57,11 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const [editor, setEditor] = useState<Editor | null>(null);
   // The thread to open first comes from a link (?thread=…).
   const wantedThread = useSearchParams().get("thread");
-  const [panel, setPanel] = useState<Panel>(canComment ? "comments" : null);
+  const [panel, setPanel] = useState<Panel>(wantedThread && canComment ? "comments" : null);
   const [activeThread, setActiveThread] = useState<string | null>(wantedThread);
   const [pending, setPending] = useState<PendingComment | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
   const [lostAccess, setLostAccess] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
@@ -188,6 +190,17 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [startComment, canComment, doc.kind]);
 
+  // The link shortcut can open its popover while the formatting bar is tucked away.
+  // Reveal the bar in the same event so the popover still has a visible anchor.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k"
+        && editor?.view.hasFocus() && mode !== "viewing" && (canEdit || canComment && mode === "suggesting")) setFormatOpen(true);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editor, mode, canEdit, canComment]);
+
   /** A comment on an area of an image. */
   const startImageAreaComment = useCallback(
     (imagePos: number, rect: { x: number; y: number; w: number; h: number } | undefined, at: { top: number; left: number }) => {
@@ -211,7 +224,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       const range = rangeOf(editor, thread.anchor);
       if (!range) return;
       const dom = editor.view.domAtPos(range.from).node as HTMLElement;
-      (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
     },
     [threads, editor],
   );
@@ -248,7 +261,8 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const writable = canEdit || (canComment && mode === "suggesting");
 
   return (
-    <div className={styles.page} data-panel={panel ?? "none"}>
+    <div className={styles.page} data-panel={panel ?? "none"} data-formatting={formatOpen && writable && mode !== "viewing" ? "open" : "closed"}>
+      <a href="#main" className={styles.skipLink}>Skip to content</a>
       <TopBar
         doc={doc}
         account={account}
@@ -262,12 +276,18 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
         onPanel={setPanel}
         onFind={() => setFindOpen(true)}
         openThreads={threads.length}
+        formatOpen={formatOpen}
+        onFormat={() => setFormatOpen(value => !value)}
+        liveError={liveError}
       />
       {writable && editor && doc.kind === "doc" && mode !== "viewing" ? (
-        <Toolbar editor={editor} canEdit={canEdit} suggesting={mode === "suggesting" || !canEdit} onComment={canComment ? () => startComment() : undefined} onImage={pickImage} />
+        <div id="doc-formatting" className={styles.formattingWrap} hidden={!formatOpen}>
+          <Toolbar editor={editor} canEdit={canEdit} suggesting={mode === "suggesting" || !canEdit} onComment={canComment ? () => startComment() : undefined} onImage={pickImage} />
+        </div>
       ) : null}
       <div className={styles.body}>
-        <main id="main" className={styles.main}>
+        <main id="main" className={styles.main} tabIndex={-1}>
+          <DocHeading doc={doc} canEdit={canEdit} />
           {doc.deleted_at ? <p className={styles.trashNotice}>This doc is in the trash. Restore it to edit it again.</p> : null}
           {findOpen && editor ? <FindBar editor={editor} canReplace={canEdit && mode === "editing"} onClose={() => setFindOpen(false)} /> : null}
           {doc.kind === "pdf" ? (
@@ -307,6 +327,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               onCreated={thread => {
                 client.invalidateQueries({ queryKey: ["threads", docId] });
                 setActiveThread(thread.id);
+                setPanel("comments");
               }}
             />
           ) : null}
@@ -317,7 +338,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
         {panel === "versions" && canEdit ? <VersionsPanel doc={doc} editor={editor} live={live} onClose={() => setPanel(null)} /> : null}
         {panel === "links" && account ? <LinksPanel doc={doc} onClose={() => setPanel(null)} /> : null}
       </div>
-      {editor && doc.kind === "doc" ? <StatusBar editor={editor} live={live} /> : null}
+      {editor && doc.kind === "doc" ? <StatusBar editor={editor} /> : null}
       <input
         ref={imageInput}
         type="file"

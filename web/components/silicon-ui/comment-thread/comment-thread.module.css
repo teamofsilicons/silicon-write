@@ -193,3 +193,68 @@
 @media (prefers-reduced-motion: reduce) {
   .root, .actions, .reaction, .action, .iconAction, .emoji, .send, .ghost, .resolve, .reopen { transition: none; }
 }
+
+/* A document-margin conversation. The default shared card stays unchanged. */
+.root[data-presentation="margin"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.root[data-presentation="margin"] .header { padding: 0 0 8px; }
+.root[data-presentation="margin"] .subtitle { font-size: 11px; }
+.root[data-presentation="margin"] :is(.resolve, .reopen) {
+  height: 28px;
+  padding: 0 6px;
+  border-color: transparent;
+  border-radius: 6px;
+  corner-shape: superellipse(1.5);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.root[data-presentation="margin"] .resolve > svg { color: currentColor; }
+.root[data-presentation="margin"] .list { padding: 0; }
+.root[data-presentation="margin"] .comment { gap: 9px; padding: 8px 0; border-radius: 0; }
+.root[data-presentation="margin"] .avatar { border-radius: 6px; corner-shape: superellipse(1.5); font-size: 10px; }
+.root[data-presentation="margin"] .meta { flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
+.root[data-presentation="margin"] .name { font-size: 12px; font-weight: 500; }
+.root[data-presentation="margin"] .time { font-size: 11px; }
+.root[data-presentation="margin"] .body { margin-top: 4px; line-height: 1.65; }
+.root[data-presentation="margin"] .footer { gap: 4px; margin-top: 4px; }
+.root[data-presentation="margin"] .comment .actions { opacity: 1; }
+.root[data-presentation="margin"] :is(.action, .iconAction, .toggle, .reaction, .emoji) { border-radius: 6px; corner-shape: superellipse(1.5); font-size: 11px; }
+.root[data-presentation="margin"] .emoji { font-size: 16px; }
+.root[data-presentation="margin"] .replies { margin-left: 0; padding-left: 0; }
+.root[data-presentation="margin"] .replies::before { display: none; }
+.root[data-presentation="margin"] .composerArea { margin: 8px 0 0; padding: 12px 0 0; }
+.root[data-presentation="margin"] .composer { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.root[data-presentation="margin"] .composer[data-compact] { grid-template-columns: minmax(0, 1fr); }
+.root[data-presentation="margin"] .field {
+  min-height: 36px;
+  padding: 8px 10px;
+  border-color: transparent;
+  border-radius: 6px;
+  corner-shape: superellipse(1.5);
+  background: var(--surface-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.root[data-presentation="margin"] .field:focus { border-color: var(--accent); }
+.root[data-presentation="margin"] :is(.send, .ghost) { height: 36px; padding: 0 10px; border-radius: 6px; corner-shape: superellipse(1.5); font-size: 12px; font-weight: 400; }
+.root[data-presentation="margin"] .send { color: #fff; }
+.root[data-presentation="margin"] .replyingInner { padding-left: 0; }
+.root[data-presentation="margin"] .resolved { gap: 8px; padding: 4px 0; }
+.root[data-presentation="margin"] .resolvedIcon { width: 20px; background: transparent; }
+.root[data-presentation="margin"] .resolvedTitle { font-size: 12px; }
+.root[data-presentation="margin"] .resolvedMeta { font-size: 11px; }
+.root[data-presentation="margin"] .resolved .stack { display: none; }
+.root[data-presentation="margin"] :is(button, textarea):focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
+
+@media (max-width: 600px) {
+  .root[data-presentation="margin"] :is(.action, .iconAction, .toggle, .resolve, .reopen, .reaction, .emoji) { min-height: 32px; }
+  .root[data-presentation="margin"] :is(.iconAction, .emoji) { min-width: 32px; }
+  .root[data-presentation="margin"] .field { font-size: 16px; line-height: 22px; }
+}

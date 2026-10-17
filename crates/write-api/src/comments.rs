@@ -27,8 +27,8 @@ mod anchoring;
 
 const MAX_BODY: usize = 20_000;
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
-// Revisit unresolved results cached before structural review recovery was available.
-const ANCHOR_RECOVERY_VERSION: i64 = 1;
+// Revisit unresolved results cached before structural review and section recovery were available.
+const ANCHOR_RECOVERY_VERSION: i64 = 2;
 
 #[derive(sqlx::FromRow, Clone)]
 struct ThreadRow {
@@ -61,7 +61,7 @@ fn rfc3339(t: &OffsetDateTime) -> String {
 }
 
 /// Where a thread's text is now: the current quote, whether its text is gone, and its top-level block.
-type Place = (Option<String>, bool, Option<usize>, Option<usize>, Option<(String, String)>);
+type Place = (Option<String>, bool, Option<usize>, Option<usize>, Option<(String, Option<String>)>);
 
 /// Where each thread's text is now.
 async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiResult<Vec<Place>> {
@@ -75,16 +75,22 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
         Some(vec![anchoring::Range::new(thread.anchor.get("start")?.as_str()?.to_owned(), thread.anchor.get("end")?.as_str()?.to_owned())])
     }
     let mut anchors: Vec<Option<Vec<anchoring::Range>>> = threads.iter().map(|t| ranges(t, true)).collect();
+    let mut points: Vec<Option<String>> = threads.iter().map(|t| {
+        t.anchor.get("resolved_start").and_then(Value::as_str)
+            .or_else(|| t.anchor.get("start").and_then(Value::as_str)).map(str::to_owned)
+    }).collect();
     let (missing, latest) = rooms::with_ydoc(state, doc_id, |y, seq| {
         let frag = ydoc::fragment(y);
         let txn = yrs::Transact::transact(y);
         let map = ydoc::text_map(&txn, &frag);
-        let missing = anchors.iter().zip(threads).map(|(ranges, thread)| {
+        let missing = anchors.iter().zip(threads).zip(&points).map(|((ranges, thread), point)| {
             let stale = thread.anchor.get("resolved_seq").and_then(Value::as_i64) != Some(seq)
                 || thread.anchor.get("resolved_version").and_then(Value::as_i64) != Some(ANCHOR_RECOVERY_VERSION);
-            stale && ranges.as_ref().is_some_and(|ranges| {
-                ranges.iter().any(|range| anchoring::resolve(&txn, &map, range).is_none())
-            })
+            stale && match ranges {
+                Some(ranges) => ranges.iter().any(|range| anchoring::resolve(&txn, &map, range).is_none()),
+                None => thread.anchor.get("kind").and_then(Value::as_str) == Some("block")
+                    && point.as_ref().is_some_and(|point| B64.decode(point).ok().and_then(|p| ydoc::resolve_position(&txn, &map, &p)).is_none()),
+            }
         }).collect::<Vec<_>>();
         (missing, seq)
     }).await?;
@@ -94,11 +100,18 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
         let restoring = rows.iter().filter(|(_,_,origin,_)| origin == "restore" || origin == "undo").map(|(seq,_,_,_)| *seq).collect();
         let updates: Vec<write_doc::history::StoredUpdate> = rows.into_iter().map(|(seq,author,_,update)| write_doc::history::StoredUpdate {seq, author, update}).collect();
         for (i, thread) in threads.iter().enumerate().filter(|(i, _)| missing[*i]) {
-            let Some(mut original) = ranges(thread, false) else { continue; };
             let seq = match thread.anchor.get("seq").and_then(Value::as_i64) {
                 Some(seq) => seq,
                 None => sqlx::query_scalar::<_, Option<i64>>("select max(seq) from doc_updates where doc_id = $1 and created_at <= $2")
                     .bind(doc_id).bind(thread.created_at).fetch_one(&state.db).await?.unwrap_or(0),
+            };
+            let Some(mut original) = ranges(thread, false) else {
+                let Some(start) = thread.anchor.get("start").and_then(Value::as_str) else { continue; };
+                let recovered = anchoring::recover_section(&updates, &restoring, seq, start)?;
+                sqlx::query("update threads set anchor = jsonb_set(jsonb_set(jsonb_set(anchor, '{resolved_start}', $2), '{resolved_seq}', $3), '{resolved_version}', $4) where id = $1")
+                    .bind(&thread.id).bind(json!(recovered)).bind(json!(latest)).bind(json!(ANCHOR_RECOVERY_VERSION)).execute(&state.db).await?;
+                points[i] = recovered;
+                continue;
             };
             // Old anchors predate per-text ranges. Split their selection in its original version.
             if thread.anchor.get("segments").is_none() {
@@ -120,7 +133,7 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
         let frag = ydoc::fragment(y);
         let txn = yrs::Transact::transact(y);
         let map = ydoc::text_map(&txn, &frag);
-        threads.iter().zip(&anchors).map(|(thread, ranges)| {
+        threads.iter().zip(&anchors).zip(&points).map(|((thread, ranges), point)| {
             if thread.anchor.get("kind").and_then(Value::as_str) == Some("pdf") { return (None, false, None, None, None); }
             if let Some(ranges) = ranges {
                 let surviving: Vec<(&anchoring::Range, (usize,usize))> = ranges.iter().filter_map(|r| anchoring::resolve(&txn, &map, r).map(|range|(r,range))).collect();
@@ -128,14 +141,14 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
                     let (start,end) = (*start,*end);
                     let quote = map.slice(start, end).replace('\u{FFFC}', "");
                     let orphaned = quote.trim().is_empty();
-                    return (Some(quote), orphaned, map.block_at(start), Some(start), Some((first.start.clone(),last.end.clone())));
+                    return (Some(quote), orphaned, map.block_at(start), Some(start), Some((first.start.clone(),Some(last.end.clone()))));
                 }
                 let point = ranges.iter().find_map(|r| B64.decode(&r.start).ok().and_then(|p| ydoc::resolve_position(&txn,&map,&p)));
                 return (None, true, point.and_then(|p|map.block_at(p)), point, None);
             }
-            let start = thread.anchor.get("start").and_then(Value::as_str).and_then(|s| B64.decode(s).ok())
+            let start = point.as_ref().and_then(|s| B64.decode(s).ok())
                 .and_then(|s| ydoc::resolve_position(&txn, &map, &s));
-            match start { Some(start) => (None, false, map.block_at(start), Some(start), None), None => (None, true, None, None, None) }
+            match start { Some(start) => (None, false, map.block_at(start), Some(start), point.clone().map(|p|(p,None))), None => (None, true, None, None, None) }
         }).collect()
     }).await
 }
@@ -168,7 +181,10 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Ve
     let mut out = vec![];
     for (thread, (current, orphaned, block, offset, positioned)) in threads.iter().zip(places) {
         let mut anchor = thread.anchor.clone();
-        if let Some((start,end)) = positioned { anchor["start"] = json!(start); anchor["end"] = json!(end); }
+        if let Some((start,end)) = positioned {
+            anchor["start"] = json!(start);
+            if let Some(end) = end { anchor["end"] = json!(end); }
+        }
         let thread_comments: Vec<Value> = comments
             .iter()
             .filter(|c| c.thread_id == thread.id)
@@ -424,6 +440,14 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
         if segments.is_empty() { return Err(ApiError::conflict("The selected text changed. Select it again.")); }
         anchor["seq"] = json!(seq);
         anchor["segments"] = json!(segments);
+    } else if kind == "block" {
+        let seq = rooms::with_ydoc(&state, &id, |y, seq| {
+            let frag = ydoc::fragment(y);
+            let txn = yrs::Transact::transact(y);
+            let map = ydoc::text_map(&txn, &frag);
+            B64.decode(&start).ok().and_then(|position| ydoc::resolve_position(&txn, &map, &position)).map(|_| seq)
+        }).await?.ok_or_else(|| ApiError::conflict("The selected section changed. Select it again."))?;
+        anchor["seq"] = json!(seq);
     }
     create_thread(&state, &caller, &doc, &id, anchor, quote, text).await
 }

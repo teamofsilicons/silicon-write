@@ -151,6 +151,8 @@ export interface CommentThreadProps {
   nowLabel?: string;
   /** Words for localization. Leave out any key to keep its English default. */
   labels?: CommentThreadLabels;
+  /** A flat conversation for a document's margin, without the default card frame. */
+  presentation?: "card" | "margin";
   className?: string;
 }
 
@@ -377,7 +379,7 @@ type Ui = { editing: string | null; confirming: string | null; picker: string | 
 
 export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(function CommentThread({
   comments, defaultComments = [], onCommentsChange, currentUser, people, resolved, defaultResolved = false, onResolvedChange,
-  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", maxDepth = 2, nowLabel = "Just now", labels, className,
+  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", maxDepth = 2, nowLabel = "Just now", labels, presentation = "card", className,
 }, forwardedRef) {
   const t = withDefaults(DEFAULT_LABELS, labels);
   const reduced = useReducedFlag();
@@ -457,7 +459,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
     const editing = ui.editing === comment.id, confirming = ui.confirming === comment.id, picking = ui.picker === comment.id;
     return <motion.li key={comment.id} className={styles.item} {...grow}>
       <article className={styles.comment} aria-label={comment.deleted ? t.deletedComment : `${comment.author.name}, ${comment.createdAt}`}>
-        {comment.deleted ? <span className={styles.deletedDot} aria-hidden="true" /> : <Avatar author={comment.author} />}
+        {comment.deleted ? <span className={styles.deletedDot} aria-hidden="true" /> : <Avatar author={comment.author} size={presentation === "margin" ? 24 : 28} />}
         <div className={styles.main}>
           {comment.deleted
             ? <p className={styles.deleted}>{t.deletedText}</p>
@@ -545,7 +547,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
 
   const face = { initial: reduced ? { opacity: 0 } : { opacity: 0, filter: `blur(${motionTokens.blur.subtle}px)` }, animate: { opacity: 1, filter: "blur(0px)" }, exit: { opacity: 0, filter: reduced ? "blur(0px)" : `blur(${motionTokens.blur.subtle}px)` }, transition: { duration: reduced ? 0 : motionTokens.duration.standard, ease: enter } };
 
-  return <section ref={rootRef} className={[styles.root, className].filter(Boolean).join(" ")} data-resolved={isResolved || undefined} aria-label={t.thread}>
+  return <section ref={rootRef} className={[styles.root, className].filter(Boolean).join(" ")} data-presentation={presentation} data-resolved={isResolved || undefined} aria-label={t.thread}>
     <AutoHeight reduced={reduced} morphKey={isResolved ? "resolved" : "thread"}>
       <AnimatePresence mode="popLayout" initial={false}>
         {isResolved
@@ -582,7 +584,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
                 </motion.div>}
               </AnimatePresence>
               <Composer people={mentionable} placeholder={placeholder} submitLabel={t.send} cancelLabel={t.cancel} mentionsLabel={t.mentions} focusKey={focusKey} onSubmit={addReply}
-                onCancel={replyTo ? () => setReplyTo(null) : undefined} leading={<Avatar author={currentUser} />} />
+                onCancel={replyTo ? () => setReplyTo(null) : undefined} leading={presentation === "margin" ? undefined : <Avatar author={currentUser} />} />
             </div>
           </motion.div>}
       </AnimatePresence>
