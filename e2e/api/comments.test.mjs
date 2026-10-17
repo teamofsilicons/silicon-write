@@ -1574,8 +1574,9 @@ describe("who can see and add comments", () => {
       "a new thread": answer(await owner.api.post(`/v1/docs/${doc.id}/threads`, { anchor: quote("gamma"), body: "In the trash" })),
       "a reply": (await owner.api.post(`/v1/threads/${thread.id}/comments`, { body: "In the trash" })).status,
       "a reaction": (await owner.api.post(`/v1/comments/${thread.comments[0].id}/reactions`, { emoji: "👍" })).status,
+      "a deletion": (await owner.api.del(`/v1/comments/${thread.comments[0].id}`)).status,
     };
-    assert.deepEqual(got, { "a new thread": "409 conflict", "a reply": 409, "a reaction": 409 }, "comments were added to a doc in the trash (sharing and edits there are 409)");
+    assert.deepEqual(got, { "a new thread": "409 conflict", "a reply": 409, "a reaction": 409, "a deletion": 409 }, "comments were changed on a doc in the trash (sharing and edits there are 409)");
   });
 
   test("malformed comment requests are answered with the API's JSON error shape", async () => {

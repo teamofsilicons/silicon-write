@@ -572,7 +572,8 @@ pub async fn edit(State(state): State<AppState>, Auth(caller): Auth, Path(commen
 }
 
 pub async fn delete(State(state): State<AppState>, Auth(caller): Auth, Path(comment_id): Path<String>) -> ApiResult<StatusCode> {
-    let (comment, thread, _, role) = comment_for(&state, &caller, &comment_id).await?;
+    let (comment, thread, doc, role) = comment_for(&state, &caller, &comment_id).await?;
+    require_active(&doc)?;
     if comment.author_uuid != caller.uuid && role != Role::Owner {
         return Err(ApiError::forbidden("Only the comment's author or the doc's owner can delete it."));
     }
