@@ -29,7 +29,8 @@ def main():
         raise SystemExit("Pandoc release checksum mismatch")
     caddy = production / "caddy_2.11.7_linux_arm64.tar.gz"
     sums = dict((parts[1].lstrip("*"), parts[0]) for line in (production / "caddy_2.11.7_checksums.txt").read_text().splitlines() if len(parts := line.split()) == 2)
-    if digest(caddy) != sums[caddy.name]:
+    # Caddy publishes SHA-512 checksums; GitHub additionally records SHA-256.
+    if hashlib.sha512(caddy.read_bytes()).hexdigest() != sums[caddy.name] or digest(caddy) != "d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42":
         raise SystemExit("Caddy upstream checksum mismatch")
     with tempfile.TemporaryDirectory(dir=production, prefix="bundle-") as temp:
         bundle = Path(temp)
