@@ -6,3 +6,4 @@ node_modules
 /web/screens
 .env.local
 *.log
+__pycache__/
