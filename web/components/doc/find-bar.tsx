@@ -2,7 +2,7 @@
 
 /** Find (and, for editors, replace) in the doc. ⌘F opens it, Enter moves to the next match, Escape closes it. */
 import { useEffect, useRef, useState } from "react";
-import type { Editor } from "@tiptap/react";
+import { useEditorState, type Editor } from "@tiptap/react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { find } from "@/components/editor/nodes";
 import { notify } from "@/lib/notify";
@@ -11,7 +11,7 @@ import styles from "./doc.module.css";
 export function FindBar({ editor, canReplace, onClose }: { editor: Editor; canReplace: boolean; onClose: () => void }) {
   const [term, setTerm] = useState("");
   const [replacement, setReplacement] = useState("");
-  const [count, setCount] = useState({ total: 0, current: 0 });
+  const count = useEditorState({ editor, selector: ({ editor: e }) => find.count(e) });
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -21,16 +21,7 @@ export function FindBar({ editor, canReplace, onClose }: { editor: Editor; canRe
 
   useEffect(() => {
     find.search(editor, term);
-    setCount(find.count(editor));
   }, [editor, term]);
-
-  useEffect(() => {
-    const update = () => setCount(find.count(editor));
-    editor.on("transaction", update);
-    return () => {
-      editor.off("transaction", update);
-    };
-  }, [editor]);
 
   const close = () => {
     find.clear(editor);

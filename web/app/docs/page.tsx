@@ -22,7 +22,7 @@ export default async function DocsPage() {
   const html = marked.parse(guide, { async: false, gfm: true }) as string;
   return (
     <>
-      <SiteHeader signedIn={signedIn} />
+      <SiteHeader signedIn={signedIn} path="/docs" />
       <main id="main" className={styles.main}>
         <article className={styles.article} dangerouslySetInnerHTML={{ __html: html }} />
       </main>

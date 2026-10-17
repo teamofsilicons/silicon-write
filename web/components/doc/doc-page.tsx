@@ -7,6 +7,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { Editor } from "@tiptap/react";
 import "katex/dist/katex.min.css";
 import { api, seg } from "@/lib/client/api";
@@ -26,6 +28,7 @@ import { LinksPanel } from "./links-panel";
 import { PdfView } from "./pdf-view";
 import { StatusBar } from "./status-bar";
 import { ImageAreas } from "./image-areas";
+import { SectionGutter } from "./section-gutter";
 import styles from "./doc.module.css";
 
 export type Panel = "comments" | "versions" | "links" | null;
@@ -50,8 +53,10 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const [live, setLive] = useState<LiveDoc | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  // The thread to open first comes from a link (?thread=…).
+  const wantedThread = useSearchParams().get("thread");
   const [panel, setPanel] = useState<Panel>(canComment ? "comments" : null);
-  const [activeThread, setActiveThread] = useState<string | null>(null);
+  const [activeThread, setActiveThread] = useState<string | null>(wantedThread);
   const [pending, setPending] = useState<PendingComment | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [lostAccess, setLostAccess] = useState(false);
@@ -59,15 +64,6 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
 
   const threadsQuery = useThreads(docId, "open", canComment && doc.kind === "doc");
   const threads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data]);
-
-  // The thread to open first, from a link (?thread=…).
-  useEffect(() => {
-    const wanted = new URLSearchParams(window.location.search).get("thread");
-    if (wanted) {
-      setActiveThread(wanted);
-      setPanel("comments");
-    }
-  }, []);
 
   // The live connection (docs only; a PDF has no live text).
   useEffect(() => {
@@ -130,30 +126,12 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     };
   }, [editor, client, docId]);
 
-  // Keyboard: ⌘F find, ⌘⌥M comment.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const mod = event.metaKey || event.ctrlKey;
-      if (mod && !event.altKey && event.key.toLowerCase() === "f" && doc.kind === "doc") {
-        event.preventDefault();
-        setFindOpen(true);
-      }
-      if (mod && event.altKey && (event.key.toLowerCase() === "m" || event.code === "KeyM") && canComment) {
-        event.preventDefault();
-        startComment();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, canComment, doc.kind]);
-
   /** Starts a comment on what's selected: text, or the cell, image or section the cursor is in. */
   const startComment = useCallback(
-    (kind?: Anchor["kind"] | { from: number; to: number }) => {
+    (options: { kind?: Anchor["kind"]; range?: { from: number; to: number } } = {}) => {
       if (!editor || !canComment) return;
-      const given = typeof kind === "object" ? kind : null;
-      if (given) kind = undefined;
+      const kind = options.kind;
+      const given = options.range ?? null;
       const { from, to, empty } = given ? { ...given, empty: given.to <= given.from } : editor.state.selection;
       const node = editor.state.doc.nodeAt(from);
       let anchor: PendingComment["anchor"] | null = null;
@@ -187,6 +165,23 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     },
     [editor, canComment],
   );
+
+  // Keyboard: ⌘F find, ⌘⌥M comment.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && !event.altKey && event.key.toLowerCase() === "f" && doc.kind === "doc") {
+        event.preventDefault();
+        setFindOpen(true);
+      }
+      if (mod && event.altKey && (event.key.toLowerCase() === "m" || event.code === "KeyM") && canComment) {
+        event.preventDefault();
+        startComment();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [startComment, canComment, doc.kind]);
 
   /** A comment on an area of an image. */
   const startImageAreaComment = useCallback(
@@ -240,7 +235,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       <div className={styles.gone}>
         <h1>You no longer have access</h1>
         <p>The owner changed who can open this doc.</p>
-        <a href="/library">Back to your docs</a>
+        <Link href="/library">Back to your docs</Link>
       </div>
     );
   }
@@ -289,6 +284,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
                 onUploadImage={uploadImage}
                 pickImage={pickImage}
               />
+              {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
               {editor && canComment ? (
                 <SelectionComment
@@ -298,7 +294,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
                   autoOpen={mode === "viewing"}
                   pending={pending}
                   onPending={setPending}
-                  onStart={range => startComment(range)}
+                  onStart={range => startComment({ range })}
                   onCreated={thread => {
                     client.invalidateQueries({ queryKey: ["threads", docId] });
                     setActiveThread(thread.id);

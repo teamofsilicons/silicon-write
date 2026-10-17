@@ -3,6 +3,7 @@
 /** Search the text of every doc you can open. */
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Page, PageHeader } from "@/components/foundation/layout/layout";
 import { SearchField } from "@/components/silicon-ui/search-field/search-field";
@@ -18,13 +19,9 @@ function Snippet({ text }: { text: string }) {
 }
 
 export function Search() {
-  const [q, setQ] = useState("");
-  const [query, setQuery] = useState("");
-  useEffect(() => {
-    const initial = new URLSearchParams(window.location.search).get("q") ?? "";
-    setQ(initial);
-    setQuery(initial);
-  }, []);
+  const initial = useSearchParams().get("q") ?? "";
+  const [q, setQ] = useState(initial);
+  const [query, setQuery] = useState(initial);
   useEffect(() => {
     const t = setTimeout(() => {
       setQuery(q);

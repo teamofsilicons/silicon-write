@@ -1,4 +1,7 @@
 "use client";
+/* The extensions read the current mode and callbacks through refs when they run (on a keystroke, a click), never while
+   rendering; the refs are updated after each render. */
+/* eslint-disable react-hooks/refs */
 
 /**
  * The editor: Tiptap on the doc's live Yjs document (fragment `default`), with everything Silicon Write adds:
@@ -53,10 +56,12 @@ export interface DocEditorProps {
 export function DocEditor(props: DocEditorProps) {
   const { live, account, canEdit, canSuggest, mode, threads, activeThread, onActivateThread, onRefused, onReady, onUploadImage, pickImage } = props;
   const modeRef = useRef(mode);
-  modeRef.current = mode;
   const lastAuthor = useRef<Account | null>(null);
   const callbacks = useRef({ onActivateThread, onRefused, onUploadImage, pickImage });
-  callbacks.current = { onActivateThread, onRefused, onUploadImage, pickImage };
+  useEffect(() => {
+    modeRef.current = mode;
+    callbacks.current = { onActivateThread, onRefused, onUploadImage, pickImage };
+  });
 
   // Who the next remote change is from: set when the Yjs update arrives, read when ProseMirror shows it.
   useEffect(() => {

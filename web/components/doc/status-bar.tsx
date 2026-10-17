@@ -14,16 +14,14 @@ export function StatusBar({ editor, live }: { editor: Editor; live: LiveDoc | nu
       return { words: storage?.words() ?? 0, characters: storage?.characters() ?? 0 };
     },
   });
-  const [status, setStatus] = useState<"connected" | "connecting" | "disconnected">("connecting");
-  const [synced, setSynced] = useState(false);
+  const [status, setStatus] = useState<"connected" | "connecting" | "disconnected">(() => (live?.provider.wsconnected ? "connected" : "connecting"));
+  const [synced, setSynced] = useState(() => Boolean(live?.provider.synced));
   useEffect(() => {
     if (!live) return;
     const onStatus = ({ status: next }: { status: "connected" | "connecting" | "disconnected" }) => setStatus(next);
     const onSync = (value: boolean) => setSynced(value);
     live.provider.on("status", onStatus);
     live.provider.on("sync", onSync);
-    setStatus(live.provider.wsconnected ? "connected" : "connecting");
-    setSynced(live.provider.synced);
     return () => {
       live.provider.off("status", onStatus);
       live.provider.off("sync", onSync);

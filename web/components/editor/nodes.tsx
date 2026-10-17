@@ -14,6 +14,7 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/client/api";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/silicon-ui/popover/popover";
 import styles from "./editor.module.css";
@@ -41,10 +42,10 @@ function FootnoteView({ node, editor, getPos, updateAttributes, selected }: Node
   const [draft, setDraft] = useState(String(node.attrs.content ?? ""));
   const pos = typeof getPos === "function" ? getPos() : 0;
   const number = footnoteNumber(editor.state.doc, pos ?? 0);
-  useEffect(() => setDraft(String(node.attrs.content ?? "")), [node.attrs.content]);
   return (
     <NodeViewWrapper as="sup" className={`${styles.footnote} ${selected ? styles.footnoteSelected : ""}`} data-footnote="">
       <Popover open={open} onOpenChange={next => {
+        if (next) setDraft(String(node.attrs.content ?? ""));
         if (!next && editor.isEditable && draft !== node.attrs.content) updateAttributes({ content: draft });
         setOpen(next);
       }}>
@@ -108,12 +109,13 @@ export const Footnote = Node.create({
 // ------------------------------------------------------------------------------------------
 
 function DocLinkView({ node }: NodeViewProps) {
+  const router = useRouter();
   const title = String(node.attrs.title ?? "");
   const open = async (event: React.MouseEvent) => {
     event.preventDefault();
     try {
       const found = await api.get<{ doc: { id: string } | null }>("/v1/links", { query: { title } });
-      if (found.doc) window.location.href = `/d/${found.doc.id}`;
+      if (found.doc) router.push(`/d/${found.doc.id}`);
       else alert(`There's no doc called “${title}” that you can open.`);
     } catch {
       // Signed out readers of a public doc can't follow links.
