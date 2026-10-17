@@ -18,7 +18,7 @@ test("write a doc and comment on it", async ({ page }) => {
     await page.waitForURL(/\/library$/);
   }
   await expect(page.getByRole("heading", { name: "My docs" })).toBeVisible();
-  await page.getByRole("button", { name: "New doc" }).click();
+  await page.getByRole("button", { name: "New doc", exact: true }).first().click();
   await page.waitForURL(/\/d\/d_/);
   const editor = page.locator(".ProseMirror");
   await expect(editor).toBeVisible();

@@ -64,6 +64,6 @@ export default defineConfig({
     { name: "screens", testMatch: /screens\.spec\.ts/, dependencies: ["setup"], use: { browserName: "chromium" } },
   ],
   webServer: [
-    { command: `./node_modules/.bin/next dev --port ${PORT}`, url: `http://127.0.0.1:${PORT}/robots.txt`, env: { ...env, PORT: String(PORT), NEXT_DIST_DIR: ".next-e2e" }, reuseExistingServer: true, timeout: 180_000 },
+    { command: `./node_modules/.bin/next dev --port ${PORT}`, url: `http://127.0.0.1:${PORT}/robots.txt`, env: { ...env, PORT: String(PORT), NEXT_DIST_DIR: `.next-e2e-${PORT}` }, reuseExistingServer: true, timeout: 180_000 },
   ],
 });
