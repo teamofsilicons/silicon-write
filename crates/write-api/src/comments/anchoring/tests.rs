@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use write_doc::history::StoredUpdate;
 use write_doc::{Block, Doc, Inline, Marks, Suggestion, SuggestionKind, ydoc};
 use yrs::{
-    ReadTxn, Transact, TransactionMut, XmlElementPrelim, XmlFragment, XmlFragmentRef, XmlTextPrelim,
+    ReadTxn, Text, Transact, TransactionMut, XmlElementPrelim, XmlFragment, XmlFragmentRef, XmlOut,
+    XmlTextPrelim,
 };
 
 const ORIGINAL: &str = "The commenter reads this line.";
@@ -228,5 +229,56 @@ fn accepting_a_different_proposal_does_not_move_the_anchor_to_its_identical_word
         history.current_quote(&anchor),
         None,
         "equal text in a different suggestion is not a replacement"
+    );
+}
+
+#[test]
+fn a_later_structural_accept_cannot_reuse_offsets_of_text_already_deleted_in_place() {
+    let mut history = History::new("Alpha target omega tail.");
+    let anchor = history.anchor("target");
+    let original_id = {
+        let txn = history.y.transact();
+        ydoc::fragment(&history.y).get(&txn, 0).unwrap().id()
+    };
+    history.change(|txn, fragment| {
+        let XmlOut::Element(paragraph) = fragment.get(txn, 0).unwrap() else {
+            panic!("fixture paragraph");
+        };
+        let XmlOut::Text(text) = paragraph.get(txn, 0).unwrap() else {
+            panic!("fixture text");
+        };
+        text.remove_range(txn, 6, 6);
+    });
+    assert_eq!(history.current_quote(&anchor), None);
+
+    // Propose a heading without reconstructing the old paragraph. The orphaned
+    // Source still names that paragraph ID, but its old offsets now cover " omega".
+    let before = ydoc::read_doc(&history.y);
+    let after = Doc {
+        blocks: vec![Block::Heading {
+            level: 2,
+            content: vec![Inline::Text {
+                text: "Alpha  omega tail.".into(),
+                marks: Marks::default(),
+            }],
+        }],
+    };
+    let mode = ydoc::EditMode {
+        suggest: Some(("s_heading".into(), "commenter".into())),
+    };
+    history.change(|txn, fragment| ydoc::patch(txn, fragment, &before, &after, &mode));
+    {
+        let txn = history.y.transact();
+        assert_eq!(
+            ydoc::fragment(&history.y).get(&txn, 0).unwrap().id(),
+            original_id
+        );
+    }
+    assert_eq!(history.current_quote(&anchor), None);
+    history.decide("s_heading", true);
+    assert_eq!(
+        history.current_quote(&anchor),
+        None,
+        "the accepted heading keeps the shortened text, not the deleted passage"
     );
 }
