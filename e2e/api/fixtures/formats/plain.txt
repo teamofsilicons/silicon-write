@@ -1,0 +1,4 @@
+Plain text fixture line one.
+Second line in the same paragraph.
+
+A brand new paragraph here.
