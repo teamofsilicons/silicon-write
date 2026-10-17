@@ -1619,19 +1619,21 @@ pub fn quote_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, map: &TextMap) -> (
                     }
                 }
                 XmlOut::Element(child) => {
+                    if node_suggestion(txn, &child).is_some_and(|s| s.kind == SuggestionKind::Insert) { continue; }
                     let at = starts.and_then(|s| s.get(i)).copied().unwrap_or(0);
                     if let Some(atom) = read_atom(txn, &child) {
-                        let text = match atom {
+                        let text = match atom.split_suggestion().1 {
                             Inline::HardBreak => "\n".to_owned(),
-                            Inline::InlineMath { latex } => latex,
-                            Inline::DocLink { title, alias } => alias.unwrap_or(title),
-                            Inline::Image { alt, .. } => alt.unwrap_or_default(),
+                            Inline::InlineMath { latex } => latex.clone(),
+                            Inline::DocLink { title, alias } => alias.clone().unwrap_or_else(|| title.clone()),
+                            Inline::Image { alt, .. } => alt.clone().unwrap_or_default(),
                             _ => String::new(),
                         };
                         out.add(&text, |_| (at, at + 1));
                     } else {
                         if !first_block {
-                            out.add("\n", |_| (at.saturating_sub(1), at));
+                            // child_starts records the offset before walk_text adds this separator.
+                            out.add("\n", |_| (at, at + 1));
                         }
                         first_block = false;
                         walk(txn, &child, map, out);
@@ -1644,6 +1646,7 @@ pub fn quote_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, map: &TextMap) -> (
     let mut out = Quoted { text: vec![], ranges: vec![] };
     for (i, child) in frag.children(txn).enumerate() {
         if let XmlOut::Element(el) = child {
+            if node_suggestion(txn, &el).is_some_and(|s| s.kind == SuggestionKind::Insert) { continue; }
             let at = map.blocks.iter().find(|(_, _, index)| *index == i).map(|(start, _, _)| *start).unwrap_or(0);
             if !out.text.is_empty() {
                 out.add("\n\n", |_| (at.saturating_sub(1), at));
