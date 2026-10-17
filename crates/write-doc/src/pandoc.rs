@@ -70,7 +70,7 @@ fn heading_id(content: &[Inline], taken: &mut HashSet<String>) -> String {
             Inline::DocLink { title, alias } => text.push_str(alias.as_deref().unwrap_or(title)),
             Inline::Image { alt, .. } => text.push_str(alt.as_deref().unwrap_or("")),
             Inline::HardBreak => text.push(' '),
-            Inline::Footnote { .. } => {}
+            Inline::Suggested { .. } | Inline::Footnote { .. } => {}
         }
     }
     let kept: String = text
@@ -128,6 +128,9 @@ fn str_inlines(text: &str) -> Vec<Value> {
 impl PWriter<'_> {
     fn block(&mut self, block: &Block) -> Vec<Value> {
         vec![match block {
+            Block::Suggested { suggestion, block } => {
+                return if suggestion.kind == SuggestionKind::Insert { vec![] } else { self.block(block) };
+            }
             Block::Paragraph { content } => json!({"t": "Para", "c": self.inlines(content)}),
             Block::Heading { level, content } => {
                 let id = heading_id(content, &mut self.ids);
@@ -229,6 +232,9 @@ impl PWriter<'_> {
         let mut out = vec![];
         for inline in content {
             match inline {
+                Inline::Suggested { suggestion, inline } => {
+                    if suggestion.kind != SuggestionKind::Insert { out.extend(self.inlines(std::slice::from_ref(inline))); }
+                }
                 Inline::Text { text, marks } => out.extend(wrap_marks(marks, str_text(text, marks))),
                 Inline::HardBreak => out.push(json!({"t": "LineBreak"})),
                 Inline::InlineMath { latex } => {
@@ -1114,10 +1120,15 @@ pub fn images(doc: &Doc) -> Vec<String> {
     fn walk(blocks: &[Block], out: &mut Vec<String>) {
         for block in blocks {
             match block {
+                Block::Suggested { block, .. } => walk(std::slice::from_ref(block), out),
                 Block::Image { src, .. } => out.push(src.clone()),
                 Block::Paragraph { content } | Block::Heading { content, .. } => {
                     for inline in content {
                         match inline {
+                            Inline::Suggested { inline, .. } => {
+                                let doc = Doc { blocks: vec![Block::paragraph(vec![(**inline).clone()])] };
+                                out.extend(images(&doc));
+                            }
                             Inline::Image { src, .. } => out.push(src.clone()),
                             Inline::Footnote { content } => out.extend(images(&crate::markdown::from_markdown(content))),
                             _ => {}
@@ -1156,6 +1167,7 @@ pub fn replace_images(doc: &mut Doc, map: &dyn Fn(&str) -> Option<String>) {
     fn walk(blocks: &mut [Block], map: &dyn Fn(&str) -> Option<String>) {
         for block in blocks {
             match block {
+                Block::Suggested { block, .. } => walk(std::slice::from_mut(block.as_mut()), map),
                 Block::Image { src, .. } => {
                     if let Some(new) = map(src) {
                         *src = new;
@@ -1164,6 +1176,11 @@ pub fn replace_images(doc: &mut Doc, map: &dyn Fn(&str) -> Option<String>) {
                 Block::Paragraph { content } | Block::Heading { content, .. } => {
                     for inline in content {
                         match inline {
+                            Inline::Suggested { inline, .. } => {
+                                let mut doc = Doc { blocks: vec![Block::paragraph(vec![(**inline).clone()])] };
+                                replace_images(&mut doc, map);
+                                if let Block::Paragraph { content } = doc.blocks.remove(0) { **inline = content.into_iter().next().unwrap(); }
+                            }
                             Inline::Image { src, .. } => {
                                 if let Some(new) = map(src) { *src = new; }
                             }

@@ -95,9 +95,34 @@ fn attr_bool<T: ReadTxn>(txn: &T, el: &XmlElementRef, key: &str) -> bool {
     matches!(el.get_attribute(txn, key), Some(yrs::Out::Any(Any::Bool(true))))
 }
 
+pub fn node_suggestion<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Suggestion> {
+    let yrs::Out::Any(value) = el.get_attribute(txn, SUGGESTION)? else { return None };
+    let kind = SuggestionKind::parse(&any_str(map_get(&value, "kind"))?)?;
+    Some(Suggestion { kind, id: any_str(map_get(&value, "id"))?, author: any_str(map_get(&value, "author"))? })
+}
+
+fn set_suggestion(txn: &mut TransactionMut, el: &XmlElementRef, suggestion: &Suggestion) {
+    set_attr(txn, el, SUGGESTION, obj(&[("kind", string(suggestion.kind.as_str())), ("id", string(&suggestion.id)), ("author", string(&suggestion.author))]));
+}
+
+fn suggest_node(txn: &mut TransactionMut, el: &XmlElementRef, kind: SuggestionKind, id: &str, author: &str) {
+    // A later proposal must not replace the author or decision of an earlier one.
+    if node_suggestion(txn, el).is_none() {
+        set_suggestion(txn, el, &Suggestion { kind, id: id.to_owned(), author: author.to_owned() });
+    }
+}
+
+fn read_item_children<T: ReadTxn>(txn: &T, item: &XmlElementRef) -> Vec<Block> {
+    let children = read_children(txn, item);
+    match node_suggestion(txn, item) {
+        Some(s) => children.into_iter().map(|b| Block::suggested(s.clone(), b)).collect(),
+        None => children,
+    }
+}
+
 fn read_block<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Block> {
     let tag = el.tag().to_string();
-    Some(match tag.as_str() {
+    let block = match tag.as_str() {
         PARAGRAPH => Block::Paragraph {
             content: read_inline(txn, el),
         },
@@ -118,7 +143,7 @@ fn read_block<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Block> {
                 .filter_map(|c| match c {
                     XmlOut::Element(item) => Some(TaskItem {
                         checked: attr_bool(txn, &item, "checked"),
-                        blocks: read_children(txn, &item),
+                        blocks: read_item_children(txn, &item),
                     }),
                     _ => None,
                 })
@@ -159,7 +184,13 @@ fn read_block<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Block> {
                                         as u32,
                                     rowspan: attr_number(txn, &cell, "rowspan").unwrap_or(1).max(1)
                                         as u32,
-                                    blocks: read_children(txn, &cell),
+                                    blocks: {
+                                        let blocks = read_item_children(txn, &cell);
+                                        match node_suggestion(txn, &row) {
+                                            Some(s) => blocks.into_iter().map(|b| Block::suggested(s.clone(), b)).collect(),
+                                            None => blocks,
+                                        }
+                                    },
                                 }),
                                 _ => None,
                             })
@@ -174,6 +205,10 @@ fn read_block<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Block> {
         },
         TABLE_OF_CONTENTS => Block::TableOfContents,
         _ => return None,
+    };
+    Some(match node_suggestion(txn, el) {
+        Some(s) => Block::suggested(s, block),
+        None => block,
     })
 }
 
@@ -181,7 +216,7 @@ fn read_list_items<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Vec<ListItem> {
     el.children(txn)
         .filter_map(|c| match c {
             XmlOut::Element(item) => Some(ListItem {
-                blocks: read_children(txn, &item),
+                blocks: read_item_children(txn, &item),
             }),
             _ => None,
         })
@@ -209,7 +244,7 @@ fn read_inline<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Vec<Inline> {
 }
 
 fn read_atom<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Inline> {
-    Some(match el.tag().as_ref() {
+    let inline = match el.tag().as_ref() {
         HARD_BREAK => Inline::HardBreak,
         INLINE_MATH => Inline::InlineMath {
             latex: attr_string(txn, el, "latex").unwrap_or_default(),
@@ -229,6 +264,10 @@ fn read_atom<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Inline> {
             link_title: attr_string(txn, el, "linkTitle"),
         },
         _ => return None,
+    };
+    Some(match node_suggestion(txn, el) {
+        Some(suggestion) => Inline::Suggested { suggestion, inline: Box::new(inline) },
+        None => inline,
     })
 }
 
@@ -443,12 +482,21 @@ fn insert_block<F: XmlFragment>(
     mode: Option<&EditMode>,
 ) -> XmlElementRef {
     let el = parent.insert(txn, index, XmlElementPrelim::empty(block.type_name()));
-    fill_block(txn, &el, block, mode);
+    if let Some((id, author)) = mode.and_then(|m| m.suggest.as_ref()) {
+        fill_block(txn, &el, block, None);
+        suggest_node(txn, &el, SuggestionKind::Insert, id, author);
+    } else {
+        fill_block(txn, &el, block, mode);
+    }
     el
 }
 
 fn fill_block(txn: &mut TransactionMut, el: &XmlElementRef, block: &Block, mode: Option<&EditMode>) {
     match block {
+        Block::Suggested { suggestion, block } => {
+            fill_block(txn, el, block, None);
+            set_suggestion(txn, el, suggestion);
+        }
         Block::Paragraph { content } => write_inline(txn, el, content, mode),
         Block::Heading { level, content } => {
             set_attr(txn, el, "level", num(*level));
@@ -457,21 +505,21 @@ fn fill_block(txn: &mut TransactionMut, el: &XmlElementRef, block: &Block, mode:
         Block::BulletList { items } => {
             for (i, item) in items.iter().enumerate() {
                 let li = el.insert(txn, i as u32, XmlElementPrelim::empty(LIST_ITEM));
-                write_children(txn, &li, &item.blocks, mode);
+                write_container_children(txn, &li, &item.blocks, mode);
             }
         }
         Block::OrderedList { start, items } => {
             set_attr(txn, el, "start", num(*start));
             for (i, item) in items.iter().enumerate() {
                 let li = el.insert(txn, i as u32, XmlElementPrelim::empty(LIST_ITEM));
-                write_children(txn, &li, &item.blocks, mode);
+                write_container_children(txn, &li, &item.blocks, mode);
             }
         }
         Block::TaskList { items } => {
             for (i, item) in items.iter().enumerate() {
                 let li = el.insert(txn, i as u32, XmlElementPrelim::empty(TASK_ITEM));
                 set_attr(txn, &li, "checked", Any::Bool(item.checked));
-                write_children(txn, &li, &item.blocks, mode);
+                write_container_children(txn, &li, &item.blocks, mode);
             }
         }
         Block::Blockquote { blocks } => write_children(txn, el, blocks, mode),
@@ -498,17 +546,29 @@ fn fill_block(txn: &mut TransactionMut, el: &XmlElementRef, block: &Block, mode:
         Block::Table { rows } => {
             for (r, row) in rows.iter().enumerate() {
                 let tr = el.insert(txn, r as u32, XmlElementPrelim::empty(TABLE_ROW));
+                let suggestion = common_suggestion(row.cells.iter().flat_map(|cell| &cell.blocks));
+                if let Some(s) = &suggestion { set_suggestion(txn, &tr, s); }
                 for (c, cell) in row.cells.iter().enumerate() {
                     let tag = if cell.header { TABLE_HEADER } else { TABLE_CELL };
                     let td = tr.insert(txn, c as u32, XmlElementPrelim::empty(tag));
                     set_attr(txn, &td, "colspan", num(cell.colspan));
                     set_attr(txn, &td, "rowspan", num(cell.rowspan));
                     if let Some(align) = &cell.align { set_attr(txn, &td, "textAlign", string(align)); }
-                    write_children(txn, &td, &cell.blocks, mode);
+                    let children = if suggestion.is_some() { without_common_suggestion(&cell.blocks) } else { cell.blocks.clone() };
+                    write_container_children(txn, &td, &children, mode);
                 }
             }
         }
         Block::BlockMath { latex } => set_attr(txn, el, "latex", string(latex)),
+    }
+}
+
+fn write_container_children(txn: &mut TransactionMut, el: &XmlElementRef, blocks: &[Block], mode: Option<&EditMode>) {
+    if let Some(suggestion) = common_suggestion(blocks) {
+        set_suggestion(txn, el, &suggestion);
+        write_children(txn, el, &without_common_suggestion(blocks), mode);
+    } else {
+        write_children(txn, el, blocks, mode);
     }
 }
 
@@ -546,6 +606,9 @@ fn write_inline(txn: &mut TransactionMut, el: &XmlElementRef, content: &[Inline]
                 let atom_el = el.insert(txn, index, XmlElementPrelim::empty(atom.atom_name().unwrap()));
                 index += 1;
                 write_atom_attrs(txn, &atom_el, atom);
+                if let Some((id, author)) = mode.and_then(|m| m.suggest.as_ref()) {
+                    suggest_node(txn, &atom_el, SuggestionKind::Insert, id, author);
+                }
             }
         }
     }
@@ -553,6 +616,10 @@ fn write_inline(txn: &mut TransactionMut, el: &XmlElementRef, content: &[Inline]
 
 fn write_atom_attrs(txn: &mut TransactionMut, el: &XmlElementRef, atom: &Inline) {
     match atom {
+        Inline::Suggested { suggestion, inline } => {
+            write_atom_attrs(txn, el, inline);
+            set_suggestion(txn, el, suggestion);
+        }
         Inline::InlineMath { latex } => set_attr(txn, el, "latex", string(latex)),
         Inline::Footnote { content } => set_attr(txn, el, "content", string(content)),
         Inline::DocLink { title, alias } => {
@@ -626,7 +693,7 @@ fn patch_children<F: XmlFragment>(
         && visible
             .iter()
             .zip(base)
-            .all(|(&i, b)| std::mem::discriminant(&live[i].2) == std::mem::discriminant(b));
+            .all(|(&i, b)| std::mem::discriminant(live[i].2.unsuggested()) == std::mem::discriminant(b.unsuggested()));
     let (base_blocks, map): (Vec<Block>, Vec<usize>) = if lined_up {
         (base.to_vec(), visible)
     } else {
@@ -704,7 +771,7 @@ fn delete_live<F: XmlFragment>(
     mode: &EditMode,
 ) {
     match &mode.suggest {
-        Some((id, author)) => suggest_delete_all(txn, el, id, author),
+        Some((id, author)) => suggest_node(txn, el, SuggestionKind::Delete, id, author),
         None => {
             // Find the element's current index (earlier deletions may have moved it).
             let mut current = *index;
@@ -722,6 +789,8 @@ fn delete_live<F: XmlFragment>(
 
 /// Marks every character in an element as suggested for deletion.
 fn suggest_delete_all(txn: &mut TransactionMut, el: &XmlElementRef, id: &str, author: &str) {
+    let atoms: Vec<XmlElementRef> = el.children(txn).filter_map(|n| match n { XmlOut::Element(e) => Some(e), _ => None }).collect();
+    for atom in atoms { suggest_node(txn, &atom, SuggestionKind::Delete, id, author); }
     let texts = all_texts(txn, el);
     for text in texts {
         let runs = text_runs(txn, &text);
@@ -782,7 +851,9 @@ fn patch_block(
     new: &Block,
     mode: &EditMode,
 ) -> bool {
-    if mode.suggest.is_some() && (attrs_differ(exact, new) || attrs_differ(base, new)) {
+    let exact = exact.unsuggested();
+    let base = base.unsuggested();
+    if mode.suggest.is_some() && (attrs_differ(exact, new) || attrs_differ(base, new) || matches!(base, Block::CodeBlock { .. }) && base != new) {
         return false;
     }
     match (exact, base, new) {
@@ -915,7 +986,7 @@ fn patch_items(
     let items: Vec<XmlElementRef> = list
         .children(txn)
         .filter_map(|c| match c {
-            XmlOut::Element(e) => Some(e),
+            XmlOut::Element(e) if !node_suggestion(txn, &e).is_some_and(|s| s.kind == SuggestionKind::Insert) => Some(e),
             _ => None,
         })
         .collect();
@@ -923,16 +994,20 @@ fn patch_items(
     let base_keys: Vec<Vec<Block>> = if lined_up {
         base.iter().map(|b| (*b).clone()).collect()
     } else {
-        items.iter().map(|i| read_children(txn, i)).collect()
+        items.iter().map(|i| Doc { blocks: read_children(txn, i) }.without_suggestions().blocks).collect()
     };
     let new_keys: Vec<Vec<Block>> = new.iter().map(|(b, _)| (*b).clone()).collect();
     let ops = similar::capture_diff_slices(similar::Algorithm::Myers, &base_keys, &new_keys);
+    let position = |txn: &TransactionMut, at: usize| -> u32 {
+        items.get(at).and_then(|item| list.children(txn).position(|c| matches!(c, XmlOut::Element(e) if e == *item))).map(|i| i as u32).unwrap_or_else(|| list.len(txn))
+    };
     let insert_item = |txn: &mut TransactionMut, at: u32, blocks: &Vec<Block>, checked: Option<bool>| {
         let li = list.insert(txn, at, XmlElementPrelim::empty(item_tag));
         if let Some(checked) = checked {
             set_attr(txn, &li, "checked", Any::Bool(checked));
         }
-        write_children(txn, &li, blocks, Some(mode));
+        write_children(txn, &li, blocks, None);
+        if let Some((id, author)) = &mode.suggest { suggest_node(txn, &li, SuggestionKind::Insert, id, author); }
     };
     for op in ops.iter().rev() {
         let (tag, old_range, new_range) = op.as_tag_tuple();
@@ -948,14 +1023,15 @@ fn patch_items(
             similar::DiffTag::Delete => {
                 for o in old_range.rev() {
                     match &mode.suggest {
-                        Some((id, author)) => suggest_delete_all(txn, &items[o], id, author),
-                        None => list.remove_range(txn, o as u32, 1),
+                        Some((id, author)) => suggest_node(txn, &items[o], SuggestionKind::Delete, id, author),
+                        None => remove_child(txn, list, &items[o]),
                     }
                 }
             }
             similar::DiffTag::Insert => {
+                let at = position(txn, old_range.start);
                 for (k, n) in new_range.enumerate() {
-                    insert_item(txn, (old_range.start + k) as u32, new[n].0, new[n].1);
+                    insert_item(txn, at + k as u32, new[n].0, new[n].1);
                 }
             }
             similar::DiffTag::Replace => {
@@ -963,15 +1039,15 @@ fn patch_items(
                 let news: Vec<usize> = new_range.collect();
                 let paired = olds.len().min(news.len());
                 if news.len() > paired {
-                    let after = olds[paired - 1] as u32 + 1;
+                    let after = position(txn, olds[paired - 1]) + 1;
                     for (k, n) in news[paired..].iter().enumerate() {
                         insert_item(txn, after + k as u32, new[*n].0, new[*n].1);
                     }
                 }
                 for o in olds[paired..].iter().rev() {
                     match &mode.suggest {
-                        Some((id, author)) => suggest_delete_all(txn, &items[*o], id, author),
-                        None => list.remove_range(txn, *o as u32, 1),
+                        Some((id, author)) => suggest_node(txn, &items[*o], SuggestionKind::Delete, id, author),
+                        None => remove_child(txn, list, &items[*o]),
                     }
                 }
                 for k in (0..paired).rev() {
@@ -1236,6 +1312,7 @@ fn patch_text(
                 // Contiguous live stretches of the deleted visible characters.
                 let mut ranges: Vec<(u32, u32)> = vec![];
                 for v in from..to {
+                    if mode.suggest.is_some() && visible[v].marks.suggestion.is_some() { continue; }
                     let start = y_pos[v];
                     let len = visible[v].ch.len_utf16() as u32;
                     match ranges.last_mut() {
@@ -1289,9 +1366,48 @@ fn patch_text(
 // Suggestions
 // ------------------------------------------------------------------------------------------
 
+/// Other pending proposals that would be erased by this decision. Resolve those first.
+pub fn resolution_conflicts<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, id: &str, accept: bool) -> Vec<String> {
+    fn visit<T: ReadTxn, F: XmlFragment>(txn: &T, parent: &F, id: &str, accept: bool, removing: bool, conflicts: &mut Vec<String>) {
+        for child in parent.children(txn) {
+            match child {
+                XmlOut::Element(el) => {
+                    let suggestion = node_suggestion(txn, &el);
+                    if removing && let Some(s) = &suggestion && s.id != id && !conflicts.contains(&s.id) { conflicts.push(s.id.clone()); }
+                    let removing = removing || suggestion.is_some_and(|s| s.id == id && s.goes_when(accept));
+                    visit(txn, &el, id, accept, removing, conflicts);
+                }
+                XmlOut::Text(text) if removing => {
+                    for (_, marks) in text_runs(txn, &text) {
+                        if let Some(s) = marks.suggestion && s.id != id && !conflicts.contains(&s.id) { conflicts.push(s.id); }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut conflicts = vec![];
+    visit(txn, frag, id, accept, false, &mut conflicts);
+    conflicts
+}
+
 /// Accepts or rejects one suggestion. Returns whether anything was found.
 pub fn resolve_suggestion(txn: &mut TransactionMut, frag: &XmlFragmentRef, id: &str, accept: bool) -> bool {
-    let mut found = false;
+    if !resolution_conflicts(txn, frag, id, accept).is_empty() { return false; }
+    fn nodes<F: XmlFragment>(txn: &mut TransactionMut, parent: &F, id: &str, accept: bool) -> bool {
+        let children: Vec<XmlElementRef> = parent.children(txn).filter_map(|n| match n { XmlOut::Element(e) => Some(e), _ => None }).collect();
+        let mut found = false;
+        for el in children.into_iter().rev() {
+            if let Some(s) = node_suggestion(txn, &el).filter(|s| s.id == id) {
+                found = true;
+                if s.goes_when(accept) { remove_child(txn, parent, &el); continue; }
+                el.remove_attribute(txn, &SUGGESTION);
+            }
+            found |= nodes(txn, &el, id, accept);
+        }
+        found
+    }
+    let mut found = nodes(txn, frag, id, accept);
     let containers = text_containers(txn, frag);
     for (el, texts) in containers.into_iter().rev() {
         let mut touched = false;
@@ -1334,7 +1450,8 @@ pub fn resolve_suggestion(txn: &mut TransactionMut, frag: &XmlFragmentRef, id: &
         }
         // A block that held only this suggestion's text and is now empty goes with it.
         if touched && was_all_suggested
-            && let Some(el) = el {
+            && let Some(el) = el
+            && node_suggestion(txn, &el).is_none() {
                 let empty = all_texts(txn, &el).iter().all(|t| plain(txn, t).is_empty())
                     && !el.children(txn).any(|c| matches!(c, XmlOut::Element(_)));
                 if empty {
@@ -1349,6 +1466,7 @@ pub fn resolve_suggestion(txn: &mut TransactionMut, frag: &XmlFragmentRef, id: &
                 }
             }
     }
+    if frag.len(txn) == 0 { insert_block(txn, frag, 0, &Block::empty_paragraph(), None); }
     found
 }
 

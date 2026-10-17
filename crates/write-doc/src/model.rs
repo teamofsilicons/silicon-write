@@ -796,9 +796,7 @@ struct Summaries {
 
 impl Summaries {
     fn add(&mut self, suggestion: &Suggestion, text: &str) {
-        if text.is_empty() {
-            return;
-        }
+        // Empty structural proposals still need an identity so they can be reviewed.
         let index = match self.list.iter().position(|f| f.id == suggestion.id) {
             Some(i) => i,
             None => {
@@ -950,7 +948,8 @@ fn inline_markdown(inline: &Inline) -> String {
         Inline::HardBreak => "\n".to_owned(),
         Inline::InlineMath { latex } => format!("${latex}$"),
         Inline::Footnote { content } => format!("^[{content}]"),
-        Inline::DocLink { title } => format!("[[{title}]]"),
+        Inline::DocLink { title, alias } => alias.as_ref().map(|a| format!("[[{title}|{a}]]")).unwrap_or_else(|| format!("[[{title}]]")),
+        Inline::Image { src, alt, .. } => format!("![{}]({src})", alt.as_deref().unwrap_or("")),
         Inline::Suggested { inline, .. } => inline_markdown(inline),
     }
 }

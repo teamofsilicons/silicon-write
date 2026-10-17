@@ -62,6 +62,7 @@ fn children<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Vec<Child> {
                 Some(Child::Text { text, chars, len })
             }
             XmlOut::Element(e) => Some(match read_atom(txn, &e) {
+                Some(Inline::Suggested { suggestion, .. }) if suggestion.kind == SuggestionKind::Insert => Child::Other { el: e },
                 Some(inline) => Child::Node { el: e, inline },
                 None => Child::Other { el: e },
             }),
@@ -72,6 +73,7 @@ fn children<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Vec<Child> {
 
 fn node_sym(inline: &Inline) -> Sym {
     match inline {
+        Inline::Suggested { inline, .. } => node_sym(inline),
         Inline::HardBreak => Sym::Break,
         Inline::Text { .. } => Sym::Node(0),
         Inline::InlineMath { .. } => Sym::Node(1),
