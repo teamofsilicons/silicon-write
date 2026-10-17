@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/react";
 import { ArrowLeft, Copy, Download, FileInput, FolderInput, History, Link2, MessageSquare, MoreHorizontal, Search, Trash2, RotateCcw, Users } from "lucide-react";
@@ -86,6 +87,7 @@ export interface TopBarProps {
 
 export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, panel, onPanel, onFind, openThreads }: TopBarProps) {
   const client = useQueryClient();
+  const router = useRouter();
   const refreshLibrary = useRefreshLibrary();
   const people = usePresence(live);
   const [shareOpen, setShareOpen] = useState(false);
@@ -100,13 +102,17 @@ export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, 
   };
 
   const download = (format: string) => {
-    window.location.href = `/api/v1/docs/${seg(doc.id)}/export?format=${format}`;
+    // A download, not a page: a link the browser saves.
+    const link = document.createElement("a");
+    link.href = `/api/v1/docs/${seg(doc.id)}/export?format=${format}`;
+    link.download = "";
+    link.click();
   };
 
   const copy = async () => {
     try {
       const created = await api.post<Doc>(`/v1/docs/${seg(doc.id)}/copy`, {});
-      window.location.href = `/d/${created.id}`;
+      router.push(`/d/${created.id}`);
     } catch (error) {
       notifyError(error, "The copy couldn't be made");
     }
@@ -116,7 +122,7 @@ export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, 
     try {
       await api.delete(`/v1/docs/${seg(doc.id)}`);
       notify.success("Moved to the trash", "You can restore it from the trash at any time.");
-      window.location.href = "/library";
+      router.push("/library");
     } catch (error) {
       notifyError(error, "The doc couldn't be moved to the trash");
     }

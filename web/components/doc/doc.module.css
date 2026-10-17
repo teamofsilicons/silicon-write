@@ -320,3 +320,20 @@
 .pdfArea[data-active] { border-color: rgb(196 140 10); background: rgb(247 200 74 / .32); }
 .pdfDraft { position: absolute; border: 2px dashed var(--accent); background: var(--accent-subtle); }
 .pdfPageNumber { position: absolute; right: var(--space-3); bottom: var(--space-2); font: 500 .72rem/1 var(--font-pixel); color: var(--text-faint); }
+
+/* The margin button for commenting on a section. */
+.sectionGutter {
+  z-index: 15;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-resting);
+}
+.sectionGutter:hover { color: var(--foreground); border-color: var(--border-strong); }
+@media (max-width: 860px) { .sectionGutter { display: none; } }

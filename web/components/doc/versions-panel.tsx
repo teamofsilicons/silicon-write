@@ -15,6 +15,7 @@ import { ArrowLeft, Copy, RotateCcw, Tag, Undo2, Users, X } from "lucide-react";
 import { Button } from "@/components/silicon-ui/button/button";
 import SegmentedControl from "@/components/silicon-ui/segmented-control/segmented-control";
 import { Switch } from "@/components/silicon-ui/switch/switch";
+import { Select } from "@/components/silicon-ui/select/select";
 import { api, seg } from "@/lib/client/api";
 import { notify, notifyError } from "@/lib/notify";
 import { formatDateTime, formatRelative } from "@/lib/format";
@@ -88,7 +89,9 @@ export function VersionsPanel({ doc, editor, live, onClose }: { doc: Doc; editor
   const versionsQuery = useVersions(doc.id);
   const versions = useMemo(() => versionsQuery.data?.versions ?? [], [versionsQuery.data]);
   const [selected, setSelected] = useState<Version | null>(null);
-  const [view, setView] = useState<"changes" | "now" | "doc">("changes");
+  const [view, setView] = useState<"changes" | "doc">("changes");
+  /** What the version is compared with: the version before it, the doc now, or any other version. */
+  const [against, setAgainst] = useState<string>("previous");
   const [authorship, setAuthorship] = useState(false);
   const [naming, setNaming] = useState("");
   const latestSeq = versions[0]?.seq ?? doc.seq;
@@ -101,8 +104,13 @@ export function VersionsPanel({ doc, editor, live, onClose }: { doc: Doc; editor
     return () => clearInterval(timer);
   }, [live, client, doc.id]);
 
-  const compareFrom = selected ? (view === "now" ? selected.seq : Math.max(0, selected.from_seq - 1)) : null;
-  const compareTo = selected ? (view === "now" ? latestSeq : selected.seq) : null;
+  const otherSeq = against !== "previous" && against !== "now" ? Number(against) : null;
+  const compareFrom = selected
+    ? against === "now" ? selected.seq : otherSeq !== null ? Math.min(otherSeq, selected.seq) : Math.max(0, selected.from_seq - 1)
+    : null;
+  const compareTo = selected
+    ? against === "now" ? latestSeq : otherSeq !== null ? Math.max(otherSeq, selected.seq) : selected.seq
+    : null;
   const compare = useCompare(doc.id, view === "doc" ? null : compareFrom, compareTo);
 
   useEffect(() => {
@@ -198,12 +206,24 @@ export function VersionsPanel({ doc, editor, live, onClose }: { doc: Doc; editor
           </div>
         ) : null}
         <SegmentedControl
-          options={[{ value: "changes", label: "What changed" }, { value: "now", label: "Since then" }, { value: "doc", label: "Whole doc" }]}
+          options={[{ value: "changes", label: "Changes" }, { value: "doc", label: "Whole doc" }]}
           value={view}
-          onValueChange={(v: string) => setView(v as "changes" | "now" | "doc")}
+          onValueChange={(v: string) => setView(v as "changes" | "doc")}
           label="Show"
           size="xs"
         />
+        {view === "changes" ? (
+          <Select
+            label="Compared with"
+            value={against}
+            onValueChange={setAgainst}
+            options={[
+              { value: "previous", label: "The version before it" },
+              { value: "now", label: "The doc now" },
+              ...versions.filter(v => v.seq !== selected.seq).map(v => ({ value: String(v.seq), label: `${v.name ?? v.summary} · ${formatDateTime(v.created_at)}` })),
+            ]}
+          />
+        ) : null}
         {view === "doc" ? (
           <Preview docId={doc.id} seq={selected.seq} />
         ) : compare.isLoading ? (
@@ -235,7 +255,7 @@ export function VersionsPanel({ doc, editor, live, onClose }: { doc: Doc; editor
       <ol className={styles.versionList}>
         {versions.map((v, i) => (
           <li key={v.seq}>
-            <button type="button" className={styles.versionRow} onClick={() => { setSelected(v); setView("changes"); }}>
+            <button type="button" className={styles.versionRow} onClick={() => { setSelected(v); setView("changes"); setAgainst("previous"); }}>
               <span className={styles.versionTitle}>
                 {v.name ? <span className={styles.versionName}>{v.name}</span> : null}
                 {i === 0 ? <span className={styles.currentTag}>Current</span> : null}
