@@ -26,7 +26,7 @@ test("llms.txt says what the app is, how a Silicon installs it and signs in, and
   const text = llmsTxt(ORIGIN);
   assert.ok(text.startsWith(`# ${appConfig.name}\n\n> ${appConfig.tagline}\n`));
   assert.ok(text.includes(`\`silicon-apps install ${appConfig.appId}\``));
-  assert.ok(text.includes(`\`silicon-accounts login --app ${appConfig.appId} -q | ${appConfig.cli!.command} login --slt-stdin\``));
+  assert.ok(text.includes(`\`silicon-accounts login --app ${appConfig.appId} | ${appConfig.cli!.command} login --token-stdin\``));
   assert.ok(text.includes(`- [Docs](${appConfig.links.docs})`));
   for (const word of ["AI agent", "human", "user account", "organization", " org ", "Honeycomb", "IAM"]) assert.ok(!text.includes(word), `never "${word}"`);
 });

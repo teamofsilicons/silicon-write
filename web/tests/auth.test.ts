@@ -38,7 +38,7 @@ test("starting a sign-in sends the browser to the hosted pages with PKCE S256 an
   assert.equal(params.app_id, "webkit");
   assert.equal(params.redirect_uri, "http://127.0.0.1:4260/auth/callback");
   assert.equal(params.response_type, "code");
-  assert.equal(params.scope, "email timezone");
+  assert.equal(params.scope, "email");
   assert.equal(params.code_challenge_method, "S256");
   assert.equal(params.prompt, "login");
   const [entry] = readPending(new NextRequest("http://127.0.0.1:4260/auth/callback", { headers: { cookie: `webkit_signin=${pending}` } }));
@@ -101,8 +101,8 @@ test("signing out revokes the refresh token and clears the cookie; only from thi
   assert.equal(mock.calls.length, 0);
   const fetched = await signOut(new NextRequest("http://127.0.0.1:4260/auth/sign-out", { method: "POST", headers: { cookie, origin: "http://127.0.0.1:4260" } }));
   assert.equal(fetched.status, 204);
-  assert.equal(mock.calls[0]!.url, "http://127.0.0.1:4261/api/v2/auth/logout");
-  assert.equal(JSON.parse(String(mock.calls[0]!.init.body)).data.refresh_token, "sar_current");
+  assert.equal(mock.calls[0]!.url, "http://127.0.0.1:9589/v1/oauth/revoke");
+  assert.equal(new URLSearchParams(String(mock.calls[0]!.init.body)).get("token"), "sar_current");
   assert.match(fetched.headers.get("set-cookie") ?? "", /webkit_session=;.*Max-Age=0/i);
   const form = await signOut(new NextRequest("http://127.0.0.1:4260/auth/sign-out", { method: "POST", headers: { cookie, origin: "http://127.0.0.1:4260", accept: "text/html", "sec-fetch-mode": "navigate" } }));
   assert.equal(form.status, 303);
@@ -130,9 +130,15 @@ test("the session view never shows a token, and the keeper's refresh only acts i
   assert.ok(Date.parse((await due.json()).expires_at) > Date.now() + 29 * 60_000);
 });
 
-test("an unreachable Extend preserves the browser session so sign-out can be retried", async () => {
- const mock=mockFetch(()=>{throw new Error("offline")});restore=mock.restore;
- const cookie=`webkit_session=${sealSession(session())}`;
- const response=await signOut(new NextRequest("http://127.0.0.1:4260/auth/sign-out",{method:"POST",headers:{cookie,origin:"http://127.0.0.1:4260"}}));
- assert.equal(response.status,503);assert.equal(response.headers.get("set-cookie"),null);assert.equal((await response.json()).error.code,"sign_out_failed");
+test("an unreachable Accounts service still ends this browser's session", async () => {
+  // Revocation is best effort; the local cookie must not keep the browser signed in while Accounts is offline.
+  const mock = mockFetch(() => { throw new Error("offline"); });
+  restore = mock.restore;
+  const cookie = `webkit_session=${sealSession(session())}`;
+  const response = await signOut(new NextRequest("http://127.0.0.1:4260/auth/sign-out", {
+    method: "POST", headers: { cookie, origin: "http://127.0.0.1:4260" },
+  }));
+  assert.equal(mock.calls[0]!.url, "http://127.0.0.1:9589/v1/oauth/revoke");
+  assert.equal(response.status, 204);
+  assert.match(response.headers.get("set-cookie") ?? "", /webkit_session=;.*Max-Age=0/i);
 });
