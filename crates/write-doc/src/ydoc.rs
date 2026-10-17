@@ -584,12 +584,13 @@ fn patch_children<F: XmlFragment>(
     mode: &EditMode,
 ) {
     let live = live_blocks(txn, parent);
-    // Markdown has no empty paragraphs, so `base` has none either: line the live blocks up with
-    // `base` by skipping them. When that doesn't line up, compare against the live blocks.
+    // Markdown has no empty paragraphs, and leaves out a paragraph that is only a pending suggested
+    // insertion, so `base` has neither: line the live blocks up with `base` by skipping them (a
+    // pending suggestion stays as it is). When that doesn't line up, compare against the live blocks.
     let visible: Vec<usize> = live
         .iter()
         .enumerate()
-        .filter(|(_, (_, _, b))| !b.is_empty_paragraph())
+        .filter(|(_, (_, _, b))| !b.is_empty_paragraph() && !b.is_suggested_only())
         .map(|(i, _)| i)
         .collect();
     let lined_up = visible.len() == base.len()

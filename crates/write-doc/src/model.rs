@@ -258,6 +258,17 @@ impl Block {
         matches!(self, Block::Paragraph { content } if content.is_empty())
     }
 
+    /// A paragraph or heading whose text is all a pending suggested insertion: it isn't in the doc
+    /// yet, so the Markdown leaves it out.
+    pub fn is_suggested_only(&self) -> bool {
+        self.inline_content().is_some_and(|content| {
+            !content.is_empty()
+                && content.iter().all(|inline| {
+                    matches!(inline, Inline::Text { marks, .. } if marks.suggestion.as_ref().is_some_and(|s| s.kind == SuggestionKind::Insert))
+                })
+        })
+    }
+
     /// Plain text, with blocks separated by newlines.
     pub fn plain_text(&self) -> String {
         let mut out = String::new();
