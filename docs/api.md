@@ -90,7 +90,9 @@ file is the technical reference.
 - Search, backlinks and links reflect a change made through the API as soon as the call answers; typing in the editor
   is indexed within about two seconds.
 - `GET /v1/docs/{id}/export?format=md|txt|docx|odt|rtf|html|pdf&seq=<n>` **public** → the file (`Content-Disposition: attachment`).
-- `POST /v1/docs/{id}/assets` (multipart `file`, an image) → `{ "id", "url" }`. `GET /v1/assets/{id}` **public** (doc access) → bytes.
+  A PDF shown as it is downloads as itself in `pdf`, and as its text in the other formats.
+- `POST /v1/docs/{id}/assets` (multipart `file`, an image: PNG, JPEG, GIF, WebP or SVG, told by its bytes; anything else
+  is `415 unsupported_format`) → `{ "id", "url" }`. `GET /v1/assets/{id}` **public** (doc access) → bytes.
 - `GET /v1/docs/{id}/backlinks` → `{ "docs": [Doc] }`: docs the caller can open that link here with `[[title]]`.
 - `GET /v1/links?title=…` → `{ "doc": Doc | null }`: the doc a `[[title]]` link opens for the caller (by title, case-insensitive).
 - `GET /v1/docs/{id}/authorship` → `{ "blocks": [{ "index", "authors": [Account] }] }` (who wrote each top-level block, most text first).
