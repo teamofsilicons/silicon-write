@@ -1,0 +1,155 @@
+# Silicon Write API (v1)
+
+The service behind `write.teamofsilicons.com` and the `write` CLI. Everything the web editor and the
+CLI do goes through these endpoints. The product contract is `understanding/UNDERSTANDING.md`; this
+file is the technical reference.
+
+- Base: `WRITE_API_URL` (production `https://api.write.teamofsilicons.com`, local `http://127.0.0.1:4371`).
+- Every route is under `/v1`. JSON in and out (`Content-Type: application/json`) unless a route says otherwise.
+- Auth: `Authorization: Bearer <access token>`: a Silicon Accounts access token issued to the app `write`
+  (the web's server or the CLI holds it). Routes marked **public** also answer without a token for public docs.
+- Errors: `{"error": {"code": "not_found", "message": "…", "hint": "…"}}` with a fitting HTTP status.
+  Codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `invalid` (422),
+  `not_unique` (409, an edit's `old` text matches several places), `no_match` (422, an edit's `old` text isn't there),
+  `too_large` (413), `unsupported_format` (415), `unavailable` (503).
+- Ids: docs `d_…`, folders `f_…`, threads `t_…`, comments `c_…`, members `m_…`, transfers `x_…`, assets `a_…`
+  (all random, URL-safe). Accounts are stored by their Silicon Accounts uuid.
+
+## Shapes
+
+```jsonc
+// Account
+{ "uuid": "240ec600-…", "id": "c:saket", "kind": "carbon", "display_name": "Saket Gupta", "pfp_url": "https://…" }
+
+// Doc
+{
+  "id": "d_x7Kq…", "title": "Launch plan", "kind": "doc",            // "doc" or "pdf" (a PDF shown as it is)
+  "owner": Account, "created_by": Account,
+  "folder_id": "f_…" | null, "path": [{ "id": "f_…", "name": "Plans" }],  // folders from the top down
+  "role": "owner" | "editor" | "commenter" | "viewer",                  // the caller's role
+  "public_access": "none" | "view" | "comment" | "edit",
+  "seq": 42,                                                              // latest change number
+  "created_at": "…", "updated_at": "…", "deleted_at": null,
+  "url": "https://write.teamofsilicons.com/d/d_x7Kq…"
+}
+
+// Folder
+{ "id": "f_…", "name": "Plans", "owner": Account, "parent_id": "f_…" | null, "path": [...],
+  "role": "owner" | "editor" | "commenter" | "viewer", "created_at": "…", "deleted_at": null }
+```
+
+## Me
+
+- `GET /v1/me` → `{ "account": Account }`.
+
+## Docs and folders
+
+- `GET /v1/library?view=mine|shared|trash&folder=<id>` → `{ "folder": Folder | null, "folders": [Folder], "docs": [Doc] }`.
+  `mine` without `folder`: the caller's top level. `shared`: everything shared with the caller directly.
+  `trash`: the caller's deleted docs and folders. With `folder`: that folder's content (any view).
+- `GET /v1/docs` → `{ "docs": [Doc] }`: every doc the caller can open (owned, shared directly, or inside a shared folder).
+- `GET /v1/folders` → `{ "folders": [Folder] }`: every folder the caller can open.
+- `POST /v1/docs` `{ "title"?, "folder_id"?, "markdown"? }` → `Doc` (201). In someone else's folder the doc
+  belongs to that folder's owner (`created_by` is the caller).
+- `POST /v1/docs/import` (multipart: `file`, optional `folder_id`, `title`) → `Doc` (201). Formats: `.md .markdown .txt
+  .docx .doc .odt .rtf .html .htm .pdf`. A PDF becomes a `pdf` doc shown as it is.
+- `POST /v1/docs/{id}/import` (multipart `file`) → `{ "seq" }`: opens a file on top of an existing doc; it becomes the next version.
+- `GET /v1/docs/{id}` **public** → `Doc`.
+- `PATCH /v1/docs/{id}` `{ "title"?, "folder_id"? }` → `Doc`. Rename (editor), move (editor of both folders; the doc and the
+  target folder must have the same owner).
+- `DELETE /v1/docs/{id}` → `204`: to the trash (owner). `POST /v1/docs/{id}/restore` → `Doc`.
+- `DELETE /v1/docs/{id}/permanently?confirm=<id>` → `204`: owner, only from the trash. The only way anything is gone.
+- `POST /v1/docs/{id}/copy` `{ "seq"?, "title"?, "folder_id"? }` → `Doc`: a new doc from the doc (or from version `seq`).
+- `POST /v1/docs/{id}/convert` → `Doc`: turns a `pdf` doc into a normal doc (the PDF stays as its original).
+- `GET /v1/docs/{id}/original` **public** → the uploaded original file (PDF docs).
+- `POST /v1/folders` `{ "name", "parent_id"? }` → `Folder`. `GET /v1/folders/{id}` → `Folder`.
+- `PATCH /v1/folders/{id}` `{ "name"?, "parent_id"? }` → `Folder`. `DELETE /v1/folders/{id}` → `204` (trash, with its content).
+  `POST /v1/folders/{id}/restore` → `Folder`. `DELETE /v1/folders/{id}/permanently?confirm=<id>` → `204`.
+
+## Content
+
+- `GET /v1/docs/{id}/markdown?suggestions=current|critic&comments=none|inline` **public** →
+  `{ "seq": 42, "markdown": "…", "title": "…" }`. `current` (default) is the doc as it reads now; `critic` shows pending
+  suggestions as `{++inserted++}` / `{--deleted--}`. `comments=inline` adds every open thread after the block it's on:
+  `> [!comment t_… by c:saket on "quoted text"] body` (replies follow as `> ↳ si:x: reply`).
+- `GET /v1/docs/{id}/prosemirror?seq=<n>` **public** → `{ "seq", "doc": <ProseMirror JSON> }` (read-only rendering).
+- `POST /v1/docs/{id}/edits` `{ "edits": [{ "old": "exact text", "new": "replacement", "all"?: false }], "suggest"?: false }`
+  → `{ "seq", "markdown" }`. Each `old` is exact text from the current Markdown and must appear once (or `all: true`).
+  Applied together; the change merges with whatever anyone else is doing. `suggest: true` makes it a suggestion.
+- `PUT /v1/docs/{id}/markdown` `{ "markdown", "base_seq"?, "suggest"? }` → `{ "seq", "markdown" }`. Writes a whole new
+  version. With `base_seq` (the `seq` the Markdown was read at), only what changed since then is applied, merged with
+  everything that happened after.
+- `GET /v1/docs/{id}/export?format=md|txt|docx|odt|rtf|html|pdf&seq=<n>` **public** → the file (`Content-Disposition: attachment`).
+- `POST /v1/docs/{id}/assets` (multipart `file`, an image) → `{ "id", "url" }`. `GET /v1/assets/{id}` **public** (doc access) → bytes.
+- `GET /v1/docs/{id}/backlinks` → `{ "docs": [Doc] }`: docs the caller can open that link here with `[[title]]`.
+- `GET /v1/docs/{id}/authorship` → `{ "blocks": [{ "index", "authors": [Account] }] }` (who wrote each top-level block, most text first).
+- `GET /v1/search?q=…` → `{ "results": [{ "doc": Doc, "snippet": "…" }] }`.
+
+## Real time
+
+- `POST /v1/docs/{id}/live` **public** → `{ "url": "wss://…/v1/live/d_…", "ticket": "…", "expires_at", "role", "account": Account | null }`.
+- `GET /v1/live/{id}?ticket=…` (WebSocket): the Yjs sync and awareness protocol (y-websocket messages 0 and 1) on the
+  editor's fragment `default`, plus server messages of type `100` carrying JSON:
+  `{"type":"authors","clients":{"<client id>":Account}}`, `{"type":"threads"}` (threads changed),
+  `{"type":"meta"}` (title, folder or access changed), `{"type":"role","role":"viewer"}`, `{"type":"rejected","reason"}`
+  (an edit the caller's role doesn't allow; reload).
+
+## Sharing
+
+- `GET /v1/docs/{id}/sharing` → `{ "owner": Account, "public_access", "members": [Member] }` where
+  `Member = { "id": "m_…", "account": Account | null, "email": "…" | null, "role", "via": "doc" | { "folder": Folder },
+  "pending": bool, "invited_by": Account, "created_at" }`.
+- `POST /v1/docs/{id}/sharing` `{ "to": "c:id" | "si:id" | "email@…", "role": "editor"|"commenter"|"viewer" }` → `Member`.
+- `PATCH /v1/docs/{id}/sharing/{member}` `{ "role" }` → `Member`. `DELETE /v1/docs/{id}/sharing/{member}` → `204`.
+- `PUT /v1/docs/{id}/public` `{ "access": "none"|"view"|"comment"|"edit" }` → `Doc` (owner).
+- The same under `/v1/folders/{id}/sharing` (no `public` for folders).
+- Owner and editors can invite; only the owner can change or remove other people (anyone can remove themselves).
+
+## Transfers
+
+- `POST /v1/docs/{id}/transfer` / `POST /v1/folders/{id}/transfer` `{ "to": "c:id"|"si:id" }` → `Transfer`.
+- `GET /v1/transfers` → `{ "incoming": [Transfer], "outgoing": [Transfer] }`.
+- `POST /v1/transfers/{id}/accept|decline|cancel` → `Transfer`.
+  `Transfer = { "id", "item": { "kind": "doc"|"folder", "id", "title" }, "from": Account, "to": Account, "status", "created_at" }`.
+
+## Comments
+
+- `GET /v1/docs/{id}/threads?status=open|resolved|all` → `{ "threads": [Thread] }` where
+  `Thread = { "id", "anchor": Anchor, "quote": "text when it was made", "current_quote": "text now" | null,
+  "orphaned": bool, "block_index": n | null, "status": "open"|"resolved", "created_by": Account, "created_at",
+  "resolved_by": Account | null, "comments": [Comment] }` and
+  `Comment = { "id", "author": Account, "body": "markdown with @c:id / @si:id", "created_at", "edited_at", "deleted": bool,
+  "reactions": [{ "emoji", "accounts": [Account] }] }`.
+- `POST /v1/docs/{id}/threads` `{ "anchor": Anchor, "body" }` → `Thread`. Anchors:
+  `{ "kind": "text", "start": "<base64 Yjs relative position>", "end": "…", "quote" }` (from the editor),
+  `{ "kind": "text", "quote": "exact text" }` (from the CLI: must appear once in the doc's text),
+  `{ "kind": "block", "start": "…", "quote"? }` (a whole section),
+  `{ "kind": "cell", "start": "…", "quote"? }`, `{ "kind": "image", "start": "…", "rect"?: { "x","y","w","h" } }` (fractions of the image).
+- `POST /v1/threads/{id}/comments` `{ "body" }` → `Comment`. `PATCH /v1/comments/{id}` `{ "body" }` (author).
+  `DELETE /v1/comments/{id}` (author) → kept in history as deleted.
+- `POST /v1/comments/{id}/reactions` `{ "emoji" }` → toggles the caller's reaction.
+- `POST /v1/threads/{id}/resolve`, `POST /v1/threads/{id}/reopen` → `Thread`.
+
+## Suggestions
+
+- `GET /v1/docs/{id}/suggestions` → `{ "suggestions": [{ "id", "author": Account, "inserted", "deleted" }] }`.
+- `POST /v1/docs/{id}/suggestions/{sid}/accept|reject`, `POST /v1/docs/{id}/suggestions/accept-all|reject-all` (editors) → `{ "seq" }`.
+
+## Versions and history (editors and owner)
+
+- `GET /v1/docs/{id}/versions` → `{ "versions": [Version] }`, newest first:
+  `Version = { "seq", "from_seq", "authors": [Account], "summary": "si:writer edited “Introduction”", "name": "…" | null, "created_at" }`.
+- `GET /v1/docs/{id}/versions/{seq}/markdown` → `{ "seq", "markdown" }`. `GET /v1/docs/{id}/prosemirror?seq=` renders it.
+- `PUT /v1/docs/{id}/versions/{seq}/name` `{ "name" }` / `DELETE` → names a version.
+- `GET /v1/docs/{id}/compare?from=<seq>&to=<seq>` → `{ "blocks": [{ "change": "same"|"added"|"removed"|"changed",
+  "before"?: "md", "after"?: "md", "parts"?: [{ "op": "same"|"added"|"removed", "text", "by"?: Account }] }] }`.
+- `POST /v1/docs/{id}/restore` `{ "seq", "blocks"?: [from, to] }` → `{ "seq" }`: the whole version, or only top-level
+  blocks `from..to` of that version. Restoring is a new version.
+- `POST /v1/docs/{id}/undo` `{ "account": "si:id"|"c:id", "since": <seq> }` → `{ "seq" }`: undoes everything that account
+  changed after version `since`, keeping everyone else's changes.
+- `GET /v1/docs/{id}/activity`, `GET /v1/folders/{id}/activity` → `{ "events": [{ "id", "kind", "actor": Account, "data", "created_at",
+  "undoable": bool }] }`. `POST /v1/activity/{id}/undo` → undoes a rename, move, delete or create.
+
+## Service
+
+- `GET /healthz`, `GET /readyz`. `POST /v1/webhooks/accounts`: Silicon Accounts updates (signed).

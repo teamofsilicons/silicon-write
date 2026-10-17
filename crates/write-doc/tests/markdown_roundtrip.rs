@@ -140,7 +140,7 @@ fn suggestions_views() {
         Inline::text("end"),
     ])]);
     assert_eq!(to_markdown(&doc), "keep old end\n");
-    let critic = to_markdown_with(&doc, &WriteOptions { suggestions: SuggestionView::Critic });
+    let critic = to_markdown_with(&doc, &WriteOptions { suggestions: SuggestionView::Critic, ..Default::default() });
     assert_eq!(critic, "keep {++new ++}{--old --}end\n");
     assert_eq!(doc.suggestions().len(), 2);
 }

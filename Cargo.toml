@@ -10,7 +10,7 @@ repository = "https://github.com/teamofsilicons/silicon-write"
 rust-version = "1.90"
 
 [workspace.dependencies]
-yrs = "0.28"
+yrs = { version = "0.28", features = ["sync"] }
 silicon-accounts-client = "0.6"
 axum = { version = "0.8", features = ["ws", "macros"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "json", "macros", "migrate"] }
@@ -31,6 +31,10 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 futures = "0.3"
+bytes = "1"
+url = "2"
+percent-encoding = "2"
+tempfile = "3"
 
 [profile.dev]
 debug = 0

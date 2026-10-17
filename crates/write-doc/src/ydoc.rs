@@ -130,7 +130,7 @@ fn read_block<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Block> {
             text: el
                 .children(txn)
                 .filter_map(|c| match c {
-                    XmlOut::Text(t) => Some(t.get_string(txn)),
+                    XmlOut::Text(t) => Some(plain(txn, &t)),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -219,6 +219,11 @@ fn read_atom<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> Option<Inline> {
         },
         _ => return None,
     })
+}
+
+/// The plain text of an XML text (`get_string` would render its formatting as XML tags).
+pub fn plain<T: ReadTxn>(txn: &T, text: &XmlTextRef) -> String {
+    text_runs(txn, text).into_iter().map(|(s, _)| s).collect()
 }
 
 /// The runs of an XML text, with their marks.
@@ -1252,7 +1257,7 @@ pub fn resolve_suggestion(txn: &mut TransactionMut, frag: &XmlFragmentRef, id: &
         // A block that held only this suggestion's text and is now empty goes with it.
         if touched && was_all_suggested {
             if let Some(el) = el {
-                let empty = all_texts(txn, &el).iter().all(|t| t.get_string(txn).is_empty())
+                let empty = all_texts(txn, &el).iter().all(|t| plain(txn, t).is_empty())
                     && !el.children(txn).any(|c| matches!(c, XmlOut::Element(_)));
                 if empty {
                     if let Some(XmlOut::Element(parent)) = el.parent() {
@@ -1313,6 +1318,8 @@ pub struct TextMap {
     pub child_starts: HashMap<yrs::BranchID, Vec<usize>>,
     /// Which top-level block each offset belongs to: (start, end, block index).
     pub blocks: Vec<(usize, usize, usize)>,
+    /// Every live text with where it starts.
+    pub texts: Vec<(usize, XmlTextRef)>,
 }
 
 impl TextMap {
@@ -1336,6 +1343,7 @@ pub fn text_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> TextMap {
         starts: HashMap::new(),
         child_starts: HashMap::new(),
         blocks: vec![],
+        texts: vec![],
     };
     for (i, child) in frag.children(txn).enumerate() {
         if let XmlOut::Element(el) = child {
@@ -1358,7 +1366,8 @@ fn walk_text<T: ReadTxn>(txn: &T, el: &XmlElementRef, map: &mut TextMap) {
         match child {
             XmlOut::Text(t) => {
                 map.starts.insert(AsRef::<yrs::branch::Branch>::as_ref(&t).id(), map.text.len());
-                map.text.extend(t.get_string(txn).encode_utf16());
+                map.texts.push((map.text.len(), t.clone()));
+                map.text.extend(plain(txn, &t).encode_utf16());
             }
             XmlOut::Element(e) => {
                 let is_block = read_atom(txn, &e).is_none();
@@ -1377,6 +1386,22 @@ fn walk_text<T: ReadTxn>(txn: &T, el: &XmlElementRef, map: &mut TextMap) {
         }
     }
     map.child_starts.insert(AsRef::<yrs::branch::Branch>::as_ref(el).id(), starts);
+}
+
+/// A Yjs relative position (encoded the way the editor encodes them) at an offset in the text
+/// map. `end` positions stick to the character before them, so typing right after a commented
+/// range doesn't extend it.
+pub fn position_at<T: ReadTxn>(txn: &T, map: &TextMap, offset: usize, end: bool) -> Option<Vec<u8>> {
+    use yrs::IndexedSequence;
+    use yrs::updates::encoder::Encode;
+    let found = map.texts.iter().find(|(start, text)| {
+        let len = text.len(txn) as usize;
+        if end { offset > *start && offset <= start + len } else { offset >= *start && offset < start + len }
+    })?;
+    let (start, text) = found;
+    let assoc = if end { yrs::Assoc::Before } else { yrs::Assoc::After };
+    let sticky = text.sticky_index(txn, (offset - start) as u32, assoc)?;
+    Some(sticky.encode_v1())
 }
 
 /// Resolves a Yjs relative position (as the editor encodes it) to an offset in the text map.

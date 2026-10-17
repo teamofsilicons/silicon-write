@@ -11,6 +11,7 @@ pub mod history;
 pub mod markdown;
 pub mod model;
 pub mod pandoc;
+pub mod prosemirror;
 pub mod ydoc;
 
 pub use markdown::{SuggestionView, WriteOptions, from_markdown, to_markdown, to_markdown_with};

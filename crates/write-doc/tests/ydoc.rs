@@ -106,7 +106,7 @@ fn suggestions_accept_and_reject() {
         let read = ydoc::read_doc(&y);
         // The text didn't change yet: Markdown shows the doc as it reads now.
         assert_eq!(to_markdown(&read), "The quick brown fox.\n");
-        let critic = to_markdown_with(&read, &WriteOptions { suggestions: SuggestionView::Critic });
+        let critic = to_markdown_with(&read, &WriteOptions { suggestions: SuggestionView::Critic, ..Default::default() });
         assert!(critic.contains("{++") && critic.contains("{--"), "{critic}");
         assert_eq!(read.suggestions().len(), 1);
         ydoc::with_txn(&y, |txn, frag| assert!(ydoc::resolve_suggestion(txn, frag, "s1", accept)));

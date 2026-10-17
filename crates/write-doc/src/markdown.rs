@@ -31,6 +31,9 @@ pub enum SuggestionView {
 #[derive(Debug, Clone, Default)]
 pub struct WriteOptions {
     pub suggestions: SuggestionView,
+    /// Text to place after top-level blocks: (block index, Markdown). Used to show comments next
+    /// to the text they're on.
+    pub annotations: Vec<(usize, String)>,
 }
 
 /// The doc as Markdown.
@@ -43,7 +46,11 @@ pub fn to_markdown_with(doc: &Doc, options: &WriteOptions) -> String {
         options: options.clone(),
         footnotes: vec![],
     };
-    let body = writer.blocks(&doc.blocks);
+    let body = if options.annotations.is_empty() {
+        writer.blocks(&doc.blocks)
+    } else {
+        writer.annotated(&doc.blocks, &options.annotations)
+    };
     let mut out = body;
     if !writer.footnotes.is_empty() {
         if !out.is_empty() {
@@ -84,6 +91,20 @@ struct InlineCtx {
 }
 
 impl Writer {
+    /// Top-level blocks, each followed by its annotations.
+    fn annotated(&mut self, blocks: &[Block], annotations: &[(usize, String)]) -> String {
+        let mut parts: Vec<String> = vec![];
+        for (i, block) in blocks.iter().enumerate() {
+            if !block.is_empty_paragraph() {
+                parts.push(self.blocks(std::slice::from_ref(block)));
+            }
+            for (_, note) in annotations.iter().filter(|(at, _)| *at == i) {
+                parts.push(note.clone());
+            }
+        }
+        parts.join("\n\n")
+    }
+
     fn blocks(&mut self, blocks: &[Block]) -> String {
         let mut parts: Vec<String> = vec![];
         let mut previous: Option<&Block> = None;
