@@ -1659,6 +1659,7 @@ test.describe("suggestions and roles", () => {
     await list.getByRole("button", { name: /^Reject(?: all)?$/ }).first().click();
     await expect(list).toBeHidden();
     await expect(editorOf(page).locator("strong")).toHaveCount(0);
+    await expect.poll(async () => (await threadsOf(owner.page, doc.id)).map(t => t.current_quote)).toEqual(["reads this line"]);
 
     // Enter proposes a paragraph split; the owner can accept the structural change.
     await caretAfter(page, "commenter");
