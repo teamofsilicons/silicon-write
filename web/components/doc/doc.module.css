@@ -39,7 +39,9 @@
 .back:hover { background: var(--surface-muted); color: var(--foreground); }
 .wordmark { font: 500 .8rem/1 var(--font-pixel); text-transform: uppercase; letter-spacing: .06em; color: var(--foreground); }
 .titleWrap { flex: 1; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.title { min-width: 0; margin: 0; font: 400 1.25rem/1.25 var(--font-serif); color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
+.title { flex: 1; min-width: 0; margin: 0; font: 400 1.25rem/1.25 var(--font-serif); color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
+/* The title's inline editor reserves room for actions only when that room exists. */
+.title > h1 { padding-inline-end: clamp(0px, calc(100% - 5rem), var(--space-stage)); }
 .publicTag { font: 500 .68rem/1 var(--font-pixel); text-transform: uppercase; letter-spacing: .05em; color: var(--accent-ink); background: var(--accent-subtle); padding: .35em .55em; border-radius: 7px; flex: none; }
 .modes { flex: none; }
 .modeMenu { display: none; }
@@ -49,7 +51,11 @@
   .modes { display: none; }
   .modeMenu { display: flex; }
   .title { max-width: 40vw; }
-  .back span { display: none; }
+  .back span:not(.wordmark) { display: none; }
+  .back:has(.wordmark) { flex: none; }
+  /* Renaming gets the space occupied by the other actions until it finishes. */
+  .topBar:has(.title[data-editing]) .topRight { display: none; }
+  .title[data-editing] { max-width: none; }
 }
 
 /* Formatting bar */

@@ -36,6 +36,7 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
   const [draft, setDraft] = useState<{ page: number; start: { x: number; y: number }; rect?: Rect } | null>(null);
   const [converting, setConverting] = useState(false);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
+  const scrolledTarget = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,11 +82,21 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
     }
   };
 
+  const activePage = threads.find(thread => thread.id === activeThread)?.anchor.rect?.page;
+  const target = activeThread && activePage ? `${activeThread}:${activePage}` : null;
+  const targetReady = pages.some(page => page.number === activePage);
   useEffect(() => {
-    const thread = threads.find(t => t.id === activeThread);
-    const number = thread?.anchor.rect?.page;
-    if (number) pageRefs.current.get(number)?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeThread, threads]);
+    if (!target) {
+      scrolledTarget.current = null;
+      return;
+    }
+    if (!targetReady || scrolledTarget.current === target || !activePage) return;
+    const page = pageRefs.current.get(activePage);
+    if (page) {
+      page.scrollIntoView({ behavior: "smooth", block: "center" });
+      scrolledTarget.current = target;
+    }
+  }, [target, targetReady, activePage]);
 
   const areas = threads.filter(t => t.anchor.kind === "pdf" && t.anchor.rect);
 

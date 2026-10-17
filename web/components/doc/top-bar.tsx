@@ -171,7 +171,7 @@ export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, 
             <span>{back.label}</span>
           </Link>
         ) : (
-          <Link href="/" className={styles.back}>
+          <Link href="/" className={styles.back} aria-label="Silicon Write home">
             <span className={styles.wordmark}>Silicon Write</span>
           </Link>
         )}

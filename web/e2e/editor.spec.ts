@@ -1667,7 +1667,7 @@ test.describe("suggestions and roles", () => {
     await expectMarkdown(owner.page, doc.id, "The commenter reads this line.\n");
     await expect(suggestionsList(page).getByRole("button", { name: /^(Accept|Reject)/ })).toHaveCount(0);
     await list.getByRole("button", { name: /^Accept(?: all)?$/ }).first().click();
-    await expectMarkdown(owner.page, doc.id, "The commenter\n\nreads this line.\n");
+    await expectMarkdown(owner.page, doc.id, "The commenter\n\n reads this line.\n");
     await expect(editorOf(page).locator("p")).toHaveCount(2);
     await expect.poll(async () => (await threadsOf(owner.page, doc.id)).map(t => t.current_quote)).toEqual(["reads this line"]);
     await friend.context.close();
@@ -1678,6 +1678,13 @@ test.describe("suggestions and roles", () => {
     const owner = await signedIn(browser, "carbon");
     const friend = await signedIn(browser, "friend");
     const doc = await newDoc(owner.page, `Phone review ${tag()}`, "Read this proposal.");
+    await owner.page.setViewportSize({ width: 390, height: 844 });
+    await openDoc(owner.page, doc.id);
+    await owner.page.getByRole("button", { name: `Title: ${doc.title}`, exact: true }).click();
+    const title = owner.page.getByRole("textbox", { name: "Title", exact: true });
+    await title.fill("A phone review with a long title and room to rename it");
+    await owner.page.getByRole("button", { name: "Save title", exact: true }).click();
+    await expect.poll(async () => (await ok<Doc>(owner.page, "GET", `/v1/docs/${doc.id}`)).title).toBe("A phone review with a long title and room to rename it");
     await share(owner.page, doc.id, friend.account.id, "commenter");
     const page = friend.page;
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1697,7 +1704,17 @@ test.describe("suggestions and roles", () => {
     await page.getByRole("menuitemradio", { name: "Commenting", exact: true }).click();
     await expect(toolbarOf(page)).toBeHidden();
     await expect(editorOf(page)).toHaveAttribute("contenteditable", "false");
+    await popupGone(page);
     await shot(page, "phone-commenter");
+    await ok(owner.page, "PUT", `/v1/docs/${doc.id}/public`, { access: "view" });
+    const publicContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const publicPage = await publicContext.newPage();
+    await publicPage.goto(new URL(`/d/${doc.id}`, owner.page.url()).href);
+    const home = publicPage.getByRole("link", { name: "Silicon Write home", exact: true });
+    await expect(home).toBeVisible();
+    await expect(home.getByText("Silicon Write", { exact: true })).toBeVisible();
+    await shot(publicPage, "phone-public-doc");
+    await publicContext.close();
     await friend.context.close();
     await owner.context.close();
   });
@@ -1931,15 +1948,15 @@ test.describe("PDFs", () => {
   test("a comment on a PDF area shows on its page and in the comments", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await importPdf(page, `PDF threads ${tag()}`);
-    await ok(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "pdf", rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.1, page: 2 } }, body: "Check this figure." });
-    await page.goto(`/d/${doc.id}`);
+    const thread = await ok<Thread>(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "pdf", rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.1, page: 2 } }, body: "Check this figure." });
+    await page.goto(`/d/${doc.id}?thread=${thread.id}`);
     await expect(page.getByText("PDF, shown as it is · 2 pages")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("button", { name: "Comments", exact: true })).toContainText("1");
     await expect(threadCards(page)).toHaveCount(1);
     await expect(threadCards(page)).toContainText("Page 2");
     await expect(threadCards(page)).toContainText("Check this figure.");
     const area = page.getByRole("button", { name: "Comment on this area" });
-    await expect(area).toBeVisible();
+    await expect(area).toBeInViewport();
     // The area sits on page 2, where the comment put it.
     const pageTwo = (await page.getByRole("img", { name: "Page 2", exact: true }).boundingBox())!;
     const box = (await area.boundingBox())!;
