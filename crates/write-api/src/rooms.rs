@@ -1291,8 +1291,16 @@ async fn apply_client_update(
         ));
     }
     validation::validate(&copy)?;
+    if validation::new_code_marks(&inner.ydoc, &copy) {
+        return Err(ApiError::invalid(
+            "Code suggestions must be made on the code block.",
+        ));
+    }
     let after = ydoc::read_doc(&copy);
-    if role == Role::Commenter && !suggestion_only(&before, &after, &account.uuid) {
+    if role == Role::Commenter
+        && (!suggestion_only(&before, &after, &account.uuid)
+            || validation::unmodeled_changes(&inner.ydoc, &copy, &account.uuid))
+    {
         return Err(ApiError::forbidden("Commenters can only suggest changes.")
             .hint("Switch to suggesting."));
     }
