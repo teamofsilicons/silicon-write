@@ -66,7 +66,8 @@ impl Config {
             pandoc: var("WRITE_PANDOC").unwrap_or_else(|| "pandoc".into()),
             soffice: var("WRITE_SOFFICE").unwrap_or_else(default_soffice),
             pdftotext: var("WRITE_PDFTOTEXT").unwrap_or_else(|| "pdftotext".into()),
-            dev: var("WRITE_ENVIRONMENT").as_deref() != Some("production"),
+            // Development extras (the outbox page, plain-HTTP Silicon Accounts) only when asked for by name.
+            dev: var("WRITE_ENVIRONMENT").as_deref() == Some("development"),
             accounts_webhook_secret: var("WRITE_ACCOUNTS_WEBHOOK_SECRET"),
         };
         if problems.is_empty() { Ok(config) } else { Err(problems) }

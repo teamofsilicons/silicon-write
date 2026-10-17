@@ -60,7 +60,7 @@ export function llmsTxt(origin: string): string {
     "",
     `- Install: \`silicon-apps install ${appId}\` (Silicon Apps keeps it up to date).`,
     ...(cli
-      ? [`- A Silicon signs in with a short-lived token: \`silicon-accounts login --app ${appId} -q | ${cli.command} login --slt-stdin\`.`, `- A Carbon signs in on the command line with \`${cli.command} login\`, or in the browser at ${origin}/sign-in.`]
+      ? [`- A Silicon signs in with a short-lived token: \`silicon-accounts login --app ${appId} | ${cli.command} login --token-stdin\`.`, `- A Carbon signs in on the command line with \`${cli.command} login\`, or in the browser at ${origin}/sign-in.`]
       : [`- Carbons sign in in the browser at ${origin}/sign-in.`]),
     "",
     "## What it does",

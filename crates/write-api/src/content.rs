@@ -87,6 +87,11 @@ pub struct EditsBody {
     suggest: bool,
 }
 
+fn commenter_refusal() -> ApiError {
+    ApiError::forbidden("Commenters can only suggest changes to the text.")
+        .hint("Images, maths, tables and other structure can only be changed by editors; ask one, or comment instead.")
+}
+
 fn suggest_mode(caller: &Caller, suggest: bool) -> EditMode {
     EditMode { suggest: suggest.then(|| (ids::new_id("s"), caller.uuid.clone())) }
 }
@@ -122,6 +127,8 @@ pub async fn post_edits(State(state): State<AppState>, Auth(caller): Auth, Path(
     let suggest = body.suggest || role == Role::Commenter;
     let mode = suggest_mode(&caller, suggest);
     let origin = if suggest { Origin::Suggestion } else { Origin::Edit };
+    let commenter = role == Role::Commenter;
+    let author = caller.uuid.clone();
     let (markdown, seq) = rooms::edit(&state, &id, &caller.uuid, origin, None, |y| {
         let current = ydoc::read_doc(y);
         let before = write_doc::to_markdown(&current);
@@ -132,7 +139,11 @@ pub async fn post_edits(State(state): State<AppState>, Auth(caller): Auth, Path(
         let base = write_doc::from_markdown(&before);
         let new = write_doc::from_markdown(&after);
         ydoc::with_txn(y, |txn, frag| ydoc::patch(txn, frag, &base, &new, &mode));
-        Ok(write_doc::to_markdown(&ydoc::read_doc(y)))
+        let result = ydoc::read_doc(y);
+        if commenter && !rooms::suggestion_only(&current, &result, &author) {
+            return Err(commenter_refusal());
+        }
+        Ok(write_doc::to_markdown(&result))
     })
     .await?;
     Ok(Json(json!({ "seq": seq, "markdown": markdown })))
@@ -161,10 +172,15 @@ pub async fn put_markdown(State(state): State<AppState>, Auth(caller): Auth, Pat
     let mode = suggest_mode(&caller, suggest);
     let origin = if suggest { Origin::Suggestion } else { Origin::Edit };
     let new = write_doc::from_markdown(&body.markdown);
+    let commenter = role == Role::Commenter;
+    let author = caller.uuid.clone();
     let ((), seq) = rooms::edit(&state, &id, &caller.uuid, origin, body.base_seq, |y| {
         let current = ydoc::read_doc(y);
         let base = write_doc::from_markdown(&write_doc::to_markdown(&current));
         ydoc::with_txn(y, |txn, frag| ydoc::patch(txn, frag, &base, &new, &mode));
+        if commenter && !rooms::suggestion_only(&current, &ydoc::read_doc(y), &author) {
+            return Err(commenter_refusal());
+        }
         Ok(())
     })
     .await?;

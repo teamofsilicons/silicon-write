@@ -19,7 +19,7 @@ export const appConfig: AppConfig = {
     { href: "/trash", label: "Trash", icon: Trash2, keywords: ["trash", "deleted", "restore"] },
   ],
   links: {
-    docs: "https://write.teamofsilicons.com/llms.txt",
+    docs: "/docs",
     store: "https://apps.teamofsilicons.com/apps/write",
   },
   signIn: { scopes: ["email"] },

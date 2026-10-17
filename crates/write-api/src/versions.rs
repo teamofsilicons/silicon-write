@@ -404,13 +404,13 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
             similar::DiffTag::Delete => {
                 for i in old {
                     let by = first_ids.get(i).cloned().flatten().and_then(|id| deleter(&id));
-                    blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "before_index": i, "by": by.as_deref().map(person) }));
+                    blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "before_index": i, "by": by.as_deref().map(person).into_iter().collect::<Vec<_>>() }));
                 }
             }
             similar::DiffTag::Insert => {
                 for j in new {
                     let (_, authors) = parts_of(j);
-                    blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "after_index": j, "by": authors.first().map(|a| person(a)) }));
+                    blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "after_index": j, "by": authors.iter().map(|a| person(a)).collect::<Vec<_>>() }));
                 }
             }
             similar::DiffTag::Replace => {
@@ -419,7 +419,19 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
                 for k in 0..olds.len().max(news.len()) {
                     match (olds.get(k), news.get(k)) {
                         (Some(&i), Some(&j)) => {
-                            let (parts, authors) = parts_of(j);
+                            let (mut parts, mut authors) = parts_of(j);
+                            // A block rewritten as a new element has no shared text: show the old text as removed.
+                            let shares_text = parts.iter().any(|p| p["op"] == "same" || p["op"] == "removed");
+                            let old_text = before.blocks[i].plain_text();
+                            if !shares_text && !old_text.is_empty() {
+                                let by = first_ids.get(i).cloned().flatten().and_then(|id| deleter(&id));
+                                if let Some(by) = &by {
+                                    if !authors.contains(by) {
+                                        authors.push(by.clone());
+                                    }
+                                }
+                                parts.insert(0, json!({ "op": "removed", "text": old_text, "by_uuid": by }));
+                            }
                             let parts: Vec<Value> = parts
                                 .into_iter()
                                 .map(|mut p| {
@@ -443,11 +455,11 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
                         }
                         (Some(&i), None) => {
                             let by = first_ids.get(i).cloned().flatten().and_then(|id| deleter(&id));
-                            blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "before_index": i, "by": by.as_deref().map(person) }));
+                            blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "before_index": i, "by": by.as_deref().map(person).into_iter().collect::<Vec<_>>() }));
                         }
                         (None, Some(&j)) => {
                             let (_, authors) = parts_of(j);
-                            blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "after_index": j, "by": authors.first().map(|a| person(a)) }));
+                            blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "after_index": j, "by": authors.iter().map(|a| person(a)).collect::<Vec<_>>() }));
                         }
                         (None, None) => {}
                     }

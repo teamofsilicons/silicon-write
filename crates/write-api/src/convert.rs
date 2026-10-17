@@ -104,13 +104,17 @@ pub async fn open(state: &AppState, filename: &str, bytes: &[u8]) -> ApiResult<O
                 reader = "docx";
             }
             let media = dir.path().join("media");
-            let json = run(
-                &state.config.pandoc,
-                &["-f", reader, "-t", "json", "--extract-media", media.to_str().unwrap(), input.to_str().unwrap()],
-                dir.path(),
-                None,
-            )
-            .await?;
+            // Only formats that carry their images inside the file get them extracted: for a web page, Pandoc would
+            // download whatever its images link to, from this server.
+            let mut args = vec!["-f", reader, "-t", "json"];
+            let media_arg = media.to_string_lossy().into_owned();
+            if matches!(reader, "docx" | "odt") {
+                args.push("--extract-media");
+                args.push(&media_arg);
+            }
+            let input_arg = input.to_string_lossy().into_owned();
+            args.push(&input_arg);
+            let json = run(&state.config.pandoc, &args, dir.path(), None).await?;
             let value: serde_json::Value = serde_json::from_slice(&json).map_err(ApiError::internal)?;
             let doc = pandoc::from_pandoc(&value);
             // Images Pandoc pulled out of the file.
@@ -175,10 +179,13 @@ pub async fn export(state: &AppState, doc: &Doc, title: &str, format: &str) -> A
         return Ok(Exported { bytes: write_doc::to_markdown(doc).into_bytes(), content_type: "text/markdown; charset=utf-8", extension: "md" });
     }
     let dir = tempfile::tempdir().map_err(ApiError::internal)?;
-    // Images: copies of the doc's own images, so the converters can read them.
+    // Images: copies of the doc's own images, so the converters can read them. Images from elsewhere become a link to
+    // the image: the converters would otherwise fetch any address a doc names, from this server.
     let images = local_images(state, doc, dir.path()).await;
+    let mut doc = doc.clone();
+    keep_only_local_images(&mut doc, &images);
     let resolve = |src: &str| images.iter().find(|(s, _)| s == src).map(|(_, p)| p.clone()).unwrap_or_else(|| src.to_owned());
-    let (tree, toc) = pandoc::to_pandoc(doc, &PandocOut { image_src: Some(&resolve), title: Some(title.to_owned()) });
+    let (tree, toc) = pandoc::to_pandoc(&doc, &PandocOut { image_src: Some(&resolve), title: Some(title.to_owned()) });
     let json = serde_json::to_vec(&tree).map_err(ApiError::internal)?;
     let pandoc_bin = state.config.pandoc.clone();
     match format.as_str() {
@@ -221,6 +228,27 @@ pub async fn export(state: &AppState, doc: &Doc, title: &str, format: &str) -> A
         }
         other => Err(ApiError::invalid(format!("Unknown format `{other}`.")).hint("Use md, txt, docx, odt, rtf, html or pdf.")),
     }
+}
+
+/// Replaces images that aren't the doc's own uploads with a link to them.
+fn keep_only_local_images(doc: &mut Doc, local: &[(String, String)]) {
+    use write_doc::{Block, Inline, Marks};
+    fn walk(blocks: &mut Vec<Block>, local: &[(String, String)]) {
+        for block in blocks.iter_mut() {
+            match block {
+                Block::Image { src, alt, .. } if !local.iter().any(|(s, _)| s == src) => {
+                    let label = alt.clone().filter(|a| !a.trim().is_empty()).unwrap_or_else(|| "Image".to_owned());
+                    *block = Block::paragraph(vec![Inline::marked(label, Marks { link: Some(src.clone()), ..Marks::default() })]);
+                }
+                Block::BulletList { items } | Block::OrderedList { items, .. } => items.iter_mut().for_each(|i| walk(&mut i.blocks, local)),
+                Block::TaskList { items } => items.iter_mut().for_each(|i| walk(&mut i.blocks, local)),
+                Block::Blockquote { blocks } => walk(blocks, local),
+                Block::Table { rows } => rows.iter_mut().for_each(|r| r.cells.iter_mut().for_each(|c| walk(&mut c.blocks, local))),
+                _ => {}
+            }
+        }
+    }
+    walk(&mut doc.blocks, local);
 }
 
 /// Copies the doc's uploaded images into `dir`; returns (src in the doc, local path).

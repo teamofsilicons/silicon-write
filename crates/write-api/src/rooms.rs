@@ -44,6 +44,13 @@ pub struct Rooms {
 pub struct Room {
     pub doc_id: String,
     pub inner: Mutex<RoomState>,
+    /// When the room was last asked for (milliseconds), so an idle room is never dropped while a request is about to
+    /// use it.
+    touched: std::sync::atomic::AtomicU64,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 pub struct Conn {
@@ -66,6 +73,9 @@ pub struct RoomState {
     last_used: Instant,
     pub deleted: bool,
     index_due: Option<Instant>,
+    /// Storing a change failed after it was applied here: the room no longer matches what's stored, so it is
+    /// reloaded on next use and everyone reconnects (their editors send their changes again).
+    poisoned: bool,
 }
 
 /// What a stored change was made by.
@@ -111,7 +121,12 @@ impl Rooms {
     pub async fn get(&self, state: &AppState, doc_id: &str) -> ApiResult<Arc<Room>> {
         let mut map = self.map.lock().await;
         if let Some(room) = map.get(doc_id) {
-            return Ok(room.clone());
+            let poisoned = room.inner.try_lock().map(|inner| inner.poisoned).unwrap_or(false);
+            if !poisoned {
+                room.touched.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
+                return Ok(room.clone());
+            }
+            map.remove(doc_id);
         }
         let room = Arc::new(load(state, doc_id).await?);
         map.insert(doc_id.to_owned(), room.clone());
@@ -180,9 +195,14 @@ impl Rooms {
         }
         let mut map = self.map.lock().await;
         let mut idle = vec![];
+        let recently = now_ms().saturating_sub(600_000);
         for (id, room) in map.iter() {
+            if room.touched.load(std::sync::atomic::Ordering::Relaxed) > recently {
+                continue;
+            }
             if let Ok(inner) = room.inner.try_lock() {
-                if inner.conns.is_empty() && inner.index_due.is_none() && inner.last_used.elapsed() > Duration::from_secs(600) {
+                let idle_room = inner.conns.is_empty() && inner.index_due.is_none() && inner.last_used.elapsed() > Duration::from_secs(600);
+                if idle_room || inner.poisoned {
                     idle.push(id.clone());
                 }
             }
@@ -239,6 +259,7 @@ async fn load(state: &AppState, doc_id: &str) -> ApiResult<Room> {
     .map_err(ApiError::internal)?;
     Ok(Room {
         doc_id: doc_id.to_owned(),
+        touched: std::sync::atomic::AtomicU64::new(now_ms()),
         inner: Mutex::new(RoomState {
             ydoc,
             captured,
@@ -250,6 +271,7 @@ async fn load(state: &AppState, doc_id: &str) -> ApiResult<Room> {
             last_used: Instant::now(),
             deleted: doc.deleted_at.is_some(),
             index_due: None,
+            poisoned: false,
         }),
     })
 }
@@ -265,6 +287,22 @@ impl RoomState {
 
     /// Stores what the last transactions changed and sends it to everyone else.
     async fn commit(&mut self, state: &AppState, doc_id: &str, author: &str, origin: Origin, skip_conn: Option<u64>) -> ApiResult<Vec<i64>> {
+        let seq_before = self.seq;
+        match self.store(state, doc_id, author, origin, skip_conn).await {
+            Ok(seqs) => Ok(seqs),
+            Err(error) => {
+                // What's in memory now differs from what's stored: start again from storage.
+                self.seq = seq_before;
+                self.poisoned = true;
+                for conn in self.conns.values() {
+                    let _ = conn.tx.send(WsMessage::Close(None));
+                }
+                Err(error)
+            }
+        }
+    }
+
+    async fn store(&mut self, state: &AppState, doc_id: &str, author: &str, origin: Origin, skip_conn: Option<u64>) -> ApiResult<Vec<i64>> {
         let updates: Vec<Vec<u8>> = std::mem::take(&mut *self.captured.lock().unwrap());
         let mut seqs = vec![];
         if updates.is_empty() {
@@ -369,6 +407,9 @@ pub async fn edit_expecting<T>(
 ) -> ApiResult<(T, i64)> {
     let room = state.rooms.get(state, doc_id).await?;
     let mut inner = room.inner.lock().await;
+    if inner.poisoned {
+        return Err(ApiError::unavailable("This doc is being reloaded.").hint("Try again in a moment."));
+    }
     if inner.deleted {
         return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
     }
@@ -412,6 +453,11 @@ pub async fn edit_expecting<T>(
     inner.commit(state, doc_id, author, origin, None).await?;
     inner.broadcast_authors(state).await;
     let seq = inner.seq;
+    drop(inner);
+    // Changes made through the API (a Silicon's edit, a restore) are searchable as soon as the call returns.
+    if let Err(e) = index(state, &room).await {
+        tracing::warn!(doc = %doc_id, error = %e.message, "indexing failed");
+    }
     Ok((result, seq))
 }
 
@@ -626,6 +672,9 @@ async fn awareness(room: &Arc<Room>, conn_id: u64, update: AwarenessUpdate) {
 
 async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, bytes: &[u8]) -> ApiResult<()> {
     let mut inner = room.inner.lock().await;
+    if inner.poisoned {
+        return Err(ApiError::unavailable("This doc is being reloaded."));
+    }
     let (role, account) = match inner.conns.get(&conn_id) {
         Some(c) => (c.role, c.account.clone()),
         None => return Ok(()),

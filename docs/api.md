@@ -44,9 +44,10 @@ file is the technical reference.
 
 ## Docs and folders
 
-- `GET /v1/library?view=mine|shared|trash&folder=<id>` → `{ "folder": Folder | null, "folders": [Folder], "docs": [Doc] }`.
-  `mine` without `folder`: the caller's top level. `shared`: everything shared with the caller directly.
-  `trash`: the caller's deleted docs and folders. With `folder`: that folder's content (any view).
+- `GET /v1/library?view=mine|shared|recent|trash&folder=<id>` → `{ "folder": Folder | null, "folders": [Folder], "docs": [Doc] }`.
+  `mine` without `folder`: the caller's top level. `shared`: everything shared with the caller directly. `recent`: the
+  30 most recently changed docs the caller can open. `trash`: the caller's deleted docs and folders. With `folder`:
+  that folder's content (any view).
 - `GET /v1/docs` → `{ "docs": [Doc] }`: every doc the caller can open (owned, shared directly, or inside a shared folder).
 - `GET /v1/folders` → `{ "folders": [Folder] }`: every folder the caller can open.
 - `POST /v1/docs` `{ "title"?, "folder_id"?, "markdown"? }` → `Doc` (201). In someone else's folder the doc
@@ -57,7 +58,8 @@ file is the technical reference.
 - `GET /v1/docs/{id}` **public** → `Doc`.
 - `PATCH /v1/docs/{id}` `{ "title"?, "folder_id"? }` → `Doc`. Rename (editor), move (editor of both folders; the doc and the
   target folder must have the same owner).
-- `DELETE /v1/docs/{id}` → `204`: to the trash (owner). `POST /v1/docs/{id}/restore` → `Doc`.
+- `DELETE /v1/docs/{id}` → `204`: to the trash (owner). `POST /v1/docs/{id}/restore` → `Doc`: out of the trash
+  (`409 conflict` when the doc isn't in the trash; an earlier version is restored with `restore-version`, below).
 - `DELETE /v1/docs/{id}/permanently?confirm=<id>` → `204`: owner, only from the trash. The only way anything is gone.
 - `POST /v1/docs/{id}/copy` `{ "seq"?, "title"?, "folder_id"? }` → `Doc`: a new doc from the doc (or from version `seq`).
 - `POST /v1/docs/{id}/convert` → `Doc`: turns a `pdf` doc into a normal doc (the PDF stays as its original).
@@ -78,10 +80,14 @@ file is the technical reference.
   Applied together; the change merges with whatever anyone else is doing. `suggest: true` makes it a suggestion.
 - `PUT /v1/docs/{id}/markdown` `{ "markdown", "base_seq"?, "suggest"? }` → `{ "seq", "markdown" }`. Writes a whole new
   version. With `base_seq` (the `seq` the Markdown was read at), only what changed since then is applied, merged with
-  everything that happened after.
+  everything that happened after. The answer is the doc as it reads now, so with `suggest` it doesn't show the
+  suggestion (read it with `suggestions=critic`).
+- Search, backlinks and links reflect a change made through the API as soon as the call answers; typing in the editor
+  is indexed within about two seconds.
 - `GET /v1/docs/{id}/export?format=md|txt|docx|odt|rtf|html|pdf&seq=<n>` **public** → the file (`Content-Disposition: attachment`).
 - `POST /v1/docs/{id}/assets` (multipart `file`, an image) → `{ "id", "url" }`. `GET /v1/assets/{id}` **public** (doc access) → bytes.
 - `GET /v1/docs/{id}/backlinks` → `{ "docs": [Doc] }`: docs the caller can open that link here with `[[title]]`.
+- `GET /v1/links?title=…` → `{ "doc": Doc | null }`: the doc a `[[title]]` link opens for the caller (by title, case-insensitive).
 - `GET /v1/docs/{id}/authorship` → `{ "blocks": [{ "index", "authors": [Account] }] }` (who wrote each top-level block, most text first).
 - `GET /v1/search?q=…` → `{ "results": [{ "doc": Doc, "snippet": "…" }] }`.
 
@@ -117,22 +123,23 @@ file is the technical reference.
 - `GET /v1/docs/{id}/threads?status=open|resolved|all` → `{ "threads": [Thread] }` where
   `Thread = { "id", "anchor": Anchor, "quote": "text when it was made", "current_quote": "text now" | null,
   "orphaned": bool, "block_index": n | null, "status": "open"|"resolved", "created_by": Account, "created_at",
-  "resolved_by": Account | null, "comments": [Comment] }` and
+  "resolved_by": Account | null, "resolved_at", "comments": [Comment] }` and
   `Comment = { "id", "author": Account, "body": "markdown with @c:id / @si:id", "created_at", "edited_at", "deleted": bool,
   "reactions": [{ "emoji", "accounts": [Account] }] }`.
 - `POST /v1/docs/{id}/threads` `{ "anchor": Anchor, "body" }` → `Thread`. Anchors:
   `{ "kind": "text", "start": "<base64 Yjs relative position>", "end": "…", "quote" }` (from the editor),
   `{ "kind": "text", "quote": "exact text" }` (from the CLI: must appear once in the doc's text),
   `{ "kind": "block", "start": "…", "quote"? }` (a whole section),
-  `{ "kind": "cell", "start": "…", "quote"? }`, `{ "kind": "image", "start": "…", "rect"?: { "x","y","w","h" } }` (fractions of the image).
+  `{ "kind": "cell", "start": "…", "quote"? }`, `{ "kind": "image", "start": "…", "rect"?: { "x","y","w","h" } }` (fractions of the image),
+  `{ "kind": "pdf", "rect": { "x","y","w","h","page" } }` (an area of a page of a PDF doc).
 - `POST /v1/threads/{id}/comments` `{ "body" }` → `Comment`. `PATCH /v1/comments/{id}` `{ "body" }` (author).
   `DELETE /v1/comments/{id}` (author) → kept in history as deleted.
-- `POST /v1/comments/{id}/reactions` `{ "emoji" }` → toggles the caller's reaction.
+- `POST /v1/comments/{id}/reactions` `{ "emoji" }` → `Comment`: toggles the caller's reaction.
 - `POST /v1/threads/{id}/resolve`, `POST /v1/threads/{id}/reopen` → `Thread`.
 
 ## Suggestions
 
-- `GET /v1/docs/{id}/suggestions` → `{ "suggestions": [{ "id", "author": Account, "inserted", "deleted" }] }`.
+- `GET /v1/docs/{id}/suggestions` → `{ "suggestions": [{ "id", "author": Account | null, "inserted", "deleted" }] }`.
 - `POST /v1/docs/{id}/suggestions/{sid}/accept|reject`, `POST /v1/docs/{id}/suggestions/accept-all|reject-all` (editors) → `{ "seq" }`.
 
 ## Versions and history (editors and owner)
@@ -140,16 +147,20 @@ file is the technical reference.
 - `GET /v1/docs/{id}/versions` → `{ "versions": [Version] }`, newest first:
   `Version = { "seq", "from_seq", "authors": [Account], "summary": "si:writer edited “Introduction”", "name": "…" | null, "created_at" }`.
 - `GET /v1/docs/{id}/versions/{seq}/markdown` → `{ "seq", "markdown" }`. `GET /v1/docs/{id}/prosemirror?seq=` renders it.
-- `PUT /v1/docs/{id}/versions/{seq}/name` `{ "name" }` / `DELETE` → names a version.
-- `GET /v1/docs/{id}/compare?from=<seq>&to=<seq>` → `{ "blocks": [{ "change": "same"|"added"|"removed"|"changed",
-  "before"?: "md", "after"?: "md", "parts"?: [{ "op": "same"|"added"|"removed", "text", "by"?: Account }] }] }`.
-- `POST /v1/docs/{id}/restore` `{ "seq", "blocks"?: [from, to] }` → `{ "seq" }`: the whole version, or only top-level
-  blocks `from..to` of that version. Restoring is a new version.
+- `PUT /v1/docs/{id}/versions/{seq}/name` `{ "name" }` → `{ "seq", "name" }` / `DELETE` → `204`: names a version.
+- `GET /v1/docs/{id}/compare?from=<seq>&to=<seq>` (`to` defaults to the latest) → `{ "from", "to", "blocks": [{
+  "change": "same"|"added"|"removed"|"changed", "before"?: "md", "after"?: "md", "before_index"?, "after_index"?,
+  "by": [Account], "parts"?: [{ "op": "same"|"added"|"removed", "text", "by"?: Account }] }] }`. `before_index` is the
+  block's index in version `from` (what `restore-version` takes as `blocks`).
+- `POST /v1/docs/{id}/restore-version` `{ "seq", "blocks"?: [from, to] }` → `{ "seq" }`: the whole version, or only
+  top-level blocks `from..to` (inclusive) of that version. Restoring is a new version.
 - `POST /v1/docs/{id}/undo` `{ "account": "si:id"|"c:id", "since": <seq> }` → `{ "seq" }`: undoes everything that account
   changed after version `since`, keeping everyone else's changes.
 - `GET /v1/docs/{id}/activity`, `GET /v1/folders/{id}/activity` → `{ "events": [{ "id", "kind", "actor": Account, "data", "created_at",
-  "undoable": bool }] }`. `POST /v1/activity/{id}/undo` → undoes a rename, move, delete or create.
+  "undoable": bool, "undone_at" }] }` (event ids are numbers). `POST /v1/activity/{id}/undo` → `{ "undone": true }`:
+  undoes a rename, move, delete or create.
 
 ## Service
 
 - `GET /healthz`, `GET /readyz`. `POST /v1/webhooks/accounts`: Silicon Accounts updates (signed).
+- `GET /v1/dev/outbox` (development only): the emails and notifications that would have been sent.

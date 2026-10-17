@@ -114,6 +114,12 @@ impl Writer {
             if block.is_empty_paragraph() {
                 continue;
             }
+            // A paragraph or heading that is only suggested text isn't there yet.
+            if let Some(content) = block.inline_content() {
+                if !content.is_empty() && self.view(content).is_empty() {
+                    continue;
+                }
+            }
             // Two lists of the same kind in a row would read back as one list: alternate the
             // bullet (or the ordered delimiter) to keep them apart.
             let same_kind_list = matches!(

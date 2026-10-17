@@ -331,6 +331,10 @@ pub async fn trash_doc_inner(state: &AppState, caller: &Caller, id: &str) -> Api
 }
 
 pub async fn restore_doc(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>) -> ApiResult<Json<DocView>> {
+    let doc = access::load_doc(&state, &id).await?;
+    if doc.deleted_at.is_none() && doc.owner_uuid == caller.uuid {
+        return Err(ApiError::conflict("This doc isn't in the trash.").hint("To bring back an earlier version, use POST /v1/docs/{id}/restore-version."));
+    }
     restore_doc_inner(&state, &caller, &id).await?;
     let (doc, role) = access::require_doc(&state, Some(&caller), &id, Role::Viewer).await?;
     Ok(Json(views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?))
@@ -578,6 +582,10 @@ pub async fn trash_folder_inner(state: &AppState, caller: &Caller, id: &str) -> 
 }
 
 pub async fn restore_folder(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    let folder = access::load_folder(&state, &id).await?;
+    if folder.deleted_at.is_none() && folder.owner_uuid == caller.uuid {
+        return Err(ApiError::conflict("This folder isn't in the trash."));
+    }
     restore_folder_inner(&state, &caller, &id).await?;
     get_folder(State(state), Auth(caller), Path(id)).await
 }

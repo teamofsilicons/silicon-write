@@ -17,7 +17,6 @@ use std::sync::Arc;
 
 use yrs::types::text::{Diff, YChange};
 use yrs::types::{Attrs, Delta};
-use yrs::types::GetString;
 use yrs::{
     Any, ClientID, Doc as YDoc, Number, OffsetKind, Options, ReadTxn, Snapshot, StateVector, Text, Transact,
     TransactionMut, Xml, XmlElementPrelim, XmlElementRef, XmlFragment, XmlFragmentRef, XmlOut,
@@ -729,7 +728,24 @@ fn all_texts<T: ReadTxn, F: XmlFragment>(txn: &T, parent: &F) -> Vec<XmlTextRef>
     out
 }
 
-/// Edits one block in place. Returns false when the blocks are different kinds.
+/// Whether two blocks of the same kind differ in more than their content (a heading's level, a code block's language,
+/// a list's start, a task's checkbox, an image or maths).
+fn attrs_differ(a: &Block, b: &Block) -> bool {
+    match (a, b) {
+        (Block::Heading { level: x, .. }, Block::Heading { level: y, .. }) => x != y,
+        (Block::CodeBlock { language: x, .. }, Block::CodeBlock { language: y, .. }) => x != y,
+        (Block::OrderedList { start: x, .. }, Block::OrderedList { start: y, .. }) => x != y,
+        (Block::TaskList { items: x }, Block::TaskList { items: y }) => {
+            x.len() != y.len() || x.iter().zip(y).any(|(p, q)| p.checked != q.checked)
+        }
+        (Block::Image { .. }, Block::Image { .. }) | (Block::BlockMath { .. }, Block::BlockMath { .. }) => a != b,
+        (Block::Table { .. }, Block::Table { .. }) => a != b,
+        _ => false,
+    }
+}
+
+/// Edits one block in place. Returns false when the blocks are different kinds (or, as a suggestion, differ in more
+/// than their text): the caller replaces the block.
 fn patch_block(
     txn: &mut TransactionMut,
     el: &XmlElementRef,
@@ -738,6 +754,9 @@ fn patch_block(
     new: &Block,
     mode: &EditMode,
 ) -> bool {
+    if mode.suggest.is_some() && (attrs_differ(exact, new) || attrs_differ(base, new)) {
+        return false;
+    }
     match (exact, base, new) {
         (Block::Paragraph { content }, Block::Paragraph { .. }, Block::Paragraph { content: target }) => {
             patch_inline(txn, el, content, target, mode);
@@ -1127,11 +1146,26 @@ fn patch_text(
                     while k < n && mark_change(&visible[vi + k].marks, &new_units[ni + k].marks) == change {
                         k += 1;
                     }
-                    ops.push(TextOp::Format {
-                        from: vi + start,
-                        to: vi + k,
-                        attrs: change,
-                    });
+                    if mode.suggest.is_some() {
+                        // Formatting can't be a suggestion by itself: suggest replacing the text with the newly
+                        // formatted text.
+                        let mut runs: Vec<(String, Marks)> = vec![];
+                        for u in &new_units[ni + start..ni + k] {
+                            let marks = mode.inserted_marks(&u.marks);
+                            match runs.last_mut() {
+                                Some((t, m)) if *m == marks => t.push(u.ch),
+                                _ => runs.push((u.ch.to_string(), marks)),
+                            }
+                        }
+                        ops.push(TextOp::Delete { from: vi + start, to: vi + k });
+                        ops.push(TextOp::Insert { at: vi + k, runs });
+                    } else {
+                        ops.push(TextOp::Format {
+                            from: vi + start,
+                            to: vi + k,
+                            attrs: change,
+                        });
+                    }
                 }
                 vi += n;
                 ni += n;

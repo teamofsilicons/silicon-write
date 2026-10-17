@@ -1,0 +1,13 @@
+schema_version: 1
+app_id: write
+version: 0.1.0
+command: write
+targets:
+  linux-x86_64:
+    binary: linux-x86_64/write
+  linux-aarch64:
+    binary: linux-aarch64/write
+  linux-i686:
+    binary: linux-i686/write
+  linux-armv7hf:
+    binary: linux-armv7hf/write
