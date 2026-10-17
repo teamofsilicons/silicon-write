@@ -13,8 +13,8 @@
 }
 .inviteInput:focus { outline: none; border-color: var(--accent); }
 .roleSelect :global(label), .roleSelectSmall :global(label), .publicSelect :global(label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.people { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); max-height: 320px; overflow-y: auto; }
-.person { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); max-height: 320px; overflow-y: auto; }
+.person { min-width: 0; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
 .person[data-inherited] { opacity: .85; }
 .who { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .who > span:first-child { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

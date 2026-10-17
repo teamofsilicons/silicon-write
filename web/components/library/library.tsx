@@ -30,7 +30,7 @@ export type LibraryView = "mine" | "shared" | "recent" | "trash";
 const TITLES: Record<LibraryView, { title: string; description: string }> = {
   mine: { title: "My docs", description: "Your docs and folders." },
   shared: { title: "Shared with me", description: "Docs and folders other Carbons and Silicons shared with you." },
-  recent: { title: "Recent", description: "Every doc you can open, most recently changed first." },
+  recent: { title: "Recent", description: "Your latest docs, most recently changed first." },
   trash: { title: "Trash", description: "Deleted docs and folders stay here, with their full history, until you delete them for good." },
 };
 
@@ -112,8 +112,8 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const fileInput = useRef<HTMLInputElement>(null);
   const folder = data?.folder ?? null;
   const inTrash = Boolean(folder?.deleted_at);
-  const canAdd = view === "mine" && !inTrash && (!folder || atLeast(folder.role, "editor"));
-  const heading = folder ? { title: folder.name, description: inTrash ? "This folder is in the trash. Restore it from Trash to add or change its contents." : folder.owner.uuid !== me ? `${folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : TITLES[view];
+  const canAdd = view === "mine" && !error && !inTrash && (!folderId || Boolean(folder && atLeast(folder.role, "editor")));
+  const heading = folder ? { title: folder.name, description: inTrash ? "This folder is in the trash. Restore it from Trash to add or change its contents." : folder.owner.uuid !== me ? `${folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : folderId ? { title: error ? "Folder unavailable" : "Folder", description: "" } : TITLES[view];
 
   const newDoc = async () => {
     try {
@@ -245,6 +245,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
             {view === "trash" ? <span className={styles.rowTitle}>{d.title}</span> : <Link href={`/d/${d.id}`} className={styles.rowTitle}>{d.title}</Link>}
             <span className={styles.rowMeta}>
               {d.owner.uuid !== me ? `${d.owner.id} · ` : ""}
+              {d.created_by.uuid !== d.owner.uuid ? `created by ${d.created_by.id} · ` : ""}
               {view === "trash" && d.deleted_at ? `deleted ${formatRelative(d.deleted_at)}` : `edited ${formatRelative(d.updated_at)}`}
             </span>
             {view === "trash" ? (

@@ -23,6 +23,9 @@ export function Search() {
   const [q, setQ] = useState(initial);
   const [query, setQuery] = useState(initial);
   useEffect(() => {
+    // Initial results are already current. Replacing history after a result is
+    // clicked can cancel Next's pending navigation on a slow connection.
+    if (q === initial) return;
     const t = setTimeout(() => {
       setQuery(q);
       const url = new URL(window.location.href);
@@ -31,7 +34,7 @@ export function Search() {
       window.history.replaceState(null, "", url);
     }, 220);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, initial]);
   const { data, isFetching } = useQuery({ queryKey: ["search", query], queryFn: () => api.get<{ results: { doc: Doc; snippet: string }[] }>("/v1/search", { query: { q: query } }), enabled: query.trim().length > 0 });
   const results = data?.results ?? [];
   return (
