@@ -1684,14 +1684,16 @@ test("a public doc's Sign in button signs the reader in and brings them back to 
   // The link let them in; nothing lists the doc for them.
   expect((await must<Library>(page, "GET", "/v1/library?view=shared")).docs.map(d => d.id)).not.toContain(doc.id);
 
-  // Someone who only has the link sees who owns the doc, but not the email addresses of the people invited.
+  // Someone who only has the public link can copy it, but cannot inspect membership.
   await page.getByRole("button", { name: "Share" }).click();
   const dialog = page.getByRole("dialog", { name: `Share “${doc.title}”` });
-  await expect(dialog.getByRole("list", { name: "People with access" }).getByRole("listitem").first()).toContainText("Owner");
-  await expect(dialog.getByText("Only the owner and editors can share this.")).toBeVisible();
+  await expect(dialog.getByText("You have this doc through its link.", { exact: false })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Copy link" })).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "People with access" })).toHaveCount(0);
   await shot(page, "desktop-public-doc-share-dialog-link-only", false);
   await expect.soft(dialog.getByText(invitee), `a reader who only has the public link doesn't see the invited address ${invitee}`).toHaveCount(0);
   const seen = await call<Sharing>(page, "GET", `/v1/docs/${doc.id}/sharing`);
+  expect(seen.status).toBe(403);
   expect.soft(JSON.stringify(seen.body), `the service doesn't hand invited email addresses to a reader who only has the public link (it answered ${seen.status})`).not.toContain(invitee);
   expect(errors).toEqual([]);
   await context.close();
