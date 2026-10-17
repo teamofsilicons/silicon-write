@@ -1,0 +1,261 @@
+/* The doc: one calm reading column on paper. Titles in Hedvig Letters Serif, text in a reading serif, the interface
+   (menus, notes) in BDO Grotesk. Comments, suggestions and other people's changes are tints, never boxes. */
+
+.editor {
+  --reading: "Iowan Old Style", "Charter", "Hedvig Letters Serif", Georgia, serif;
+  width: 100%;
+}
+
+.prose {
+  font-family: var(--reading);
+  font-size: 1.125rem;
+  line-height: 1.7;
+  color: var(--foreground);
+  outline: none;
+  min-height: 60vh;
+  padding-bottom: 30vh;
+  caret-color: var(--accent);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.prose > * + * { margin-top: .75em; }
+.prose p { margin: 0; }
+.prose p + p { margin-top: .85em; }
+
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+  margin: 1.6em 0 .5em;
+  text-wrap: balance;
+}
+.prose h1 { font-size: 2.1rem; color: var(--accent-ink); }
+.prose h2 { font-size: 1.6rem; }
+.prose h3 { font-size: 1.3rem; }
+.prose h4, .prose h5, .prose h6 { font-size: 1.1rem; }
+.prose > :first-child { margin-top: 0; }
+
+.prose a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: .18em; text-decoration-thickness: 1px; }
+.prose strong { font-weight: 600; }
+.prose code {
+  font-family: var(--font-mono);
+  font-size: .86em;
+  padding: .1em .32em;
+  border-radius: 5px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-subtle);
+}
+.prose pre {
+  font-family: var(--font-mono);
+  font-size: .88rem;
+  line-height: 1.65;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: var(--space-4) var(--space-5);
+  overflow-x: auto;
+  white-space: pre;
+}
+.prose pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+
+.prose blockquote {
+  margin: 1em 0;
+  padding-left: 1.1em;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.prose ul, .prose ol { padding-left: 1.5em; margin: .6em 0; }
+.prose li { margin: .2em 0; }
+.prose li > p { margin: 0; }
+.prose ul[data-type="taskList"] { list-style: none; padding-left: .2em; }
+.prose ul[data-type="taskList"] li { display: flex; gap: .55em; align-items: flex-start; }
+.prose ul[data-type="taskList"] li > label { margin-top: .35em; flex: none; }
+.prose ul[data-type="taskList"] li > label input { width: 1rem; height: 1rem; accent-color: var(--accent); }
+.prose ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
+.prose ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--border-strong); }
+
+.prose hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+
+.prose img { max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 1em auto; }
+.prose img:global(.ProseMirror-selectednode) { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.prose table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 1rem; table-layout: fixed; }
+.prose th, .prose td { border: 1px solid var(--border); padding: .45em .65em; vertical-align: top; position: relative; }
+.prose th { background: var(--surface-muted); font-weight: 600; text-align: left; font-family: var(--font-body); font-size: .92rem; }
+.prose :global(.selectedCell)::after { content: ""; position: absolute; inset: 0; background: var(--accent-subtle); pointer-events: none; }
+.prose :global(.tableWrapper) { overflow-x: auto; }
+
+.prose mark { background: #FFF1A8; color: inherit; border-radius: 3px; padding: 0 .08em; }
+
+.prose :global(.is-editor-empty):first-child::before,
+.prose :global(.is-empty)::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-faint);
+  pointer-events: none;
+  height: 0;
+}
+
+.prose [data-type="block-math"], .prose :global(.tiptap-mathematics-render) { font-family: initial; }
+.prose [data-type="block-math"] { text-align: center; margin: 1em 0; overflow-x: auto; }
+
+/* Suggestions: inserted text underlined in green, deleted text struck through in red, both with their author. */
+.prose :global(ins.suggest-insert) { text-decoration: underline; text-decoration-color: #2B7148; text-decoration-thickness: 2px; text-underline-offset: .2em; background: rgb(43 113 72 / .08); color: #1F5C38; }
+.prose :global(del.suggest-delete) { text-decoration: line-through; text-decoration-color: #B42318; text-decoration-thickness: 2px; background: rgb(180 35 24 / .06); color: #8A2A20; }
+.editor[data-mode="viewing"] .prose :global(ins.suggest-insert),
+.editor[data-mode="viewing"] .prose :global(del.suggest-delete) { background: none; }
+
+/* Comments: a warm tint under the commented text; the open thread's text stronger. */
+.prose :global(.comment-anchor) { background: rgb(247 200 74 / .22); border-bottom: 2px solid rgb(214 160 30 / .55); cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard); }
+.prose :global(.comment-anchor-active) { background: rgb(247 200 74 / .48); border-bottom-color: rgb(196 140 10); }
+.prose :global(.comment-anchor-block) { background: none; border-bottom: 0; box-shadow: -14px 0 0 -11px rgb(214 160 30 / .8); }
+.prose :global(.comment-anchor-block.comment-anchor-active) { box-shadow: -14px 0 0 -10px rgb(196 140 10); }
+
+/* Someone else's change, a moment ago. */
+.prose :global(.remote-change) { background: var(--accent-subtle); transition: background-color 1.2s var(--ease-standard); }
+.prose :global(.remote-change-label) {
+  position: absolute;
+  transform: translateY(-1.35em);
+  font: 500 .68rem/1.4 var(--font-body);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  border-radius: 6px;
+  padding: 0 .4em;
+  pointer-events: none;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Find. */
+.prose :global(.find-match) { background: rgb(31 92 177 / .14); border-radius: 2px; }
+.prose :global(.find-current) { background: rgb(31 92 177 / .34); }
+
+/* Other people's cursors. */
+.prose :global(.collaboration-carets__caret) { position: relative; margin-left: -1px; margin-right: -1px; border-left: 1.5px solid; border-right: 1.5px solid transparent; word-break: normal; pointer-events: none; }
+.prose :global(.collaboration-carets__label) {
+  position: absolute;
+  top: -1.45em;
+  left: -1px;
+  font: 500 .7rem/1 var(--font-body);
+  color: #FFFFFF;
+  padding: .25em .4em;
+  border-radius: 6px 6px 6px 0;
+  white-space: nowrap;
+  user-select: none;
+}
+.prose :global(.collaboration-carets__selection) { background-color: rgb(31 92 177 / .12); }
+
+@media (prefers-reduced-motion: reduce) {
+  .prose :global(.comment-anchor), .prose :global(.remote-change) { transition: none; }
+}
+
+/* Footnotes. */
+.footnote { font-size: .72em; line-height: 0; vertical-align: super; }
+.footnoteButton {
+  font: 600 .95em/1 var(--font-body);
+  color: var(--accent-ink);
+  background: var(--accent-subtle);
+  border: 0;
+  border-radius: 5px;
+  padding: .12em .32em;
+  cursor: pointer;
+}
+.footnoteSelected .footnoteButton { box-shadow: 0 0 0 2px var(--accent); }
+.footnotePopover { width: min(340px, 86vw); display: grid; gap: var(--space-2); }
+.footnoteLabel { font: 500 .75rem/1.4 var(--font-pixel); text-transform: uppercase; color: var(--text-muted); letter-spacing: .04em; }
+.footnoteText {
+  font: 400 .95rem/1.5 var(--font-body);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  color: var(--foreground);
+  resize: vertical;
+}
+.footnoteText:focus { outline: none; border-color: var(--accent); }
+.footnoteRead { margin: 0; font: 400 .95rem/1.5 var(--font-body); }
+
+/* Links between docs. */
+.docLink a {
+  color: var(--accent-ink);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent);
+  font-family: var(--font-body);
+  font-size: .95em;
+}
+.docLink a::before { content: "↗ "; font-size: .85em; }
+
+/* Table of contents. */
+.toc {
+  margin: 1.2em 0;
+  padding: var(--space-4) var(--space-5);
+  border-left: 2px solid var(--accent);
+  font-family: var(--font-body);
+}
+.tocTitle { margin: 0 0 var(--space-2); font: 500 .75rem/1.4 var(--font-pixel); text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.tocEmpty { margin: 0; color: var(--text-muted); font-size: .95rem; }
+.tocList { list-style: none; padding: 0; margin: 0; display: grid; gap: .3em; font-size: .98rem; }
+.tocList a { color: var(--foreground); text-decoration: none; }
+.tocList a:hover { color: var(--accent-ink); text-decoration: underline; }
+
+/* The typing menus (/ and [[). */
+.menu {
+  width: 284px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: var(--space-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-floating);
+  font-family: var(--font-body);
+}
+.menuItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: .5rem .6rem;
+  border: 0;
+  background: none;
+  border-radius: 11px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  font-size: .9rem;
+}
+.menuItem[data-selected] { background: var(--surface-pressed); }
+.menuIcon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--surface-muted); color: var(--text-secondary); flex: none; }
+.menuText { display: flex; justify-content: space-between; flex: 1; gap: var(--space-2); min-width: 0; }
+.menuText > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menuHint { color: var(--text-muted); font: 400 .78rem/1.4 var(--font-mono); flex: none; }
+.menuEmpty { margin: 0; padding: .6rem; color: var(--text-muted); font-size: .9rem; }
+
+/* Who wrote what: initials beside each block. */
+.prose > * { position: relative; }
+.prose :global(.authorship-gutter) {
+  position: absolute;
+  left: -64px;
+  width: 56px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  user-select: none;
+  pointer-events: auto;
+  font-family: var(--font-body);
+}
+.prose :global(.authorship-chip) {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--surface-pressed);
+  color: var(--text-secondary);
+  font: 600 .6rem/1 var(--font-body);
+}
+.prose :global(.authorship-silicon) { background: var(--accent-subtle); color: var(--accent-ink); }
+@media (max-width: 900px) { .prose :global(.authorship-gutter) { position: static; display: inline-flex; margin-right: .4em; vertical-align: middle; } }

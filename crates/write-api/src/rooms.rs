@@ -632,11 +632,10 @@ async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, b
     };
     let update = Update::decode_v1(bytes).map_err(|_| ApiError::invalid("That change couldn't be read."))?;
     let known = inner.ydoc.transact().state_vector();
-    let new_clients: Vec<u64> = update
-        .state_vector()
-        .iter()
-        .filter(|(client, clock)| **clock > known.get(client))
-        .map(|(client, _)| client.get())
+    let new_clients: Vec<u64> = write_doc::history::inserted_upper(&update)
+        .into_iter()
+        .filter(|(client, end)| *end > known.get(&yrs::ClientID::new(*client)))
+        .map(|(client, _)| client)
         .collect();
     let deletes = !update.delete_set().is_empty();
     if new_clients.is_empty() && !deletes {

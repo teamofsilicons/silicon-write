@@ -19,10 +19,20 @@ use crate::auth::Caller;
 use crate::state::AppState;
 
 static SEND_PROOF: LazyLock<Mutex<Option<(String, OffsetDateTime)>>> = LazyLock::new(|| Mutex::new(None));
+/// Accounts being registered right now (a burst of first requests registers once).
+static ENROLLING: LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> = LazyLock::new(Default::default);
 
 /// Registers an account with Ting as a recipient of Silicon Write's notifications.
 pub async fn enroll(state: &AppState, caller: &Caller) {
     let Some(ting) = state.config.ting_url.clone() else { return };
+    if !ENROLLING.lock().unwrap().insert(caller.uuid.clone()) {
+        return;
+    }
+    enroll_once(state, caller, &ting).await;
+    ENROLLING.lock().unwrap().remove(&caller.uuid);
+}
+
+async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
     let request = IssueUserVerification {
         subject_token: caller.token.clone(),
         receiving_app: state.config.ting_app_id.clone(),

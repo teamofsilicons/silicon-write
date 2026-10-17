@@ -139,11 +139,23 @@ pub fn undo_author_since(
     Ok(ydoc::read_doc(&ydoc))
 }
 
+/// For each client that inserted anything in an update: the clock just past its last insertion.
+/// (`Update::state_vector` only counts updates that start at clock 0, i.e. whole documents.)
+pub fn inserted_upper(update: &Update) -> Vec<(u64, u32)> {
+    let mut out: Vec<(u64, u32)> = vec![];
+    for (client, ranges) in update.insertions(true).iter() {
+        let end = ranges.iter().map(|r| r.end).max().unwrap_or(0);
+        if end > 0 {
+            out.push((client.get(), end));
+        }
+    }
+    out
+}
+
 /// The client ids that inserted anything in an update.
 pub fn update_clients(update: &[u8]) -> Result<Vec<u64>, HistoryError> {
     let decoded = Update::decode_v1(update).map_err(|e| HistoryError::Decode(e.to_string()))?;
-    let sv = decoded.state_vector();
-    Ok(sv.iter().map(|(client, _)| client.get()).collect())
+    Ok(inserted_upper(&decoded).into_iter().map(|(client, _)| client).collect())
 }
 
 /// For each update: who it deleted text of. Used to say who removed something in a comparison.
@@ -155,10 +167,9 @@ pub fn deletions(update: &[u8]) -> Result<IdSet, HistoryError> {
 /// The clients whose insertions in `update` go beyond `known` (what the live doc already has).
 pub fn new_insertions(update: &[u8], known: &StateVector) -> Result<Vec<u64>, HistoryError> {
     let decoded = Update::decode_v1(update).map_err(|e| HistoryError::Decode(e.to_string()))?;
-    let sv = decoded.state_vector();
-    Ok(sv
-        .iter()
-        .filter(|(client, clock)| **clock > known.get(client))
-        .map(|(client, _)| client.get())
+    Ok(inserted_upper(&decoded)
+        .into_iter()
+        .filter(|(client, end)| *end > known.get(&yrs::ClientID::new(*client)))
+        .map(|(client, _)| client)
         .collect())
 }

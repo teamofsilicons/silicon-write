@@ -253,9 +253,15 @@ fn any_str(value: Option<&Any>) -> Option<String> {
 
 pub fn attrs_to_marks(attrs: Option<&Attrs>) -> Marks {
     let mut marks = Marks::default();
-    let Some(attrs) = attrs else {
+    let Some(raw) = attrs else {
         return marks;
     };
+    // y-prosemirror names a mark that may overlap itself `name--hash`; read it by its name.
+    let attrs: Attrs = raw
+        .iter()
+        .map(|(k, v)| (Arc::from(k.split("--").next().unwrap_or(k)), v.clone()))
+        .collect();
+    let attrs = &attrs;
     let present = |key: &str| attrs.get(key).is_some_and(|v| !matches!(v, Any::Null | Any::Undefined));
     marks.bold = present(BOLD);
     marks.italic = present(ITALIC);

@@ -57,7 +57,7 @@ pub async fn seen(state: &AppState, caller: &Caller) -> ApiResult<()> {
     let now = OffsetDateTime::now_utc();
     match &row {
         None => {
-            sqlx::query("insert into accounts (uuid, kind, public_id, refreshed_at) values ($1, $2, $3, '-infinity') on conflict (uuid) do nothing")
+            sqlx::query("insert into accounts (uuid, kind, public_id, refreshed_at) values ($1, $2, $3, 'epoch') on conflict (uuid) do nothing")
                 .bind(&caller.uuid)
                 .bind(&caller.kind)
                 .bind(&caller.id)

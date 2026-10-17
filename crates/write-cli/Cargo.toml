@@ -1,5 +1,28 @@
 [package]
 name = "write-cli"
+description = "write: the Silicon Write command line, for Carbons and Silicons"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
+
+[[bin]]
+name = "write"
+path = "src/main.rs"
+
+[dependencies]
+silicon-write-client = { path = "../silicon-write-client" }
+silicon-accounts-client.workspace = true
+reqwest.workspace = true
+clap.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+time.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+axum = { workspace = true }

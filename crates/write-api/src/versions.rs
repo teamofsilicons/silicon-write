@@ -397,20 +397,20 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
         let (tag, old, new) = op.as_tag_tuple();
         match tag {
             similar::DiffTag::Equal => {
-                for j in new {
-                    blocks.push(json!({ "change": "same", "after": block_md(&after.blocks[j]) }));
+                for (i, j) in old.zip(new) {
+                    blocks.push(json!({ "change": "same", "after": block_md(&after.blocks[j]), "before_index": i, "after_index": j }));
                 }
             }
             similar::DiffTag::Delete => {
                 for i in old {
                     let by = first_ids.get(i).cloned().flatten().and_then(|id| deleter(&id));
-                    blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "by": by.as_deref().map(person) }));
+                    blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "before_index": i, "by": by.as_deref().map(person) }));
                 }
             }
             similar::DiffTag::Insert => {
                 for j in new {
                     let (_, authors) = parts_of(j);
-                    blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "by": authors.first().map(|a| person(a)) }));
+                    blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "after_index": j, "by": authors.first().map(|a| person(a)) }));
                 }
             }
             similar::DiffTag::Replace => {
@@ -433,6 +433,8 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
                                 .collect();
                             blocks.push(json!({
                                 "change": "changed",
+                                "before_index": i,
+                                "after_index": j,
                                 "before": block_md(&before.blocks[i]),
                                 "after": block_md(&after.blocks[j]),
                                 "parts": parts,
@@ -441,11 +443,11 @@ pub async fn compare(State(state): State<AppState>, Auth(caller): Auth, Path(id)
                         }
                         (Some(&i), None) => {
                             let by = first_ids.get(i).cloned().flatten().and_then(|id| deleter(&id));
-                            blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "by": by.as_deref().map(person) }));
+                            blocks.push(json!({ "change": "removed", "before": block_md(&before.blocks[i]), "before_index": i, "by": by.as_deref().map(person) }));
                         }
                         (None, Some(&j)) => {
                             let (_, authors) = parts_of(j);
-                            blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "by": authors.first().map(|a| person(a)) }));
+                            blocks.push(json!({ "change": "added", "after": block_md(&after.blocks[j]), "after_index": j, "by": authors.first().map(|a| person(a)) }));
                         }
                         (None, None) => {}
                     }

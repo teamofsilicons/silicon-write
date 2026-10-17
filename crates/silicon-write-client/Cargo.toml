@@ -1,5 +1,25 @@
 [package]
 name = "silicon-write-client"
+description = "Typed async Rust client for the Silicon Write API: docs, folders, comments, suggestions, sharing and versions"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["silicon", "write", "docs", "markdown", "client"]
+categories = ["api-bindings"]
 publish = false
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+bytes.workspace = true
+url.workspace = true
+percent-encoding.workspace = true
+tokio = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true, features = ["multipart"] }
+tokio.workspace = true

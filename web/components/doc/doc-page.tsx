@@ -1,0 +1,337 @@
+"use client";
+
+/**
+ * One doc: the live editor in a calm reading column, with the top bar (where it is, its title, who's here, sharing),
+ * the formatting bar for people who can write, the comments beside it, and versions, links and find on demand.
+ * A PDF shown as it is opens in the PDF view instead. Signed-out readers of a public doc see it read only.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/react";
+import "katex/dist/katex.min.css";
+import { api, seg } from "@/lib/client/api";
+import { notify, notifyError } from "@/lib/notify";
+import { connectLive, type LiveDoc } from "@/lib/write/live";
+import { keys, useThreads } from "@/lib/write/queries";
+import { atLeast, type Account, type Anchor, type Doc, type Thread } from "@/lib/write/types";
+import { DocEditor, type EditMode } from "@/components/editor/editor";
+import { anchorFor, rangeOf } from "@/components/editor/anchors";
+import { TopBar } from "./top-bar";
+import { Toolbar } from "./toolbar";
+import { CommentsPanel } from "./comments-panel";
+import { SelectionComment, type PendingComment } from "./selection-comment";
+import { FindBar } from "./find-bar";
+import { VersionsPanel } from "./versions-panel";
+import { LinksPanel } from "./links-panel";
+import { PdfView } from "./pdf-view";
+import { StatusBar } from "./status-bar";
+import { ImageAreas } from "./image-areas";
+import styles from "./doc.module.css";
+
+export type Panel = "comments" | "versions" | "links" | null;
+
+export interface DocPageProps {
+  initialDoc: Doc;
+  account: Account | null;
+}
+
+export function DocPage({ initialDoc, account }: DocPageProps) {
+  const client = useQueryClient();
+  const docId = initialDoc.id;
+  const { data: doc = initialDoc } = useQuery({
+    queryKey: keys.doc(docId),
+    queryFn: () => api.get<Doc>(`/v1/docs/${seg(docId)}`),
+    initialData: initialDoc,
+  });
+  const role = doc.role;
+  const canEdit = atLeast(role, "editor") && !doc.deleted_at;
+  const canComment = atLeast(role, "commenter") && Boolean(account);
+  const [mode, setMode] = useState<EditMode>(canEdit ? "editing" : "viewing");
+  const [live, setLive] = useState<LiveDoc | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [panel, setPanel] = useState<Panel>(canComment ? "comments" : null);
+  const [activeThread, setActiveThread] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingComment | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [lostAccess, setLostAccess] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
+
+  const threadsQuery = useThreads(docId, "open", canComment && doc.kind === "doc");
+  const threads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data]);
+
+  // The thread to open first, from a link (?thread=…).
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("thread");
+    if (wanted) {
+      setActiveThread(wanted);
+      setPanel("comments");
+    }
+  }, []);
+
+  // The live connection (docs only; a PDF has no live text).
+  useEffect(() => {
+    if (doc.kind !== "doc" || doc.deleted_at) return;
+    let disposed = false;
+    let current: LiveDoc | null = null;
+    connectLive(docId)
+      .then(next => {
+        if (disposed) {
+          next.destroy();
+          return;
+        }
+        current = next;
+        setLive(next);
+      })
+      .catch(error => setLiveError(error instanceof Error ? error.message : "The doc couldn't be opened."));
+    return () => {
+      disposed = true;
+      current?.destroy();
+      setLive(null);
+    };
+  }, [docId, doc.kind, doc.deleted_at]);
+
+  // What the service tells everyone with the doc open.
+  useEffect(() => {
+    if (!live) return;
+    return live.on(event => {
+      switch (event.type) {
+        case "threads":
+          client.invalidateQueries({ queryKey: ["threads", docId] });
+          client.invalidateQueries({ queryKey: keys.suggestions(docId) });
+          break;
+        case "meta":
+          client.invalidateQueries({ queryKey: keys.doc(docId) });
+          break;
+        case "role":
+          if (event.role === null) setLostAccess(true);
+          client.invalidateQueries({ queryKey: keys.doc(docId) });
+          break;
+        case "rejected":
+          notify.warning("That change wasn't saved", event.reason);
+          setTimeout(() => window.location.reload(), 1800);
+          break;
+      }
+    });
+  }, [live, client, docId]);
+
+  // Suggestions changed in the doc: refresh their list.
+  useEffect(() => {
+    if (!editor) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const changed = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => client.invalidateQueries({ queryKey: keys.suggestions(docId) }), 600);
+    };
+    editor.on("update", changed);
+    return () => {
+      editor.off("update", changed);
+      if (timer) clearTimeout(timer);
+    };
+  }, [editor, client, docId]);
+
+  // Keyboard: ⌘F find, ⌘⌥M comment.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && !event.altKey && event.key.toLowerCase() === "f" && doc.kind === "doc") {
+        event.preventDefault();
+        setFindOpen(true);
+      }
+      if (mod && event.altKey && (event.key.toLowerCase() === "m" || event.code === "KeyM") && canComment) {
+        event.preventDefault();
+        startComment();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, canComment, doc.kind]);
+
+  /** Starts a comment on what's selected: text, or the cell, image or section the cursor is in. */
+  const startComment = useCallback(
+    (kind?: Anchor["kind"] | { from: number; to: number }) => {
+      if (!editor || !canComment) return;
+      const given = typeof kind === "object" ? kind : null;
+      if (given) kind = undefined;
+      const { from, to, empty } = given ? { ...given, empty: given.to <= given.from } : editor.state.selection;
+      const node = editor.state.doc.nodeAt(from);
+      let anchor: PendingComment["anchor"] | null = null;
+      if (!empty && node?.type.name === "image" && to - from === node.nodeSize) {
+        const a = anchorFor(editor, from, from);
+        if (a) anchor = { kind: "image", start: a.start, quote: node.attrs.alt || "Image" };
+      } else if (!empty && kind !== "block") {
+        const a = anchorFor(editor, from, to);
+        const quote = editor.state.doc.textBetween(from, to, " ", "￼").slice(0, 2000);
+        if (a) anchor = { kind: "text", start: a.start, end: a.end, quote };
+      } else {
+        const $from = editor.state.doc.resolve(from);
+        let inCell: number | null = null;
+        for (let depth = $from.depth; depth > 0; depth--) {
+          const name = $from.node(depth).type.name;
+          if (name === "tableCell" || name === "tableHeader") inCell = $from.start(depth);
+        }
+        if (inCell !== null && kind !== "block") {
+          const a = anchorFor(editor, inCell, inCell);
+          if (a) anchor = { kind: "cell", start: a.start, quote: $from.parent.textContent.slice(0, 200) };
+        } else if ($from.depth > 0) {
+          const start = $from.before(1);
+          const a = anchorFor(editor, start + 1, start + 1);
+          if (a) anchor = { kind: "block", start: a.start, quote: $from.node(1).textContent.slice(0, 200) };
+        }
+      }
+      if (!anchor) return;
+      const coords = editor.view.coordsAtPos(empty ? from : to);
+      setPending({ anchor, top: coords.bottom, left: coords.left });
+      setPanel("comments");
+    },
+    [editor, canComment],
+  );
+
+  /** A comment on an area of an image. */
+  const startImageAreaComment = useCallback(
+    (imagePos: number, rect: { x: number; y: number; w: number; h: number }, at: { top: number; left: number }) => {
+      if (!editor || !canComment) return;
+      const a = anchorFor(editor, imagePos, imagePos);
+      if (!a) return;
+      const node = editor.state.doc.nodeAt(imagePos);
+      setPending({ anchor: { kind: "image", start: a.start, rect, quote: node?.attrs.alt || "Image" }, top: at.top, left: at.left });
+    },
+    [editor, canComment],
+  );
+
+  /** Opens a thread: scrolls the editor to its text. */
+  const openThread = useCallback(
+    (id: string | null) => {
+      setActiveThread(id);
+      if (!id) return;
+      setPanel("comments");
+      const thread = threads.find(t => t.id === id);
+      if (!thread || !editor) return;
+      const range = rangeOf(editor, thread.anchor);
+      if (!range) return;
+      const dom = editor.view.domAtPos(range.from).node as HTMLElement;
+      (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+    [threads, editor],
+  );
+
+  const uploadImage = useCallback(
+    async (file: File): Promise<string | null> => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      try {
+        const result = await api.post<{ url: string }>(`/v1/docs/${seg(docId)}/assets`, undefined, { raw: form });
+        return result.url;
+      } catch (error) {
+        notifyError(error, "The image couldn't be added");
+        return null;
+      }
+    },
+    [docId],
+  );
+
+  const pickImage = useCallback(() => imageInput.current?.click(), []);
+
+  const onRefused = useCallback((reason: string) => notify.info("Not a suggestion", reason), []);
+
+  if (lostAccess) {
+    return (
+      <div className={styles.gone}>
+        <h1>You no longer have access</h1>
+        <p>The owner changed who can open this doc.</p>
+        <a href="/library">Back to your docs</a>
+      </div>
+    );
+  }
+
+  const writable = canEdit || (canComment && mode === "suggesting");
+
+  return (
+    <div className={styles.page} data-panel={panel ?? "none"}>
+      <TopBar
+        doc={doc}
+        account={account}
+        live={live}
+        editor={editor}
+        mode={mode}
+        onMode={setMode}
+        canEdit={canEdit}
+        canComment={canComment}
+        panel={panel}
+        onPanel={setPanel}
+        onFind={() => setFindOpen(true)}
+        openThreads={threads.length}
+      />
+      {writable && editor && doc.kind === "doc" && mode !== "viewing" ? (
+        <Toolbar editor={editor} canEdit={canEdit} suggesting={mode === "suggesting" || !canEdit} onComment={canComment ? () => startComment() : undefined} onImage={pickImage} />
+      ) : null}
+      <div className={styles.body}>
+        <main id="main" className={styles.main}>
+          {doc.deleted_at ? <p className={styles.trashNotice}>This doc is in the trash. Restore it to edit it again.</p> : null}
+          {findOpen && editor ? <FindBar editor={editor} canReplace={canEdit && mode === "editing"} onClose={() => setFindOpen(false)} /> : null}
+          {doc.kind === "pdf" ? (
+            <PdfView doc={doc} canComment={canComment} canEdit={canEdit} threads={threads} activeThread={activeThread} onActivate={openThread} onCommentArea={(anchor, at) => setPending({ anchor, ...at })} />
+          ) : live ? (
+            <div className={styles.column}>
+              <DocEditor
+                live={live}
+                docId={docId}
+                account={account}
+                canEdit={canEdit}
+                canSuggest={canComment}
+                mode={canEdit ? mode : canComment && mode === "suggesting" ? "suggesting" : "viewing"}
+                threads={threads}
+                activeThread={activeThread}
+                onActivateThread={openThread}
+                onRefused={onRefused}
+                onReady={setEditor}
+                onUploadImage={uploadImage}
+                pickImage={pickImage}
+              />
+              {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
+              {editor && canComment ? (
+                <SelectionComment
+                  editor={editor}
+                  docId={docId}
+                  account={account}
+                  autoOpen={mode === "viewing"}
+                  pending={pending}
+                  onPending={setPending}
+                  onStart={range => startComment(range)}
+                  onCreated={thread => {
+                    client.invalidateQueries({ queryKey: ["threads", docId] });
+                    setActiveThread(thread.id);
+                  }}
+                />
+              ) : null}
+            </div>
+          ) : (
+            <div className={styles.loading}>{liveError ? <p className={styles.error}>{liveError}</p> : <p>Opening…</p>}</div>
+          )}
+        </main>
+        {panel === "comments" && canComment ? (
+          <CommentsPanel docId={docId} doc={doc} account={account!} threads={threads} activeThread={activeThread} onActivate={openThread} editor={editor} canEdit={canEdit} onClose={() => setPanel(null)} />
+        ) : null}
+        {panel === "versions" && canEdit ? <VersionsPanel doc={doc} editor={editor} live={live} onClose={() => setPanel(null)} /> : null}
+        {panel === "links" && account ? <LinksPanel doc={doc} onClose={() => setPanel(null)} /> : null}
+      </div>
+      {editor && doc.kind === "doc" ? <StatusBar editor={editor} live={live} /> : null}
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async event => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file || !editor) return;
+          const url = await uploadImage(file);
+          if (url) editor.chain().focus().setImage({ src: url, alt: file.name.replace(/\.[^.]+$/, "") }).run();
+        }}
+      />
+    </div>
+  );
+}
+
+export type { Thread };

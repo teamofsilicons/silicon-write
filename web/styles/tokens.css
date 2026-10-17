@@ -1,0 +1,168 @@
+/*
+ * The Silicon look, mapped onto Silicon UI's semantic tokens (components/silicon-ui/foundation.css, imported first): the
+ * look of Silicon Writings (writings.teamofsilicons.com), teamofsilicons.com and the Silicon Apps store. Warm paper,
+ * near-black ink, one calm blue, Hedvig Letters Serif for titles, BDO Grotesk for everything you read and press, and
+ * Geist Pixel Square for small labels.
+ *
+ * The site is light only: lib/theme.ts pins <html data-theme="light">. The dark block below is kept for any subtree that
+ * sets data-theme="dark" itself; it is the same paper at night, a warm near-black (#151412), never a cool navy.
+ *
+ * Contrast (WCAG 2.2): every text token clears 4.5:1 on --background, --surface and --surface-muted in its mode. The
+ * lowest pairs are light --text-muted #6B675F (5.0:1 on --surface-muted) and dark --text-muted #9A958A (5.6:1).
+ * --text-faint is for decoration only (rules, separators), never for text.
+ *   --accent-ink   accent-coloured text. #1F5CB1 on the dark page is 2.9:1, so dark uses a lighter blue.
+ *   --primary*     the filled button: the calm blue under white text (6.4:1) in light, paper on ink in dark.
+ */
+:root {
+  /* Application layout compatibility. Registry components use Silicon UI's semantic scale. */
+  --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem;
+  --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem;
+  --space-12: 3rem; --space-16: 4rem; --space-20: 5rem; --space-24: 6rem;
+  --radius-panel: 1.625rem; --radius-surface: 2.125rem; --radius-pill: 9999px;
+  --surface-secondary: var(--surface-muted);
+}
+
+:root, [data-theme="light"] {
+  color-scheme: light;
+
+  --background: #FFFDF9;
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-muted: #F6F2EA;
+  /* The beige of the nav pill's current item and of quiet fills (Writings' #EDE8E0). */
+  --surface-pressed: #EDE8E0;
+  --foreground: #1E1E1C;
+  --text-secondary: #57544D;
+  --text-muted: #6B675F;
+  --text-faint: #A29D92;
+  --border: #E7E3D8;
+  --border-subtle: #EFEBE2;
+  --border-strong: #D6D0C1;
+
+  --accent: #1F5CB1;
+  --accent-strong: #184A94;
+  --accent-subtle: rgb(31 92 177 / .09);
+  --accent-foreground: #FFFFFF;
+  --accent-ink: #1F5CB1;
+
+  --primary: #1F5CB1;
+  --primary-hover: #1A4F99;
+  --primary-pressed: #164383;
+  --primary-foreground: #FFFFFF;
+
+  --control-on: #1F5CB1;
+  --control-glyph: #FFFFFF;
+  --control-track: #E5E0D5;
+  --control-track-hover: #DAD4C7;
+  --control-thumb: #FFFFFF;
+  --control-thumb-on: #FFFFFF;
+  --control-thumb-shadow: 0 0 0 .5px rgb(30 30 28 / .08), 0 1px 2px rgb(30 30 28 / .14), 0 2px 6px rgb(30 30 28 / .06);
+  --control-fill: var(--control-on);
+  --control-on-subtle: color-mix(in oklab, var(--control-on) 10%, transparent);
+  --focus-ring: transparent;
+
+  --success: #2B7148;
+  --warning: #8F560D;
+  --danger: #B42318;
+  /* Stars and the rating bars: an ochre that sits on paper. */
+  --star: #B7791F;
+
+  /* Warm, faint shadows, as on teamofsilicons.com. Only floating layers and the nav pill use them. */
+  --shadow-resting: 0 1px 2px rgb(30 30 28 / .04);
+  --shadow-raised: 0 6px 18px rgb(30 30 28 / .06), 0 1px 3px rgb(30 30 28 / .04);
+  --shadow-floating: 0 20px 48px rgb(30 30 28 / .1), 0 3px 10px rgb(30 30 28 / .05);
+
+  --series-1: #1F5CB1; --series-2: #7A4FC4; --series-3: #B7791F; --series-4: #2B7148;
+
+  /* Type. BDO Grotesk is the text and interface face, Hedvig Letters Serif the title face (one weight: never bold it),
+     Geist Pixel Square the face of small labels, dates and ids. All three are self-hosted (styles/fonts.css). */
+  --font-body: "BDO Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-body);
+  --font-serif: "Hedvig Letters Serif", "Iowan Old Style", Georgia, serif;
+  --font-pixel: "Geist Pixel Square", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --tracking-display: -.01em;
+  --tracking-body: 0;
+
+  /* Squircle tuning: corner-shape radius multiplier (matches Figma's 60 % corner smoothing). See styles/squircle.css. */
+  --sq-k: 1.6;
+
+  /* No dot grids or glows: paper is flat. Kept as tokens so older rules resolve to nothing. */
+  --grain-opacity: 0;
+  --dot-color: transparent;
+  --overlay: rgb(30 30 28 / .28);
+  --wash: none;
+
+  /* Page chrome. No floating dock here (the account site's --dock-height is 0); the clearance keeps the last content of
+     a page clear of the bottom edge and a floating save bar's resting place. */
+  --page-max: 1240px;
+  --page-narrow: 700px;
+  --gutter: clamp(16px, 4vw, 32px);
+  --dock-height: 0px;
+  --dock-clearance: calc(64px + env(safe-area-inset-bottom, 0px));
+  /* The signed-in workspace (components/foundation/shell): a sidebar beside a sticky top bar. */
+  --sidebar-width: 248px;
+  --topbar-height: 64px;
+  /* The app's mark is drawn in ink, as every redesigned Silicon site draws its own (lib/app.config.ts accent is unused). */
+  --app-accent: var(--foreground);
+}
+
+:root[data-theme="dark"], [data-theme="dark"] {
+  color-scheme: dark;
+  --background: #151412;
+  --surface: #1B1A17;
+  --surface-raised: #22201D;
+  --surface-muted: #24221E;
+  --surface-pressed: #2E2B26;
+  --foreground: #EDE9E0;
+  --text-secondary: #C3BEB3;
+  --text-muted: #9A958A;
+  --text-faint: #5E5A52;
+  --border: #2E2B26;
+  --border-subtle: #24221E;
+  --border-strong: #423E36;
+
+  --accent: #86AEEA;
+  --accent-strong: #B4CDF4;
+  --accent-subtle: rgb(134 174 234 / .13);
+  --accent-foreground: #151412;
+  --accent-ink: #8FB5EE;
+
+  --primary: #EDE9E0;
+  --primary-hover: #FFFDF9;
+  --primary-pressed: #D9D4C9;
+  --primary-foreground: #151412;
+
+  --control-on: #86AEEA;
+  --control-glyph: #151412;
+  --control-track: #3A362F;
+  --control-track-hover: #45403A;
+  --control-thumb: #EDE9E0;
+  --control-thumb-on: #151412;
+  --control-thumb-shadow: 0 0 0 .5px rgb(0 0 0 / .3), 0 1px 2px rgb(0 0 0 / .35), 0 2px 6px rgb(0 0 0 / .2);
+  --control-fill: var(--control-on);
+  --control-on-subtle: color-mix(in oklab, var(--control-on) 16%, transparent);
+  --focus-ring: transparent;
+
+  --success: #7FC79A;
+  --warning: #E3B55A;
+  --danger: #F4968C;
+  --star: #E3B55A;
+
+  --shadow-resting: 0 1px 2px rgb(0 0 0 / .3);
+  --shadow-raised: 0 8px 22px rgb(0 0 0 / .35);
+  --shadow-floating: 0 22px 55px rgb(0 0 0 / .5), 0 3px 10px rgb(0 0 0 / .25);
+
+  --series-1: #86AEEA; --series-2: #B99AE6; --series-3: #E3B55A; --series-4: #7FC79A;
+
+  --overlay: rgb(0 0 0 / .5);
+}
+
+/* Existing application layouts use this numeric spacing scale. Silicon UI components use semantic tokens. Panels are
+   quiet and only a little rounded, as on Writings. */
+:root {
+  --space-1: var(--space-tight); --space-2: var(--space-related); --space-3: var(--space-group);
+  --space-4: var(--space-inset); --space-5: var(--space-comfort); --space-6: 1.5rem;
+  --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem; --space-16: 4rem; --space-20: 5rem; --space-24: 6rem;
+  --radius-panel: 14px; --radius-surface: 18px; --radius-pill: 9999px;
+}

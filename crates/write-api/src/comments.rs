@@ -56,6 +56,7 @@ fn rfc3339(t: &OffsetDateTime) -> String {
 
 /// Where each thread's text is now: (current quote, orphaned, block index).
 async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiResult<Vec<(Option<String>, bool, Option<usize>)>> {
+    let pdf: Vec<bool> = threads.iter().map(|t| t.anchor.get("kind").and_then(Value::as_str) == Some("pdf")).collect();
     let anchors: Vec<(Option<Vec<u8>>, Option<Vec<u8>>)> = threads
         .iter()
         .map(|t| {
@@ -69,7 +70,12 @@ async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiRes
         let map = ydoc::text_map(&txn, &frag);
         anchors
             .iter()
-            .map(|(start, end)| {
+            .zip(pdf)
+            .map(|((start, end), is_pdf)| {
+                // A comment on an area of a PDF has no text to follow.
+                if is_pdf {
+                    return (None, false, None);
+                }
                 let start = start.as_ref().and_then(|s| ydoc::resolve_position(&txn, &map, s));
                 let end = end.as_ref().and_then(|e| ydoc::resolve_position(&txn, &map, e));
                 match (start, end) {
@@ -278,8 +284,15 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
     let text = check_body(&body.body)?;
     let kind = body.anchor.kind.clone().unwrap_or_else(|| "text".into());
-    if !["text", "block", "cell", "image"].contains(&kind.as_str()) {
-        return Err(ApiError::invalid("The anchor kind must be text, block, cell or image."));
+    if !["text", "block", "cell", "image", "pdf"].contains(&kind.as_str()) {
+        return Err(ApiError::invalid("The anchor kind must be text, block, cell, image or pdf."));
+    }
+    if kind == "pdf" {
+        let rect = body.anchor.rect.clone().ok_or_else(|| ApiError::invalid("A comment on a PDF needs the area (`rect` with x, y, w, h and page)."))?;
+        let page = rect.get("page").and_then(Value::as_u64).ok_or_else(|| ApiError::invalid("A comment on a PDF needs the page (`rect.page`)."))?;
+        let _ = page;
+        let anchor = json!({ "kind": "pdf", "rect": rect });
+        return create_thread(&state, &caller, &doc, &id, anchor, body.anchor.quote.clone().unwrap_or_default(), text).await;
     }
     let (start, end, quote) = match (&body.anchor.start, &body.anchor.quote) {
         (Some(start), _) => {
@@ -303,6 +316,11 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
     if let Some(rect) = body.anchor.rect {
         anchor["rect"] = rect;
     }
+    create_thread(&state, &caller, &doc, &id, anchor, quote, text).await
+}
+
+async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, id: &str, anchor: Value, quote: String, text: String) -> ApiResult<(StatusCode, Json<Value>)> {
+    let state = state.clone();
     let thread_id = ids::new_id("t");
     let comment_id = ids::new_id("c");
     let quote: String = quote.chars().take(2000).collect();
@@ -325,8 +343,8 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
         .await?;
     tx.commit().await?;
     let author = accounts::one(&state, &caller.uuid).await?;
-    notify::comment(&state, &doc, &thread_id, &comment_id, &author, &text, &quote, false).await?;
-    state.rooms.notify(&id, json!({ "type": "threads" })).await;
+    notify::comment(&state, doc, &thread_id, &comment_id, &author, &text, &quote, false).await?;
+    state.rooms.notify(id, json!({ "type": "threads" })).await;
     Ok((StatusCode::CREATED, Json(one_thread(&state, &thread_id).await?)))
 }
 

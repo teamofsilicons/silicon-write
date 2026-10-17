@@ -1,0 +1,32 @@
+.body { display: grid; gap: var(--space-5); }
+.invite { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: var(--space-2); align-items: end; }
+@media (max-width: 560px) { .invite { grid-template-columns: 1fr; } }
+.inviteInput {
+  height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--foreground);
+  font: 400 .95rem/1 var(--font-body);
+  min-width: 0;
+}
+.inviteInput:focus { outline: none; border-color: var(--accent); }
+.roleSelect :global(label), .roleSelectSmall :global(label), .publicSelect :global(label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.people { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); max-height: 320px; overflow-y: auto; }
+.person { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.person[data-inherited] { opacity: .85; }
+.who { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.who > span:first-child { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.id { font: 400 .78rem/1.4 var(--font-pixel); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role { font-size: .85rem; color: var(--text-secondary); }
+.roleSelectSmall { width: 140px; }
+.remove { border: 0; background: none; color: var(--text-muted); padding: var(--space-2); border-radius: 10px; cursor: pointer; }
+.remove:hover { color: var(--danger); background: var(--surface-muted); }
+.mailIcon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; background: var(--surface-muted); color: var(--text-secondary); }
+.public { display: grid; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border); }
+.publicHead { display: flex; align-items: center; gap: var(--space-3); }
+.publicSelect { flex: 1; }
+.note { margin: 0; color: var(--text-muted); font-size: .85rem; }
+.transfer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.transfer .inviteInput { height: 36px; flex: 1; min-width: 160px; }
