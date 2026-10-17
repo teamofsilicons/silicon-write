@@ -92,10 +92,12 @@ file is the technical reference.
 - `GET /v1/docs/{id}/export?format=md|txt|docx|odt|rtf|html|pdf&seq=<n>` **public** → the file (`Content-Disposition: attachment`).
   A PDF shown as it is downloads as itself in `pdf`, and as its text in the other formats.
 - `POST /v1/docs/{id}/assets` (multipart `file`, an image: PNG, JPEG, GIF, WebP or SVG, told by its bytes; anything else
-  is `415 unsupported_format`) → `{ "id", "url" }`. `GET /v1/assets/{id}` **public** (doc access) → bytes.
+  is `415 unsupported_format`) → `{ "id", "url" }`. `GET /v1/assets/{id}` **public** → bytes, for
+  whoever can open a doc that shows (or once showed) the image; the web serves the same at `/assets/{id}`.
 - `GET /v1/docs/{id}/backlinks` → `{ "docs": [Doc] }`: docs the caller can open that link here with `[[title]]`.
 - `GET /v1/links?title=…` → `{ "doc": Doc | null }`: the doc a `[[title]]` link opens for the caller (by title, case-insensitive).
-- `GET /v1/docs/{id}/authorship` → `{ "blocks": [{ "index", "authors": [Account] }] }` (who wrote each top-level block, most text first).
+- `GET /v1/docs/{id}/authorship` → `{ "blocks": [{ "index", "authors": [Account] }] }` (who wrote each top-level block,
+  most text first), for anyone signed in who can open the doc.
 - `GET /v1/search?q=…` → `{ "results": [{ "doc": Doc, "snippet": "…" }] }`.
 
 ## Real time
@@ -110,9 +112,14 @@ file is the technical reference.
 ## Sharing
 
 - `GET /v1/docs/{id}/sharing` → `{ "owner": Account, "public_access", "members": [Member] }` where
-  `Member = { "id": "m_…", "account": Account | null, "email": "…" | null, "role", "via": "doc" | { "folder": Folder },
-  "pending": bool, "invited_by": Account, "created_at" }`.
-- `POST /v1/docs/{id}/sharing` `{ "to": "c:id" | "si:id" | "email@…", "role": "editor"|"commenter"|"viewer" }` → `Member`.
+  `Member = { "id": "m_…", "account": Account | null, "email": "…" | null, "role", "via": "doc" | { "folder": Folder | null },
+  "pending": bool, "invited_by": Account, "created_at" }` (`folder` is null for a folder above the doc the caller can't
+  open). Only the owner and the people it's shared with see it, not someone who has only its public link (`403`).
+- `POST /v1/docs/{id}/sharing` `{ "to": "c:id" | "si:id" | "email@…", "role": "editor"|"commenter"|"viewer" }` → `Member`
+  (`201` when they're new; `200` when they were already invited, which only the owner can do with another role). An
+  email that belongs to an account already using Silicon Write shares with that account; any other email becomes a
+  pending invitation (and an invitation email) until someone signs in with it. Not for an item in the trash (`409`), not
+  by someone who has only the public link (`403`), and a `to` that's neither an id nor an email is `422 invalid`.
 - `PATCH /v1/docs/{id}/sharing/{member}` `{ "role" }` → `Member`. `DELETE /v1/docs/{id}/sharing/{member}` → `204`.
 - `PUT /v1/docs/{id}/public` `{ "access": "none"|"view"|"comment"|"edit" }` → `Doc` (owner).
 - The same under `/v1/folders/{id}/sharing` (no `public` for folders).

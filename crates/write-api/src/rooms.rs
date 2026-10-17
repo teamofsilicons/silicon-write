@@ -704,6 +704,16 @@ async fn index(state: &AppState, room: &Arc<Room>) -> ApiResult<()> {
     };
     let plain = doc.without_suggestions().plain_text();
     let links: Vec<String> = doc.doc_links().iter().map(|l| l.trim().to_lowercase()).collect();
+    // The uploaded images the doc shows: anyone who can open it can see them. Never forgotten, so an
+    // older version still shows its images.
+    let images: Vec<String> = write_doc::pandoc::images(&doc).iter().filter_map(|src| crate::content::asset_id_from_src(state, src)).collect();
+    if !images.is_empty() {
+        sqlx::query("insert into doc_assets (doc_id, asset_id) select $1, id from assets where id = any($2) on conflict do nothing")
+            .bind(&room.doc_id)
+            .bind(&images)
+            .execute(&state.db)
+            .await?;
+    }
     sqlx::query(
         "update docs set plain_text = $2, links = $3,
             search = setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(to_tsvector('simple', $2), 'B')
@@ -926,15 +936,21 @@ async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, b
             return Err(ApiError::forbidden("That change claims to come from someone else."));
         }
     }
-    if role == Role::Commenter {
-        // Commenters can only suggest: check the change on a copy first.
+    // Commenters can only suggest, and nobody suggests in someone else's name (a suggestion's marks
+    // carry its author): such changes are checked on a copy first. A change that sets no suggestion
+    // marks can't make one.
+    let marks_suggestions = bytes.windows(b"suggestion".len()).any(|w| w == b"suggestion");
+    if role == Role::Commenter || marks_suggestions {
         let before = inner.read();
         let copy = ydoc::new_ydoc(1);
         copy.transact_mut().apply_update(Update::decode_v1(&inner.full_state()).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
         copy.transact_mut().apply_update(Update::decode_v1(bytes).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
         let after = ydoc::read_doc(&copy);
-        if !suggestion_only(&before, &after, &account.uuid) {
+        if role == Role::Commenter && !suggestion_only(&before, &after, &account.uuid) {
             return Err(ApiError::forbidden("Commenters can only suggest changes.").hint("Switch to suggesting."));
+        }
+        if suggests_for_someone_else(&before, &after, &account.uuid) {
+            return Err(ApiError::forbidden("A suggestion can only be made in your own name."));
         }
     }
     let mut claimed = false;
@@ -950,6 +966,13 @@ async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, b
         inner.broadcast_authors(state).await;
     }
     Ok(())
+}
+
+/// Whether `after` has a new suggestion that names someone other than `author` as its author.
+/// (Typing inside someone's pending suggestion adds to theirs, which is fine.)
+pub fn suggests_for_someone_else(before: &write_doc::Doc, after: &write_doc::Doc, author: &str) -> bool {
+    let known: std::collections::HashSet<(String, String)> = before.suggestions().into_iter().map(|s| (s.id, s.author)).collect();
+    after.suggestions().into_iter().any(|s| s.author != author && !known.contains(&(s.id, s.author)))
 }
 
 /// Whether `after` differs from `before` only by `author`'s own suggestions.

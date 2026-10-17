@@ -58,6 +58,35 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// A request the router or an extractor refused before any handler ran (a body that isn't the JSON
+/// asked for, a missing content type, a bad path): axum answers those in plain text. They get the
+/// API's error shape too, `{"error": {"code", "message"}}`, like every other error.
+pub async fn plain_rejections(response: Response) -> Response {
+    let status = response.status();
+    let plain = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/plain"));
+    if !status.is_client_error() || !plain {
+        return response;
+    }
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024).await.unwrap_or_default();
+    let message = String::from_utf8_lossy(&bytes).trim().to_owned();
+    let code = match status {
+        StatusCode::PAYLOAD_TOO_LARGE => "too_large",
+        StatusCode::UNSUPPORTED_MEDIA_TYPE => "unsupported_media_type",
+        StatusCode::METHOD_NOT_ALLOWED => "method_not_allowed",
+        StatusCode::NOT_FOUND => "not_found",
+        _ => "invalid",
+    };
+    let mut error = ApiError::new(status, code, if message.is_empty() { "The request couldn't be read.".to_owned() } else { message });
+    if code == "invalid" {
+        error = error.hint("Check the request body against docs/api.md.");
+    }
+    error.into_response()
+}
+
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
         ApiError::internal(error)

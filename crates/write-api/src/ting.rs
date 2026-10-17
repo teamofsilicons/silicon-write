@@ -65,6 +65,15 @@ async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
                 .execute(&state.db)
                 .await;
             tracing::info!(account = %caller.id, "registered with Ting");
+            // Notifications that waited for them go out now (including ones given up on before
+            // waiting was a thing).
+            let _ = sqlx::query(
+                "update ting_outbox set status = 'pending', next_at = now(), attempts = 0
+                 where for_uuid = $1 and (status = 'waiting' or (status = 'failed' and last_error like '%no_subscription%'))",
+            )
+            .bind(&caller.uuid)
+            .execute(&state.db)
+            .await;
         }
         Ok(r) => {
             let status = r.status();
@@ -162,6 +171,17 @@ async fn send_due(state: &AppState) -> anyhow::Result<()> {
                 let body = r.text().await.unwrap_or_default();
                 if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
                     *SEND_PROOF.lock().await = None;
+                }
+                // Someone who hasn't allowed Silicon Write at Ting yet (they haven't used it): the
+                // notification waits for them, and goes out once they do (see `enroll`).
+                if status == reqwest::StatusCode::CONFLICT {
+                    sqlx::query("update ting_outbox set status = 'waiting', attempts = $2, last_error = $3 where id = $1")
+                        .bind(item.id)
+                        .bind(attempts)
+                        .bind(format!("{status}: {}", body.chars().take(500).collect::<String>()))
+                        .execute(&state.db)
+                        .await?;
+                    continue;
                 }
                 // A recipient who never registered can't be notified; keep the record and stop after a while.
                 let give_up = status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS && attempts >= 6;

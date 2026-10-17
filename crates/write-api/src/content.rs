@@ -305,16 +305,35 @@ pub fn asset_id_from_src(state: &AppState, src: &str) -> Option<String> {
     candidates.iter().find_map(|prefix| src.strip_prefix(prefix.as_str())).map(|id| id.split(['?', '#']).next().unwrap_or("").to_owned()).filter(|id| id.starts_with("a_"))
 }
 
-pub async fn get_asset(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Response> {
+/// An image in a doc, for anyone who can open a doc that shows it, or ever showed it (`doc_assets`):
+/// when a doc goes private or someone loses it, its images go with it.
+pub async fn get_asset(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>) -> ApiResult<Response> {
     let row: (String, String, String) = sqlx::query_as("select path, content_type, filename from assets where id = $1")
         .bind(&id)
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(|| ApiError::not_found("This file"))?;
+    let docs: Vec<DocRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "select {DOC_COLUMNS} from docs where id in (select doc_id from doc_assets where asset_id = $1 union select doc_id from assets where id = $1)"
+    )))
+    .bind(&id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut allowed = false;
+    for doc in &docs {
+        if access::doc_role(&state, caller.as_ref(), doc).await?.is_some() {
+            allowed = true;
+            break;
+        }
+    }
+    if !allowed {
+        return Err(ApiError::not_found("This file"));
+    }
     let bytes = tokio::fs::read(state.config.data_dir.join(&row.0)).await.map_err(|_| ApiError::not_found("This file"))?;
     let mut response = Response::new(Body::from(bytes));
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&row.1).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    // Access can end, so only the viewer's own browser keeps it, and not for long.
+    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=300"));
     response.headers_mut().insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     // An uploaded SVG or HTML file must never run as a page.
     response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"));
@@ -477,8 +496,10 @@ pub async fn resolve_link(State(state): State<AppState>, Auth(caller): Auth, Que
     }
 }
 
+/// Who wrote each part of the doc (UNDERSTANDING.md: "Any part of a doc shows who wrote it and
+/// when"), for anyone signed in who can open it.
 pub async fn authorship(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>) -> ApiResult<Json<Value>> {
-    access::require_doc(&state, Some(&caller), &id, Role::Editor).await?;
+    access::require_doc(&state, Some(&caller), &id, Role::Viewer).await?;
     let room = state.rooms.get(&state, &id).await?;
     let (per_block, clients) = {
         let inner = room.inner.lock().await;

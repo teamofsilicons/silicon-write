@@ -95,6 +95,7 @@ fn router(state: AppState) -> Router {
         .route("/v1/webhooks/accounts", post(service::accounts_webhook))
         .route("/v1/dev/outbox", get(service::dev_outbox))
         .layer(DefaultBodyLimit::max(60 * 1024 * 1024))
+        .layer(axum::middleware::map_response(error::plain_rejections))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
 }

@@ -127,20 +127,28 @@ async fn share_role(state: &AppState, account: &str, doc_id: Option<&str>, folde
     Ok(roles.iter().filter_map(|r| Role::parse(r)).max())
 }
 
-/// The caller's role on a doc, if any.
-pub async fn doc_role(state: &AppState, caller: Option<&Caller>, doc: &DocRow) -> ApiResult<Option<Role>> {
-    let is_owner = caller.is_some_and(|c| c.uuid == doc.owner_uuid);
-    if is_owner {
+/// The caller's role on a doc as its owner or someone it's shared with (directly or through a
+/// folder), leaving out what a public link gives.
+pub async fn member_doc_role(state: &AppState, caller: &Caller, doc: &DocRow) -> ApiResult<Option<Role>> {
+    if caller.uuid == doc.owner_uuid {
         return Ok(Some(Role::Owner));
     }
     // A doc in the trash is only its owner's.
     if doc.deleted_at.is_some() {
         return Ok(None);
     }
-    let mut role = None;
-    if let Some(caller) = caller {
-        let chain = ancestors(state, doc.folder_id.as_deref()).await?;
-        role = share_role(state, &caller.uuid, Some(&doc.id), &chain).await?;
+    let chain = ancestors(state, doc.folder_id.as_deref()).await?;
+    share_role(state, &caller.uuid, Some(&doc.id), &chain).await
+}
+
+/// The caller's role on a doc, if any.
+pub async fn doc_role(state: &AppState, caller: Option<&Caller>, doc: &DocRow) -> ApiResult<Option<Role>> {
+    let role = match caller {
+        Some(caller) => member_doc_role(state, caller, doc).await?,
+        None => None,
+    };
+    if role == Some(Role::Owner) || doc.deleted_at.is_some() {
+        return Ok(role);
     }
     let public = match doc.public_access.as_str() {
         "view" => Some(Role::Viewer),
