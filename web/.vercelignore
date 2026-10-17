@@ -1,0 +1,14 @@
+node_modules
+.next*
+.env*
+!.env.example
+.vercel
+test-results
+playwright-report
+blob-report
+screens
+e2e
+tests
+*.log
+*.tsbuildinfo
+*.pem
