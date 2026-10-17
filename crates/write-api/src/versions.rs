@@ -586,8 +586,12 @@ pub async fn decide(
     access::require_doc(&state, Some(&caller), &id, Role::Editor).await?;
     let (found, seq) = rooms::edit(&state, &id, &caller.uuid, Origin::Review, None, |y| {
         let found = ydoc::with_txn(y, |txn, frag| {
-            ydoc::resolve_suggestion(txn, frag, &sid, accept)
-        });
+            let conflicts = ydoc::resolution_conflicts(txn, frag, &sid, accept);
+            if !conflicts.is_empty() {
+                return Err(ApiError::conflict("This change contains other pending suggestions. Review those first, or decide all suggestions together."));
+            }
+            Ok(ydoc::resolve_suggestion(txn, frag, &sid, accept))
+        })?;
         if !found {
             return Err(ApiError::not_found("This suggestion"));
         }
@@ -616,10 +620,23 @@ pub async fn decide_all(
             .into_iter()
             .map(|s| s.id)
             .collect();
-        for sid in &ids {
-            ydoc::with_txn(y, |txn, frag| {
-                ydoc::resolve_suggestion(txn, frag, sid, accept)
-            });
+        // Decide nested proposals before any parent that would remove them. Check the complete
+        // ordering against a private copy first, so conflicting dependency cycles change nothing.
+        let trial = ydoc::new_ydoc(0);
+        ydoc::with_txn(&trial, |txn, frag| ydoc::write_all(txn, frag, &ydoc::read_doc(y)));
+        let mut pending = ids.clone();
+        let mut ordered = Vec::new();
+        while !pending.is_empty() {
+            let next = pending.iter().position(|sid| ydoc::with_txn(&trial, |txn, frag| ydoc::resolution_conflicts(txn, frag, sid, accept).is_empty()));
+            let Some(next) = next else {
+                return Err(ApiError::conflict("These overlapping suggestions depend on each other. Review one of their nested changes first."));
+            };
+            let sid = pending.remove(next);
+            ydoc::with_txn(&trial, |txn, frag| ydoc::resolve_suggestion(txn, frag, &sid, accept));
+            ordered.push(sid);
+        }
+        for sid in &ordered {
+            ydoc::with_txn(y, |txn, frag| ydoc::resolve_suggestion(txn, frag, sid, accept));
         }
         Ok(ids)
     })

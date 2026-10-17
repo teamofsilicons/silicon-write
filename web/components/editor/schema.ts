@@ -11,7 +11,7 @@ import { Color, TextStyle } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import { BlockMath, InlineMath } from "@tiptap/extension-mathematics";
 import { DocLink, Footnote, TableOfContents } from "./nodes";
-import { SuggestionDelete, SuggestionInsert } from "./suggestions";
+import { SuggestionDelete, SuggestionInsert, SuggestionNodes } from "./suggestions";
 import { FileFormatting, InlineImage, Subscript, Superscript } from "./formatting";
 
 export function contentExtensions(options: { collaborative: boolean }): AnyExtension[] {
@@ -35,6 +35,7 @@ export function contentExtensions(options: { collaborative: boolean }): AnyExten
     Highlight.configure({ multicolor: true }),
     InlineMath,
     BlockMath,
+    SuggestionNodes,
     SuggestionInsert,
     SuggestionDelete,
     Footnote,

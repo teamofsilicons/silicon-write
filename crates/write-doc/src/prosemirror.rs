@@ -26,8 +26,23 @@ fn node(kind: &str, attrs: Option<Value>, content: Option<Vec<Value>>) -> Value 
     Value::Object(map)
 }
 
-fn block(block: &Block) -> Value {
-    match block {
+fn with_suggestion(mut node: Value, suggestion: &Suggestion) -> Value {
+    if !node["attrs"].is_object() { node["attrs"] = json!({}); }
+    node["attrs"][SUGGESTION] = json!(suggestion);
+    node
+}
+
+fn container(kind: &str, attrs: Option<Value>, children: &[Block]) -> Value {
+    if let Some(suggestion) = common_suggestion(children) {
+        with_suggestion(node(kind, attrs, Some(blocks(&without_common_suggestion(children)))), &suggestion)
+    } else {
+        node(kind, attrs, Some(blocks(children)))
+    }
+}
+
+fn block(value: &Block) -> Value {
+    match value {
+        Block::Suggested { suggestion, block: inner } => with_suggestion(block(inner), suggestion),
         Block::Paragraph { content } => node(PARAGRAPH, None, Some(inlines(content))),
         Block::Heading { level, content } => {
             node(HEADING, Some(json!({ "level": level })), Some(inlines(content)))
@@ -35,12 +50,12 @@ fn block(block: &Block) -> Value {
         Block::BulletList { items } => node(
             BULLET_LIST,
             None,
-            Some(items.iter().map(|i| node(LIST_ITEM, None, Some(blocks(&i.blocks)))).collect()),
+            Some(items.iter().map(|i| container(LIST_ITEM, None, &i.blocks)).collect()),
         ),
         Block::OrderedList { start, items } => node(
             ORDERED_LIST,
             Some(json!({ "start": start })),
-            Some(items.iter().map(|i| node(LIST_ITEM, None, Some(blocks(&i.blocks)))).collect()),
+            Some(items.iter().map(|i| container(LIST_ITEM, None, &i.blocks)).collect()),
         ),
         Block::TaskList { items } => node(
             TASK_LIST,
@@ -48,7 +63,7 @@ fn block(block: &Block) -> Value {
             Some(
                 items
                     .iter()
-                    .map(|i| node(TASK_ITEM, Some(json!({ "checked": i.checked })), Some(blocks(&i.blocks))))
+                    .map(|i| container(TASK_ITEM, Some(json!({ "checked": i.checked })), &i.blocks))
                     .collect(),
             ),
         ),
@@ -62,32 +77,17 @@ fn block(block: &Block) -> Value {
         Block::Image { src, alt, title } => {
             node(IMAGE, Some(json!({ "src": src, "alt": alt, "title": title })), None)
         }
-        Block::Table { rows } => node(
-            TABLE,
-            None,
-            Some(
-                rows.iter()
-                    .map(|row| {
-                        node(
-                            TABLE_ROW,
-                            None,
-                            Some(
-                                row.cells
-                                    .iter()
-                                    .map(|cell| {
-                                        node(
-                                            if cell.header { TABLE_HEADER } else { TABLE_CELL },
-                                            Some({ let mut attrs = json!({ "colspan": cell.colspan, "rowspan": cell.rowspan }); if let Some(align) = &cell.align { attrs["textAlign"] = json!(align); } attrs }),
-                                            Some(blocks(&cell.blocks)),
-                                        )
-                                    })
-                                    .collect(),
-                            ),
-                        )
-                    })
-                    .collect(),
-            ),
-        ),
+        Block::Table { rows } => node(TABLE, None, Some(rows.iter().map(|row| {
+            let suggestion = common_suggestion(row.cells.iter().flat_map(|cell| &cell.blocks));
+            let cells = row.cells.iter().map(|cell| {
+                let mut attrs = json!({ "colspan": cell.colspan, "rowspan": cell.rowspan });
+                if let Some(align) = &cell.align { attrs["textAlign"] = json!(align); }
+                let children = if suggestion.is_some() { without_common_suggestion(&cell.blocks) } else { cell.blocks.clone() };
+                container(if cell.header { TABLE_HEADER } else { TABLE_CELL }, Some(attrs), &children)
+            }).collect();
+            let row = node(TABLE_ROW, None, Some(cells));
+            match suggestion { Some(s) => with_suggestion(row, &s), None => row }
+        }).collect())),
         Block::BlockMath { latex } => node(BLOCK_MATH, Some(json!({ "latex": latex })), None),
         Block::TableOfContents => node(TABLE_OF_CONTENTS, None, None),
     }
@@ -108,6 +108,7 @@ fn inlines(content: &[Inline]) -> Vec<Value> {
                 Some(Value::Object(map))
             }
             Inline::Text { .. } => None,
+            Inline::Suggested { suggestion, inline } => inlines(std::slice::from_ref(inline)).into_iter().next().map(|node| with_suggestion(node, suggestion)),
             Inline::HardBreak => Some(node(HARD_BREAK, None, None)),
             Inline::InlineMath { latex } => Some(node(INLINE_MATH, Some(json!({ "latex": latex })), None)),
             Inline::Footnote { content } => Some(node(FOOTNOTE, Some(json!({ "content": content })), None)),

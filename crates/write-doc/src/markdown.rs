@@ -42,6 +42,27 @@ pub fn to_markdown(doc: &Doc) -> String {
 }
 
 pub fn to_markdown_with(doc: &Doc, options: &WriteOptions) -> String {
+    // Structural changes include their Markdown separators. Diff the two complete readings so
+    // accepting/rejecting CriticMarkup also adds/removes those separators and footnote definitions.
+    if options.suggestions == SuggestionView::Critic && has_rich_suggestions(doc) {
+        let current_options = WriteOptions { suggestions: SuggestionView::Current, annotations: options.annotations.clone() };
+        let before = to_markdown_with(doc, &current_options);
+        let after = to_markdown_with(&doc.with_suggestions_accepted(), &current_options);
+        let diff = similar::TextDiff::configure().timeout(std::time::Duration::from_millis(500)).diff_chars(&before, &after);
+        let mut out = String::new();
+        let mut active = similar::ChangeTag::Equal;
+        for change in diff.iter_all_changes() {
+            let tag = change.tag();
+            if tag != active {
+                match active { similar::ChangeTag::Delete => out.push_str("--}"), similar::ChangeTag::Insert => out.push_str("++}"), _ => {} }
+                match tag { similar::ChangeTag::Delete => out.push_str("{--"), similar::ChangeTag::Insert => out.push_str("{++"), _ => {} }
+                active = tag;
+            }
+            out.push_str(change.value());
+        }
+        match active { similar::ChangeTag::Delete => out.push_str("--}"), similar::ChangeTag::Insert => out.push_str("++}"), _ => {} }
+        return out;
+    }
     let mut writer = Writer {
         options: options.clone(),
         footnotes: vec![],
@@ -68,6 +89,22 @@ pub fn to_markdown_with(doc: &Doc, options: &WriteOptions) -> String {
         out.push('\n');
     }
     out
+}
+
+fn has_rich_suggestions(doc: &Doc) -> bool {
+    fn inline(i: &Inline) -> bool { matches!(i, Inline::Suggested { .. }) || matches!(i, Inline::Text { marks, .. } if marks.suggestion.is_some() && !marks.without_suggestion().is_plain()) }
+    fn block(b: &Block) -> bool {
+        match b {
+            Block::Suggested { .. } => true,
+            Block::Paragraph { content } | Block::Heading { content, .. } => content.iter().any(inline),
+            Block::BulletList { items } | Block::OrderedList { items, .. } => items.iter().any(|i| i.blocks.iter().any(block)),
+            Block::TaskList { items } => items.iter().any(|i| i.blocks.iter().any(block)),
+            Block::Blockquote { blocks } => blocks.iter().any(block),
+            Block::Table { rows } => rows.iter().any(|r| r.cells.iter().any(|c| c.blocks.iter().any(block))),
+            _ => false,
+        }
+    }
+    doc.blocks.iter().any(block)
 }
 
 /// Inline content as Markdown (used for footnote text and table cells).
@@ -108,9 +145,15 @@ impl Writer {
 
     fn blocks(&mut self, blocks: &[Block]) -> String {
         let mut parts: Vec<String> = vec![];
-        let mut previous: Option<&Block> = None;
+        let mut previous: Option<Block> = None;
         let mut list_alt = false;
-        for block in blocks {
+        for raw in blocks {
+            let current;
+            let block = if self.options.suggestions == SuggestionView::Current {
+                current = decided_block(raw, &|_| false);
+                let Some(block) = current.as_ref() else { continue };
+                block
+            } else { raw };
             // An empty paragraph has no Markdown form: Markdown collapses blank lines.
             if block.is_empty_paragraph() {
                 continue;
@@ -123,7 +166,7 @@ impl Writer {
             // Two lists of the same kind in a row would read back as one list: alternate the
             // bullet (or the ordered delimiter) to keep them apart.
             let same_kind_list = matches!(
-                (previous, block),
+                (previous.as_ref(), block),
                 (Some(Block::BulletList { .. }), Block::BulletList { .. })
                     | (Some(Block::TaskList { .. }), Block::TaskList { .. })
                     | (Some(Block::OrderedList { .. }), Block::OrderedList { .. })
@@ -134,20 +177,29 @@ impl Writer {
                 list_alt = false;
             }
             let rendered = self.block(block, list_alt);
-            let mixed_list = matches!((previous, block),
+            let mixed_list = matches!((previous.as_ref(), block),
                 (Some(Block::BulletList { .. }), Block::TaskList { .. })
                 | (Some(Block::TaskList { .. }), Block::BulletList { .. }));
             if mixed_list && let Some(part) = parts.last_mut() {
                 part.push('\n');
                 part.push_str(&rendered);
             } else { parts.push(rendered); }
-            previous = Some(block);
+            previous = Some(block.clone());
         }
         parts.join("\n\n")
     }
 
     fn block(&mut self, block: &Block, alt: bool) -> String {
         match block {
+            Block::Suggested { suggestion, block } => {
+                let text = self.block(block, alt);
+                match (suggestion.kind, self.options.suggestions) {
+                    (SuggestionKind::Insert, SuggestionView::Current) => String::new(),
+                    (_, SuggestionView::Current) => text,
+                    (SuggestionKind::Insert, _) => format!("{{++{text}++}}"),
+                    (SuggestionKind::Delete, _) => format!("{{--{text}--}}"),
+                }
+            }
             Block::Paragraph { content } => self.paragraph(content),
             Block::Heading { level, content } => {
                 let ctx = InlineCtx {
@@ -278,7 +330,7 @@ impl Writer {
     fn item_body(&mut self, blocks: &[Block]) -> String {
         let mut out = String::new();
         let mut first = true;
-        let mut previous: Option<&Block> = None;
+        let mut previous: Option<Block> = None;
         for block in blocks {
             if block.is_empty_paragraph() {
                 continue;
@@ -297,7 +349,7 @@ impl Writer {
             }
             out.push_str(&rendered);
             first = false;
-            previous = Some(block);
+            previous = Some(block.clone());
         }
         out
     }
@@ -416,6 +468,18 @@ impl Writer {
                         marks: marks.without_suggestion(),
                     }),
                 },
+                Inline::Suggested { suggestion, inline } => {
+                    match (suggestion.kind, self.options.suggestions) {
+                        (SuggestionKind::Insert, SuggestionView::Current) => {},
+                        (_, SuggestionView::Current) => out.extend(self.view(std::slice::from_ref(inline))),
+                        (kind, SuggestionView::Critic) => {
+                            let (open, close) = if kind == SuggestionKind::Insert { ("{++", "++}") } else { ("{--", "--}") };
+                            out.push(Inline::text(open));
+                            out.extend(self.view(std::slice::from_ref(inline)));
+                            out.push(Inline::text(close));
+                        }
+                    }
+                }
                 other => out.push(other.clone()),
             }
         }
@@ -652,6 +716,7 @@ fn to_runs(content: &[Inline]) -> Vec<Run> {
                 text: text.clone(),
                 marks: marks.clone(),
             },
+            Inline::Suggested { inline, .. } => to_runs(std::slice::from_ref(inline)).remove(0),
             Inline::HardBreak => Run::HardBreak,
             Inline::InlineMath { latex } => Run::Math(latex.clone()),
             Inline::Footnote { content } => Run::Footnote(content.clone()),

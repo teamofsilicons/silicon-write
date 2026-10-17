@@ -434,8 +434,8 @@ pub async fn export(state: &AppState, doc: &Doc, title: &str, format: &str) -> A
     // Images: copies of the doc's own images and of pictures it carries inside it, so the converters can read
     // them. Images from elsewhere become a link to the image: the converters would otherwise fetch any address
     // a doc names, from this server.
-    let images = local_images(state, doc, dir.path()).await;
-    let mut doc = doc.clone();
+    let mut doc = doc.without_suggestions();
+    let images = local_images(state, &doc, dir.path()).await;
     keep_only_local_images(&mut doc, &images);
     let resolve = |src: &str| images.iter().find(|(s, _)| s == src).map(|(_, p)| p.clone()).unwrap_or_else(|| src.to_owned());
     let (tree, toc) = pandoc::to_pandoc(&doc, &PandocOut { image_src: Some(&resolve), title: Some(title.to_owned()) });

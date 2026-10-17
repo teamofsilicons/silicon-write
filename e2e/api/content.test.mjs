@@ -906,6 +906,23 @@ describe("Suggestions", TIMEOUT, () => {
     assert.equal(empty.seq, before.seq);
   });
 
+  test("a structural decision preserves nested proposals until they are reviewed", async () => {
+    const original = "Plain words.\n";
+    const { owner, doc, commenter } = await setup(original, { commenter: true });
+    ok(await edit(commenter, doc.id, [{ old: "Plain", new: "Better" }], { suggest: true }));
+    const [inner] = await pending(owner, doc.id);
+    ok(await putMarkdown(owner, doc.id, { markdown: "# Plain words.\n", suggest: true }));
+    const all = await pending(owner, doc.id);
+    assert.equal(all.length, 2);
+    const outer = all.find(s => s.id !== inner.id);
+    failsWith(await owner.api.post(`/v1/docs/${doc.id}/suggestions/${outer.id}/accept`), 409, "conflict");
+    assert.deepEqual((await pending(owner, doc.id)).map(s => s.id).sort(), all.map(s => s.id).sort());
+    assert.equal(await current(owner, doc.id), original);
+    assert.equal((await decideAll(owner, doc.id, "accept-all")).count, 2);
+    assert.equal((await pending(owner, doc.id)).length, 0);
+    assert.equal(await current(owner, doc.id), "# Plain words.\n");
+  });
+
   test("deciding an unknown suggestion, or with an unknown action, is 404", async () => {
     const { owner, doc, commenter } = await setup("Words.\n", { commenter: true });
     failsWith(await owner.api.post(`/v1/docs/${doc.id}/suggestions/s_doesnotexist/accept`), 404, "not_found");
