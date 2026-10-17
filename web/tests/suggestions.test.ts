@@ -95,3 +95,14 @@ test("structural proposals decorate custom node views and clear after a decision
   const accepted = schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, schema.nodes.inlineImage.create()));
   assert.equal(suggestionDecorations(accepted).find().length, 0);
 });
+
+test("ordinary typing and continued typing after a paste stay one suggestion", () => {
+  let edited = state([p("Hello")]);
+  edited = edited.apply(edited.tr.setSelection(TextSelection.create(edited.doc, 6)));
+  for (const chunk of [" ", "t", "o", "d", "a", "y", " and tomorrow", "."]) {
+    edited = edited.applyTransaction(edited.tr.insertText(chunk)).state;
+  }
+  const proposals = pending(edited.doc);
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].inserted, " today and tomorrow.");
+});

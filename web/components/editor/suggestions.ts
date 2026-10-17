@@ -159,9 +159,10 @@ export const SuggestMode = Extension.create<SuggestModeOptions>({
 
 export function suggestionPlugin(options: SuggestModeOptions): Plugin {
     let current: { id: string; at: number; time: number } | null = null;
-    const idFor = (pos: number) => {
+    const idFor = (pos: number, nextPos = pos) => {
       const now = Date.now();
       if (!current || Math.abs(current.at - pos) > 2 || now - current.time > 30_000) current = { id: newId(), at: pos, time: now };
+      current.at = nextPos;
       current.time = now;
       return current.id;
     };
@@ -225,7 +226,7 @@ export function suggestionPlugin(options: SuggestModeOptions): Plugin {
           const fix = newState.tr;
           fix.setMeta(FIX, true);
           for (const [a, b] of inserted) {
-            const id = idFor(a);
+            const id = idFor(a, b);
             fix.removeMark(a, b, deleteType);
             fix.addMark(a, b, insertType.create({ id, author: options.author }));
             fix.doc.nodesBetween(a, b, (node, pos) => {
