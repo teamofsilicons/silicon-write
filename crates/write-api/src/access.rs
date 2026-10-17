@@ -97,15 +97,15 @@ pub async fn load_folder(state: &AppState, id: &str) -> ApiResult<FolderRow> {
         .ok_or_else(|| ApiError::not_found("This folder"))
 }
 
-/// The folder and every folder above it, nearest first.
+/// The folder and every folder above it, nearest first, however deep (and safe from loops).
 pub async fn ancestors(state: &AppState, folder_id: Option<&str>) -> ApiResult<Vec<FolderRow>> {
     let Some(folder_id) = folder_id else { return Ok(vec![]) };
     let rows = sqlx::query_as::<_, FolderRow>(sqlx::AssertSqlSafe(format!(
         "with recursive chain as (
-            select {FOLDER_COLUMNS}, 0 as depth from folders where id = $1
+            select {FOLDER_COLUMNS}, 0 as depth, array[id] as seen from folders where id = $1
             union all
-            select f.id, f.owner_uuid, f.parent_id, f.name, f.created_by, f.created_at, f.deleted_at, c.depth + 1
-            from folders f join chain c on f.id = c.parent_id where c.depth < 64
+            select f.id, f.owner_uuid, f.parent_id, f.name, f.created_by, f.created_at, f.deleted_at, c.depth + 1, c.seen || f.id
+            from folders f join chain c on f.id = c.parent_id where not f.id = any(c.seen)
         ) select {FOLDER_COLUMNS} from chain order by depth"
     )))
     .bind(folder_id)
