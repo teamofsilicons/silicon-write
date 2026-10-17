@@ -16,6 +16,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client/api";
+import { notify, notifyError } from "@/lib/notify";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/silicon-ui/popover/popover";
 import styles from "./editor.module.css";
 
@@ -116,9 +117,9 @@ function DocLinkView({ node }: NodeViewProps) {
     try {
       const found = await api.get<{ doc: { id: string } | null }>("/v1/links", { query: { title } });
       if (found.doc) router.push(`/d/${found.doc.id}`);
-      else alert(`There's no doc called “${title}” that you can open.`);
-    } catch {
-      // Signed out readers of a public doc can't follow links.
+      else notify.info("Doc not found", `There's no doc called “${title}” that you can open.`);
+    } catch (error) {
+      notifyError(error, "The link couldn't be opened");
     }
   };
   return (
