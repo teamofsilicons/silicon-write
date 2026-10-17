@@ -98,8 +98,11 @@ pub async fn open(state: &AppState, filename: &str, bytes: &[u8]) -> ApiResult<O
             let mut input = dir.path().join(format!("input.{format}"));
             tokio::fs::write(&input, bytes).await.map_err(ApiError::internal)?;
             let mut reader = format;
-            if format == "doc" {
-                run(&state.config.soffice, &["--headless", "--norestore", "--convert-to", "docx", "--outdir", ".", "input.doc"], dir.path(), None).await?;
+            // Word's old format, and rich text, go through LibreOffice first: Pandoc's own RTF reader
+            // drops headings and turns maths into pictures.
+            if matches!(format, "doc" | "rtf") {
+                let name = format!("input.{format}");
+                run(&state.config.soffice, &["--headless", "--norestore", "--convert-to", "docx", "--outdir", ".", &name], dir.path(), None).await?;
                 input = dir.path().join("input.docx");
                 reader = "docx";
             }
@@ -117,17 +120,56 @@ pub async fn open(state: &AppState, filename: &str, bytes: &[u8]) -> ApiResult<O
             let json = run(&state.config.pandoc, &args, dir.path(), None).await?;
             let value: serde_json::Value = serde_json::from_slice(&json).map_err(ApiError::internal)?;
             let doc = pandoc::from_pandoc(&value);
-            // Images Pandoc pulled out of the file.
+            // Images Pandoc pulled out of the file. Ones browsers can't show (Word's EMF and WMF drawings,
+            // TIFF, BMP) become PNGs.
             let mut images = vec![];
             for src in pandoc::images(&doc) {
                 let path = PathBuf::from(&src);
                 if (path.starts_with(dir.path()) || path.starts_with(&media))
                     && let Ok(data) = tokio::fs::read(&path).await {
-                        images.push((src.clone(), data, content_type(&src).to_owned()));
+                        let image = match image_type(&data) {
+                            Some(kind) => (data, kind.to_owned()),
+                            None => match as_png(state, &path).await {
+                                Some(png) => (png, "image/png".to_owned()),
+                                None => (data, content_type(&src).to_owned()),
+                            },
+                        };
+                        images.push((src.clone(), image.0, image.1));
                     }
             }
             Ok(Opened::Doc { doc, images })
         }
+    }
+}
+
+/// An image browsers can't show, drawn as a PNG by LibreOffice (None when it can't).
+async fn as_png(state: &AppState, path: &Path) -> Option<Vec<u8>> {
+    let dir = tempfile::tempdir().ok()?;
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    let input = dir.path().join(format!("image.{ext}"));
+    tokio::fs::copy(path, &input).await.ok()?;
+    let name = format!("image.{ext}");
+    run(&state.config.soffice, &["--headless", "--norestore", "--convert-to", "png", "--outdir", ".", &name], dir.path(), None).await.ok()?;
+    let png = tokio::fs::read(dir.path().join("image.png")).await.ok()?;
+    (image_type(&png) == Some("image/png")).then_some(png)
+}
+
+/// What kind of image these bytes are, from the bytes themselves (never the file's name): PNG,
+/// JPEG, GIF, WebP or SVG, the images every browser shows.
+pub fn image_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+        let start = head.trim_start_matches('\u{feff}').trim_start();
+        let xml_like = start.starts_with("<?xml") || start.starts_with("<svg") || start.starts_with("<!--") || start.starts_with("<!DOCTYPE svg");
+        (xml_like && head.contains("<svg")).then_some("image/svg+xml")
     }
 }
 

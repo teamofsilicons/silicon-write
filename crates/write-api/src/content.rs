@@ -222,15 +222,21 @@ pub async fn export(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth,
     let min = if q.seq.is_some() { Role::Editor } else { Role::Viewer };
     let (doc_row, _) = access::require_doc(&state, caller.as_ref(), &id, min).await?;
     let format = q.format.unwrap_or_else(|| "md".into());
-    if doc_row.kind == "pdf" && format == "pdf" {
-        return original(State(state), MaybeAuth(caller), Path(id)).await;
-    }
-    let doc = match q.seq {
-        Some(seq) => crate::versions::doc_at(&state, &id, seq).await?,
-        None => rooms::read(&state, &id).await?.0,
-    }
-    .without_suggestions();
     let title = doc_row.display_title();
+    let doc = if doc_row.kind == "pdf" {
+        // A PDF shown as it is: the file itself, or its text in any other format.
+        let (bytes, _, _) = original_file(&state, &doc_row).await?;
+        if format == "pdf" {
+            return Ok(attachment(bytes, "application/pdf", &format!("{}.pdf", safe_filename(&title))));
+        }
+        convert::pdf_text(&state, &bytes).await?
+    } else {
+        match q.seq {
+            Some(seq) => crate::versions::doc_at(&state, &id, seq).await?,
+            None => rooms::read(&state, &id).await?.0,
+        }
+        .without_suggestions()
+    };
     let exported = convert::export(&state, &doc, &title, &format).await?;
     Ok(attachment(exported.bytes, exported.content_type, &format!("{}.{}", safe_filename(&title), exported.extension)))
 }
@@ -318,10 +324,10 @@ pub async fn get_asset(State(state): State<AppState>, Path(id): Path<String>) ->
 pub async fn upload_asset(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, multipart: Multipart) -> ApiResult<(StatusCode, Json<Value>)> {
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
     let upload = read_upload(multipart).await?;
-    let content_type = convert::content_type(&upload.filename);
-    if !content_type.starts_with("image/") {
+    // What the bytes are, whatever the file is called.
+    let Some(content_type) = convert::image_type(&upload.bytes) else {
         return Err(ApiError::new(StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_format", "Only images can be added to a doc.").hint("Use PNG, JPEG, GIF, WebP or SVG."));
-    }
+    };
     let (asset, url) = store_asset(&state, &id, &doc.owner_uuid, &upload.filename, content_type, &upload.bytes).await?;
     Ok((StatusCode::CREATED, Json(json!({ "id": asset, "url": url }))))
 }
@@ -392,14 +398,21 @@ pub async fn import_into(State(state): State<AppState>, Auth(caller): Auth, Path
     Ok(Json(json!({ "seq": seq })))
 }
 
+/// The file a PDF doc was opened from: its bytes, content type and file name.
+async fn original_file(state: &AppState, doc: &DocRow) -> ApiResult<(Vec<u8>, String, String)> {
+    let asset = doc.original_asset.clone().ok_or_else(|| ApiError::not_found("An original file for this doc"))?;
+    let (path, content_type, filename): (String, String, String) =
+        sqlx::query_as("select path, content_type, filename from assets where id = $1").bind(&asset).fetch_one(&state.db).await?;
+    let bytes = tokio::fs::read(state.config.data_dir.join(&path)).await.map_err(ApiError::internal)?;
+    Ok((bytes, content_type, filename))
+}
+
 pub async fn original(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>) -> ApiResult<Response> {
     let (doc, _) = access::require_doc(&state, caller.as_ref(), &id, Role::Viewer).await?;
-    let asset = doc.original_asset.clone().ok_or_else(|| ApiError::not_found("An original file for this doc"))?;
-    let row: (String, String, String) = sqlx::query_as("select path, content_type, filename from assets where id = $1").bind(&asset).fetch_one(&state.db).await?;
-    let bytes = tokio::fs::read(state.config.data_dir.join(&row.0)).await.map_err(ApiError::internal)?;
+    let (bytes, content_type, filename) = original_file(&state, &doc).await?;
     let mut response = Response::new(Body::from(bytes));
-    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&row.1).unwrap_or(HeaderValue::from_static("application/pdf")));
-    let name = format!("inline; filename=\"{}\"", row.2.replace('"', "_"));
+    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("application/pdf")));
+    let name = format!("inline; filename=\"{}\"", filename.replace('"', "_"));
     if let Ok(value) = HeaderValue::from_str(&name) {
         response.headers_mut().insert(header::CONTENT_DISPOSITION, value);
     }
@@ -412,9 +425,7 @@ pub async fn convert_pdf(State(state): State<AppState>, Auth(caller): Auth, Path
     if doc_row.kind != "pdf" {
         return Err(ApiError::conflict("This is already a doc."));
     }
-    let asset = doc_row.original_asset.clone().ok_or_else(|| ApiError::not_found("The PDF"))?;
-    let path: String = sqlx::query_scalar("select path from assets where id = $1").bind(&asset).fetch_one(&state.db).await?;
-    let bytes = tokio::fs::read(state.config.data_dir.join(&path)).await.map_err(ApiError::internal)?;
+    let (bytes, _, _) = original_file(&state, &doc_row).await?;
     let doc = convert::pdf_text(&state, &bytes).await?;
     sqlx::query("update docs set kind = 'doc' where id = $1").bind(&id).execute(&state.db).await?;
     rooms::edit(&state, &id, &caller.uuid, Origin::Import, None, |y| {
