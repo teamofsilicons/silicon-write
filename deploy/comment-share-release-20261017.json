@@ -1,0 +1,117 @@
+{
+  "recorded_at": "2026-10-17T16:24:37.288340+00:00",
+  "revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
+  "changes": [
+    "Comment author profile photos replace yellow section markers",
+    "2px accent border for unread activity, neutral after reading",
+    "Durable per-account read cursors, bounded to observed thread activity",
+    "Compact responsive Share dialog with aligned access controls and ownership disclosure"
+  ],
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment_id": "dpl_Ed4S1Kp2DgfcNQgMAd4yposwzsaz",
+    "deployment_url": "https://silicon-write-pkbtfgyho-saketdev12-5675s-projects.vercel.app",
+    "state": "READY"
+  },
+  "api": {
+    "recorded_at": "2026-10-17T16:24:12.345065Z",
+    "approved_revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
+    "aws_account": "234951665042",
+    "region": "us-east-2",
+    "instance_id": "i-0797508582b5e8d9e",
+    "install_ssm_command": "1f83d88d-1268-4997-8c06-7dd1f3ecd4e9",
+    "verification": {
+      "installed_revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
+      "archive_sha256": "32ebf555e78b8c8829da22102b8183d31fc2e8d00b7b96a3e63ceb6b7243fe7a",
+      "binary_sha256": "c0bfab1cac48329d71964d0368683b75377ba5c4bc376510e4e0cc6001a812e9",
+      "previous": "/opt/silicon-write/releases/45dd91f55460103d1a9011abe3adc0391bc52c54",
+      "local_readiness": true,
+      "services": {
+        "silicon-write": "active",
+        "silicon-write-caddy": "active",
+        "silicon-write-backup.timer": "active"
+      },
+      "before_counts": {
+        "docs": 5,
+        "assets": 4,
+        "migrations": 3
+      },
+      "after_counts": {
+        "docs": 5,
+        "assets": 4,
+        "migrations": 4
+      },
+      "predeploy_backup": "predeploy-20261017T162308Z",
+      "backup_files": {
+        "database.dump": "b282d05e4bfe326c8efcc8ee0b4028eb38b02c6cb43836078e84385028c02e3e",
+        "files.tar.gz": "3af2d24626f9d7525bc9f0ea2c637c18477f871d7a55015322f15407291e6cbc"
+      },
+      "migration_4_applied": true,
+      "schema": {
+        "migration_4": true,
+        "activity_version": true,
+        "thread_activity": true,
+        "thread_reads": true
+      },
+      "predeploy_backup_receipt_download_verified": true,
+      "predeploy_backup_data_download_sha256_verified": true
+    },
+    "public_https": {
+      "url": "https://api.write.teamofsilicons.com/readyz",
+      "status": 200,
+      "body": "ready",
+      "tls_verified": true,
+      "dns": "system resolver"
+    },
+    "source_bundle": {
+      "revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
+      "path": "/Users/codanium/Documents/silicon/silicon-write/.dev/production/silicon-write-source-598895f.bundle",
+      "sha256": "bd0ab5d15399ca44d71f24b2551c6aea0112b5f20e18d923622ac796f6e768d4",
+      "bytes": 2542752,
+      "complete_history": true,
+      "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-598895f.bundle",
+      "download_sha256_verified": true,
+      "download_bundle_verified": true,
+      "s3_version_id": "MYm1Hx5pp8m1876Qzsr0bsvtETNVo3Qt",
+      "server_side_encryption": "AES256"
+    },
+    "secrets_included": false,
+    "production_browser_verification": "Parent is performing separately"
+  },
+  "validation": {
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_unit_tests": 55,
+    "web_build": true,
+    "api_read_tests": 5,
+    "api_comment_regressions": 16,
+    "api_clippy": true,
+    "deployment_tests": 12,
+    "local_browser": [
+      "desktop and390px marker layout",
+      "keyboard grouped-comment picker",
+      "accent2px unread -> neutral after visible reading",
+      "read state survives reload",
+      "new Silicon reply restores only changed thread unread border",
+      "resolve removes marker without error",
+      "resolved conversation readable",
+      "avatar switches Resolved tab to Open",
+      "Share desktop and390px layout without overflow"
+    ],
+    "production_api": {
+      "verified_at": "2026-10-17T16:23:54.924Z",
+      "actor": "si:udd-saket",
+      "document": "d_Nhj2QGLLEnjGSmeo6DuP",
+      "observed_version": 1,
+      "read_persisted": true,
+      "silicon_comment": "t_raxn3Td5gUyCe8o78LBX",
+      "own_activity_unread": false
+    },
+    "production_browser": {
+      "status": "blocked",
+      "reason": "Chrome extension popup prevents browser automation; user asked to dismiss it",
+      "local_visual_checks_passed": true
+    }
+  },
+  "secrets_included": false
+}

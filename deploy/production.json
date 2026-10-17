@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-17T16:02:01.085685+00:00",
+  "recorded_at": "2026-10-17T16:24:37.288340+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_HHQDMjVwYq2n5bHMNmVg1bssWtxW",
+    "deployment_id": "dpl_Ed4S1Kp2DgfcNQgMAd4yposwzsaz",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -12,23 +12,15 @@
       "/robots.txt",
       "/llms.txt"
     ],
-    "interactive_production_browser_verified": true,
-    "revision": "45dd91f55460103d1a9011abe3adc0391bc52c54",
-    "browser_checks": [
-      "existing Chrome sign-in opens production library",
-      "create private document and rename title",
-      "type text and verify after reload",
-      "post section comment and reply",
-      "resolve and reopen comment thread",
-      "two Chrome tabs exchange edits in both directions",
-      "quote formatting keeps section comment attached after reload"
-    ]
+    "interactive_production_browser_verified": false,
+    "revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
+    "browser_checks": []
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "45dd91f55460103d1a9011abe3adc0391bc52c54",
-    "archive_sha256": "81f342456b3a1f269f63c73a7a72576fdefba47ab2c82fe2ebcfe52e11395cb5",
-    "install_ssm_command": "ae80ab5f-8129-4483-a722-a2e615adb26a",
+    "revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
+    "archive_sha256": "32ebf555e78b8c8829da22102b8183d31fc2e8d00b7b96a3e63ceb6b7243fe7a",
+    "install_ssm_command": "1f83d88d-1268-4997-8c06-7dd1f3ecd4e9",
     "readiness": true,
     "private_document_journey": [
       "ordinary device sign-in authorizes production API",
@@ -78,7 +70,8 @@
       ],
       "passed": true,
       "transport": "Bounded local CONNECT tunnel pins the verified public API IP; CLI validates end-to-end TLS and hostname. No system DNS or TLS configuration changed."
-    }
+    },
+    "comment_read_state_verified": true
   },
   "infrastructure": {
     "aws_account": "234951665042",
@@ -166,5 +159,6 @@
       ]
     ],
     "browser_suite": "Manual CUA in requested Chrome session; standalone Playwright suite not rerun"
-  }
+  },
+  "comment_share_release_receipt": "comment-share-release-20261017.json"
 }
