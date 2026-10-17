@@ -54,6 +54,7 @@ test("the shell: the app's sections, the account menu and the ⌘K palette", asy
   // Light only: the menu offers no theme choice.
   await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
   await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
 
   const target = appConfig.nav[appConfig.nav.length - 1]!;
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
@@ -77,7 +78,9 @@ test("signing out revokes the sign-in, closes every door, and other tabs follow"
   const other = await context.newPage();
   await other.goto(appConfig.home);
   await expect(other.getByRole("navigation", { name: appConfig.name, exact: true })).toBeVisible();
+  await page.bringToFront();
   await page.getByRole("button", { name: /^Account menu, / }).click();
+  await expect(page.getByRole("menu")).toBeVisible();
   await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/sign-in\?signed_out=1$/);
   // The other tab heard it (BroadcastChannel) and left the workspace too.
