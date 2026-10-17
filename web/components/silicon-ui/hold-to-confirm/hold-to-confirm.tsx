@@ -193,7 +193,7 @@ export function HoldToConfirm({ label, confirmedLabel = "Done", onConfirm, durat
 
   return <>
     <motion.button {...props} ref={button} type="button" className={[styles.button, className].filter(Boolean).join(" ")} data-tone={tone} data-state={done ? "done" : holding ? "holding" : "idle"}
-      disabled={disabled} aria-disabled={done || undefined} aria-label={text} aria-describedby={done ? undefined : hintId} style={{ scale }}
+      disabled={disabled} aria-disabled={done || undefined} aria-describedby={done ? undefined : hintId} style={{ scale }}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release}
       onKeyDown={onKeyDown} onKeyUp={onKeyUp} onBlur={release} onContextMenu={event => event.preventDefault()}>
       <Face icon={icon} text={text} done={done} width={width} reduced={reduced} measure={measure} />
