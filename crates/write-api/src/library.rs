@@ -4,6 +4,11 @@
 //! else's shared folder belongs to that folder's owner (and shows who created it), so a folder
 //! never holds docs its owner doesn't control. Nothing is ever deleted except by an owner
 //! permanently deleting it from the trash.
+//!
+//! What's in the trash stays as it was until it's restored: it isn't renamed, moved or offered,
+//! and nothing is made in it or moved into it. Deleting a folder for good removes it and what
+//! went to the trash with it, never what was put there on its own before (which the trash lists
+//! on its own) and never anything that isn't in the trash.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -13,7 +18,7 @@ use serde_json::{Value, json};
 
 use crate::access::{self, DOC_COLUMNS, DocRow, FOLDER_COLUMNS, FolderRow, Role};
 use crate::accounts::{self, Account};
-use crate::activity;
+use crate::activity::{self, About};
 use crate::auth::{Auth, Caller, MaybeAuth};
 use crate::error::{ApiError, ApiResult};
 use crate::ids;
@@ -23,8 +28,13 @@ use crate::views::{self, DocView};
 
 const MAX_TITLE: usize = 300;
 const MAX_FOLDER_NAME: usize = 200;
+/// The most Markdown a doc can be made from: as much as can be written to one with
+/// `PUT /v1/docs/{id}/markdown`, so whatever it is made from can always be written back whole.
+const MAX_MARKDOWN: usize = 5 * 1024 * 1024;
 
+/// A title as it is kept: trimmed, and without NUL characters, which can't be stored or shown.
 fn clean_title(title: &str) -> ApiResult<String> {
+    let title = title.replace('\0', "");
     let title = title.trim();
     if title.chars().count() > MAX_TITLE {
         return Err(ApiError::invalid(format!("A title can be at most {MAX_TITLE} characters.")));
@@ -32,7 +42,9 @@ fn clean_title(title: &str) -> ApiResult<String> {
     Ok(title.to_owned())
 }
 
+/// A folder name as it is kept: trimmed, not empty, and without NUL characters.
 fn clean_folder_name(name: &str) -> ApiResult<String> {
+    let name = name.replace('\0', "");
     let name = name.trim();
     if name.is_empty() {
         return Err(ApiError::invalid("A folder needs a name."));
@@ -41,6 +53,43 @@ fn clean_folder_name(name: &str) -> ApiResult<String> {
         return Err(ApiError::invalid(format!("A folder name can be at most {MAX_FOLDER_NAME} characters.")));
     }
     Ok(name.to_owned())
+}
+
+fn doc_in_trash() -> ApiError {
+    ApiError::conflict("This doc is in the trash.").hint("Restore it first.")
+}
+
+fn folder_in_trash() -> ApiError {
+    ApiError::conflict("This folder is in the trash.").hint("Restore it first.")
+}
+
+/// Nothing goes into a folder in the trash, where nobody would see it.
+fn into_trash() -> ApiError {
+    ApiError::conflict("That folder is in the trash.").hint("Restore it first, or choose another folder.")
+}
+
+fn into_itself() -> ApiError {
+    ApiError::invalid("A folder can't move into itself or a folder inside it.")
+}
+
+/// For a write whose second check failed although the first passed: what it depends on changed
+/// in between. Checking again names what changed; this answers when it has changed back since.
+fn changed_meanwhile() -> ApiError {
+    ApiError::conflict("That changed while this was being done.").hint("Try again.")
+}
+
+/// A folder the caller may make and move things into: they edit it, and it isn't in the trash.
+///
+/// This is checked first, for a clear answer; the write that puts something into the folder then
+/// checks again that it is out of the trash and still has the right owner, holding the folder
+/// (`for share`) while it does: putting the folder in the trash meanwhile waits for that write and
+/// takes what it put there along, or the write waits for the trash and is refused.
+async fn open_folder(state: &AppState, caller: &Caller, id: &str) -> ApiResult<FolderRow> {
+    let (folder, _) = access::require_folder(state, caller, id, Role::Editor).await?;
+    if folder.deleted_at.is_some() {
+        return Err(into_trash());
+    }
+    Ok(folder)
 }
 
 // ------------------------------------------------------------------------------------------
@@ -58,22 +107,52 @@ pub struct LibraryQuery {
     folder: Option<String>,
 }
 
+/// The trashing a folder in the trash went in: its own, or that of the folder above it that it
+/// went with. Everything that went with it is marked with the same folder (`trashed_with`).
+async fn trashing(state: &AppState, folder_id: &str) -> ApiResult<String> {
+    Ok(sqlx::query_scalar("select coalesce(trashed_with, id) from folders where id = $1").bind(folder_id).fetch_one(&state.db).await?)
+}
+
 pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q): Query<LibraryQuery>) -> ApiResult<Json<Value>> {
     let view = q.view.as_deref().unwrap_or("mine");
     if let Some(folder_id) = q.folder.as_deref().filter(|f| !f.is_empty() && *f != "root") {
         let (folder, role) = access::require_folder(&state, &caller, folder_id, Role::Viewer).await?;
-        let folders: Vec<FolderRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "select {FOLDER_COLUMNS} from folders where parent_id = $1 and deleted_at is null order by lower(name)"
-        )))
-        .bind(folder_id)
-        .fetch_all(&state.db)
-        .await?;
-        let docs: Vec<DocRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "select {DOC_COLUMNS} from docs where folder_id = $1 and deleted_at is null order by updated_at desc"
-        )))
-        .bind(folder_id)
-        .fetch_all(&state.db)
-        .await?;
+        let (folders, docs): (Vec<FolderRow>, Vec<DocRow>) = if folder.deleted_at.is_some() {
+            // A folder in the trash (only its owner opens it) shows what went there with it:
+            // what deleting it for good removes.
+            let with = trashing(&state, folder_id).await?;
+            (
+                sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                    "select {FOLDER_COLUMNS} from folders where parent_id = $1 and trashed_with = $2 order by lower(name)"
+                )))
+                .bind(folder_id)
+                .bind(&with)
+                .fetch_all(&state.db)
+                .await?,
+                sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                    "select {DOC_COLUMNS} from docs where folder_id = $1 and trashed_with = $2 order by updated_at desc"
+                )))
+                .bind(folder_id)
+                .bind(&with)
+                .fetch_all(&state.db)
+                .await?,
+            )
+        } else {
+            (
+                sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                    "select {FOLDER_COLUMNS} from folders where parent_id = $1 and deleted_at is null order by lower(name)"
+                )))
+                .bind(folder_id)
+                .fetch_all(&state.db)
+                .await?,
+                sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                    "select {DOC_COLUMNS} from docs where folder_id = $1 and deleted_at is null order by updated_at desc"
+                )))
+                .bind(folder_id)
+                .fetch_all(&state.db)
+                .await?,
+            )
+        };
         return Ok(Json(json!({
             "folder": views::folder_view(&state, &folder, role, Some(&caller.uuid)).await?,
             "folders": views::folder_views(&state, folders, &caller).await?,
@@ -166,11 +245,12 @@ pub async fn all_folders(State(state): State<AppState>, Auth(caller): Auth) -> A
 // Docs
 // ------------------------------------------------------------------------------------------
 
-/// Where a new doc goes, and who owns it: the folder's owner when it's made in a folder.
+/// Where a new doc or folder goes, and who owns it: the folder's owner when it's made in a
+/// folder, which must be one the caller edits and not in the trash.
 async fn placement(state: &AppState, caller: &Caller, folder_id: Option<&str>) -> ApiResult<(Option<String>, String)> {
     match folder_id.filter(|f| !f.is_empty() && *f != "root") {
         Some(folder_id) => {
-            let (folder, _) = access::require_folder(state, caller, folder_id, Role::Editor).await?;
+            let folder = open_folder(state, caller, folder_id).await?;
             Ok((Some(folder.id), folder.owner_uuid))
         }
         None => Ok((None, caller.uuid.clone())),
@@ -190,16 +270,25 @@ pub async fn create_doc(
     let title = clean_title(title)?;
     let (folder, owner) = placement(state, caller, folder_id).await?;
     let id = ids::new_id("d");
-    sqlx::query("insert into docs (id, owner_uuid, folder_id, title, kind, created_by) values ($1, $2, $3, $4, $5, $6)")
-        .bind(&id)
-        .bind(&owner)
-        .bind(&folder)
-        .bind(&title)
-        .bind(kind)
-        .bind(&caller.uuid)
-        .execute(&state.db)
-        .await?;
-    activity::record(state, Some(&id), folder.as_deref(), &caller.uuid, "doc.created", json!({ "doc": id, "title": title })).await?;
+    let made = sqlx::query(
+        "insert into docs (id, owner_uuid, folder_id, title, kind, created_by)
+         select $1, $2, $3, $4, $5, $6
+         where $3::text is null or exists (select 1 from folders where id = $3 and deleted_at is null and owner_uuid = $2 for share)",
+    )
+    .bind(&id)
+    .bind(&owner)
+    .bind(&folder)
+    .bind(&title)
+    .bind(kind)
+    .bind(&caller.uuid)
+    .execute(&state.db)
+    .await?
+    .rows_affected();
+    if made == 0 {
+        placement(state, caller, folder.as_deref()).await?;
+        return Err(changed_meanwhile());
+    }
+    activity::record_change(state, About::Doc(&id), &[(Some(&id), folder.as_deref())], &caller.uuid, "doc.created", json!({ "doc": id, "title": title })).await?;
     if let Some(content) = content {
         rooms::edit(state, &id, &caller.uuid, origin, None, |y| {
             write_doc::ydoc::with_txn(y, |txn, frag| write_doc::ydoc::write_all(txn, frag, &content));
@@ -218,6 +307,9 @@ pub struct NewDoc {
 }
 
 pub async fn new_doc(State(state): State<AppState>, Auth(caller): Auth, Json(body): Json<NewDoc>) -> ApiResult<(StatusCode, Json<DocView>)> {
+    if body.markdown.as_ref().is_some_and(|m| m.len() > MAX_MARKDOWN) {
+        return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "That's more than 5 MB of Markdown."));
+    }
     let content = body.markdown.as_deref().filter(|m| !m.trim().is_empty()).map(write_doc::from_markdown);
     let doc = create_doc(&state, &caller, body.title.as_deref().unwrap_or(""), body.folder_id.as_deref(), content, "doc", Origin::Create).await?;
     let role = access::doc_role(&state, Some(&caller), &doc).await?.unwrap_or(Role::Editor);
@@ -255,38 +347,58 @@ pub async fn patch_doc(State(state): State<AppState>, Auth(caller): Auth, Path(i
     Ok(Json(views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?))
 }
 
-pub async fn rename_doc(state: &AppState, caller: &Caller, id: &str, title: String) -> ApiResult<()> {
+/// A doc the caller may rename: they edit it, and it isn't in the trash.
+pub async fn renamable_doc(state: &AppState, caller: &Caller, id: &str) -> ApiResult<DocRow> {
     let (doc, _) = access::require_doc(state, Some(caller), id, Role::Editor).await?;
+    if doc.deleted_at.is_some() {
+        return Err(doc_in_trash());
+    }
+    Ok(doc)
+}
+
+pub async fn rename_doc(state: &AppState, caller: &Caller, id: &str, title: String) -> ApiResult<()> {
+    let doc = renamable_doc(state, caller, id).await?;
     let title = clean_title(&title)?;
     if title == doc.title {
         return Ok(());
     }
-    sqlx::query(
+    let renamed = sqlx::query(
         "update docs set title = $2, updated_at = now(),
             search = setweight(to_tsvector('simple', $2), 'A') || setweight(to_tsvector('simple', plain_text), 'B')
-         where id = $1",
+         where id = $1 and deleted_at is null",
     )
     .bind(id)
     .bind(&title)
     .execute(&state.db)
-    .await?;
-    activity::record(state, Some(id), doc.folder_id.as_deref(), &caller.uuid, "doc.renamed", json!({ "doc": id, "from": doc.title, "to": title })).await?;
+    .await?
+    .rows_affected();
+    if renamed == 0 {
+        return Err(doc_in_trash());
+    }
+    let data = json!({ "doc": id, "from": doc.title, "to": title });
+    activity::record_change(state, About::Doc(id), &[(Some(id), doc.folder_id.as_deref())], &caller.uuid, "doc.renamed", data).await?;
     state.rooms.notify(id, json!({ "type": "meta" })).await;
     Ok(())
 }
 
-pub async fn move_doc(state: &AppState, caller: &Caller, id: &str, target: Option<String>) -> ApiResult<()> {
+/// Checks the caller may move a doc into `target` (or with `None` to its owner's top level), and
+/// returns the doc. It needs edit access to the doc and to the folders it leaves and joins, which
+/// have the doc's owner and aren't in the trash; only the owner moves it out to the top level.
+/// Moving it where it already is needs only edit access to it.
+pub async fn movable_doc(state: &AppState, caller: &Caller, id: &str, target: Option<&str>) -> ApiResult<DocRow> {
     let (doc, role) = access::require_doc(state, Some(caller), id, Role::Editor).await?;
-    let target = target.filter(|t| !t.is_empty() && t != "root");
-    if target == doc.folder_id {
-        return Ok(());
+    if doc.deleted_at.is_some() {
+        return Err(doc_in_trash());
     }
-    match &target {
+    let target = target.filter(|t| !t.is_empty() && *t != "root");
+    if target == doc.folder_id.as_deref() {
+        return Ok(doc);
+    }
+    match target {
         Some(folder_id) => {
-            let (folder, _) = access::require_folder(state, caller, folder_id, Role::Editor).await?;
+            let folder = open_folder(state, caller, folder_id).await?;
             if folder.owner_uuid != doc.owner_uuid {
-                return Err(ApiError::invalid("A doc can only move into a folder with the same owner.")
-                    .hint("Transfer the doc to the folder's owner first."));
+                return Err(ApiError::invalid("A doc can only move into a folder with the same owner.").hint("Transfer the doc to the folder's owner first."));
             }
         }
         None => {
@@ -299,18 +411,57 @@ pub async fn move_doc(state: &AppState, caller: &Caller, id: &str, target: Optio
         // Taking a doc out of a folder needs edit access there too.
         access::require_folder(state, caller, from, Role::Editor).await?;
     }
-    sqlx::query("update docs set folder_id = $2, updated_at = now() where id = $1").bind(id).bind(&target).execute(&state.db).await?;
+    Ok(doc)
+}
+
+pub async fn move_doc(state: &AppState, caller: &Caller, id: &str, target: Option<String>) -> ApiResult<()> {
+    let target = target.filter(|t| !t.is_empty() && t != "root");
+    let doc = movable_doc(state, caller, id, target.as_deref()).await?;
+    if target == doc.folder_id {
+        return Ok(());
+    }
+    let moved = sqlx::query(
+        "update docs d set folder_id = $2, updated_at = now()
+         where d.id = $1 and d.deleted_at is null
+           and ($2::text is null or exists (select 1 from folders f where f.id = $2 and f.deleted_at is null and f.owner_uuid = d.owner_uuid for share))",
+    )
+    .bind(id)
+    .bind(&target)
+    .execute(&state.db)
+    .await?
+    .rows_affected();
+    if moved == 0 {
+        movable_doc(state, caller, id, target.as_deref()).await?;
+        return Err(changed_meanwhile());
+    }
+    // One move, in the doc's history and in the folders it left and joined.
     let data = json!({ "doc": id, "from_folder": doc.folder_id, "to_folder": target });
-    activity::record(state, Some(id), None, &caller.uuid, "doc.moved", data.clone()).await?;
-    if let Some(from) = &doc.folder_id {
-        activity::record(state, None, Some(from), &caller.uuid, "doc.moved", data.clone()).await?;
-    }
-    if let Some(to) = &target {
-        activity::record(state, None, Some(to), &caller.uuid, "doc.moved", data).await?;
-    }
+    let mut histories = vec![(Some(id), None)];
+    histories.extend([doc.folder_id.as_deref(), target.as_deref()].into_iter().flatten().map(|f| (None, Some(f))));
+    activity::record_change(state, About::Doc(id), &histories, &caller.uuid, "doc.moved", data).await?;
     // Moving changes who can open the doc.
     state.rooms.recheck(state, id).await;
     state.rooms.notify(id, json!({ "type": "meta" })).await;
+    Ok(())
+}
+
+/// Offers that can no longer be accepted, because what they offer went to the trash or changed
+/// owner, are cancelled: nobody is shown an offer they can't accept. (Accepting checks for itself
+/// too, so an offer accepted in between is refused all the same.)
+async fn cancel_offers<'e>(db: impl sqlx::PgExecutor<'e>, docs: &[String], folders: &[String]) -> ApiResult<()> {
+    sqlx::query("update transfers set status = 'cancelled', decided_at = now() where status = 'pending' and (doc_id = any($1) or folder_id = any($2))")
+        .bind(docs)
+        .bind(folders)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Holds an owner's folders still until the transaction ends. Moving, trashing and handing over
+/// one owner's folders happen one at a time, so none of them works from a tree another is
+/// changing, and two moves at once can never put folders inside each other.
+async fn hold_folders(db: &mut sqlx::PgConnection, owner: &str) -> ApiResult<()> {
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended('folders of ' || $1, 0))").bind(owner).execute(&mut *db).await?;
     Ok(())
 }
 
@@ -324,8 +475,22 @@ pub async fn trash_doc_inner(state: &AppState, caller: &Caller, id: &str) -> Api
     if doc.deleted_at.is_some() {
         return Ok(());
     }
-    sqlx::query("update docs set deleted_at = now(), deleted_by = $2, trashed_with = null where id = $1").bind(id).bind(&caller.uuid).execute(&state.db).await?;
-    activity::record(state, Some(id), doc.folder_id.as_deref(), &caller.uuid, "doc.trashed", json!({ "doc": id, "title": doc.display_title() })).await?;
+    let trashed = sqlx::query("update docs set deleted_at = now(), deleted_by = $2, trashed_with = null where id = $1 and deleted_at is null and owner_uuid = $2")
+        .bind(id)
+        .bind(&caller.uuid)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
+    if trashed == 0 {
+        // In the trash already, or handed over meanwhile.
+        return match access::load_doc(state, id).await?.deleted_at {
+            Some(_) => Ok(()),
+            None => Err(ApiError::forbidden("Only the doc's owner can do this.")),
+        };
+    }
+    cancel_offers(&state.db, &[id.to_owned()], &[]).await?;
+    let data = json!({ "doc": id, "title": doc.display_title() });
+    activity::record_change(state, About::Doc(id), &[(Some(id), doc.folder_id.as_deref())], &caller.uuid, "doc.trashed", data).await?;
     state.rooms.recheck(state, id).await;
     Ok(())
 }
@@ -345,18 +510,19 @@ pub async fn restore_doc_inner(state: &AppState, caller: &Caller, id: &str) -> A
     if doc.deleted_at.is_none() {
         return Ok(());
     }
-    // Back where it was, unless that folder is gone too: then to the top level.
-    let folder_alive = match &doc.folder_id {
-        Some(f) => access::load_folder(state, f).await.map(|f| f.deleted_at.is_none()).unwrap_or(false),
-        None => true,
-    };
-    let folder = if folder_alive { doc.folder_id.clone() } else { None };
-    sqlx::query("update docs set deleted_at = null, deleted_by = null, trashed_with = null, folder_id = $2 where id = $1")
-        .bind(id)
-        .bind(&folder)
-        .execute(&state.db)
-        .await?;
-    activity::record(state, Some(id), folder.as_deref(), &caller.uuid, "doc.restored", json!({ "doc": id })).await?;
+    // Back where it was, unless that folder is in the trash, gone, or someone else's now: then to
+    // the top level.
+    let restored: Option<Option<String>> = sqlx::query_scalar(
+        "update docs d set deleted_at = null, deleted_by = null, trashed_with = null,
+            folder_id = (select f.id from folders f where f.id = d.folder_id and f.deleted_at is null and f.owner_uuid = d.owner_uuid for share)
+         where d.id = $1 and d.deleted_at is not null
+         returning d.folder_id",
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(folder) = restored else { return Ok(()) };
+    activity::record_change(state, About::Doc(id), &[(Some(id), folder.as_deref())], &caller.uuid, "doc.restored", json!({ "doc": id })).await?;
     state.rooms.recheck(state, id).await;
     Ok(())
 }
@@ -367,26 +533,94 @@ pub struct Confirm {
 }
 
 pub async fn purge_doc(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Query(q): Query<Confirm>) -> ApiResult<StatusCode> {
-    let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Owner).await?;
+    access::require_doc(&state, Some(&caller), &id, Role::Owner).await?;
     if q.confirm.as_deref() != Some(id.as_str()) {
         return Err(ApiError::invalid("Deleting permanently needs confirming.").hint(format!("Pass ?confirm={id}. This can't be undone.")));
     }
-    if doc.deleted_at.is_none() {
-        return Err(ApiError::conflict("Only docs in the trash can be deleted permanently.").hint("Move it to the trash first."));
-    }
-    purge_docs(&state, std::slice::from_ref(&id)).await?;
+    purge(&state, Purge::Doc(&id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Removes docs and everything about them. The only real deletion in Silicon Write.
-async fn purge_docs(state: &AppState, ids: &[String]) -> ApiResult<()> {
-    let paths: Vec<String> = sqlx::query_scalar("select path from assets where doc_id = any($1)").bind(ids).fetch_all(&state.db).await?;
-    sqlx::query("delete from docs where id = any($1)").bind(ids).execute(&state.db).await?;
+/// What is deleted for good: a doc, or a folder with what went to the trash with it.
+enum Purge<'a> {
+    Doc(&'a str),
+    Folder(&'a str),
+}
+
+/// Deletes docs and folders for good, and everything about them in every history: the only real
+/// deletion in Silicon Write, and only from the trash. An uploaded image or PDF goes with them
+/// unless a doc that stays still shows it (a copy). What stays but sat in a folder that goes moves
+/// out to its owner's top level, in the trash or not as it was, and keeps its own history whole.
+async fn purge(state: &AppState, what: Purge<'_>) -> ApiResult<()> {
+    let mut tx = state.db.begin().await?;
+    // What goes is held in the trash meanwhile: a restore at the same moment waits, and finds it gone.
+    let (docs, folders): (Vec<String>, Vec<String>) = match what {
+        Purge::Doc(id) => {
+            let held: Option<String> = sqlx::query_scalar("select id from docs where id = $1 and deleted_at is not null for update").bind(id).fetch_optional(&mut *tx).await?;
+            if held.is_none() {
+                return Err(ApiError::conflict("Only docs in the trash can be deleted permanently.").hint("Move it to the trash first."));
+            }
+            (vec![id.to_owned()], vec![])
+        }
+        Purge::Folder(id) => {
+            let held: Option<String> = sqlx::query_scalar("select id from folders where id = $1 and deleted_at is not null for update").bind(id).fetch_optional(&mut *tx).await?;
+            if held.is_none() {
+                return Err(ApiError::conflict("Only folders in the trash can be deleted permanently.").hint("Move it to the trash first."));
+            }
+            let mut folders: Vec<String> = sqlx::query_scalar("select id from folders where trashed_with = $1 and deleted_at is not null for update")
+                .bind(id)
+                .fetch_all(&mut *tx)
+                .await?;
+            folders.push(id.to_owned());
+            let docs: Vec<String> = sqlx::query_scalar("select id from docs where trashed_with = $1 and deleted_at is not null for update")
+                .bind(id)
+                .fetch_all(&mut *tx)
+                .await?;
+            (docs, folders)
+        }
+    };
+    // The files these docs uploaded, show or open, to look at again once the docs are gone.
+    let files: Vec<String> = sqlx::query_scalar(
+        "select id from assets where doc_id = any($1)
+         union select asset_id from doc_assets where doc_id = any($1)
+         union select original_asset from docs where id = any($1) and original_asset is not null",
+    )
+    .bind(&docs)
+    .fetch_all(&mut *tx)
+    .await?;
+    let moved_out: Vec<String> = sqlx::query_scalar("update docs set folder_id = null where folder_id = any($1) and not (id = any($2)) returning id")
+        .bind(&folders)
+        .bind(&docs)
+        .fetch_all(&mut *tx)
+        .await?;
+    sqlx::query("update folders set parent_id = null where parent_id = any($1)").bind(&folders).execute(&mut *tx).await?;
+    // A change shown in both a staying doc's history and a going folder's stays in the doc's.
+    sqlx::query("update activity set folder_id = null where folder_id = any($1) and doc_id is not null and not (doc_id = any($2))")
+        .bind(&folders)
+        .bind(&docs)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("delete from docs where id = any($1)").bind(&docs).execute(&mut *tx).await?;
+    sqlx::query("delete from folders where id = any($1)").bind(&folders).execute(&mut *tx).await?;
+    let paths: Vec<String> = sqlx::query_scalar(
+        "delete from assets a
+         where a.id = any($1) and a.doc_id is null
+           and not exists (select 1 from doc_assets s where s.asset_id = a.id)
+           and not exists (select 1 from docs d where d.original_asset = a.id)
+         returning a.path",
+    )
+    .bind(&files)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
     for path in paths {
         let _ = tokio::fs::remove_file(state.config.data_dir.join(path)).await;
     }
-    for id in ids {
+    for id in &docs {
         state.rooms.drop_room(id).await;
+    }
+    for id in &moved_out {
+        state.rooms.recheck(state, id).await;
     }
     Ok(())
 }
@@ -401,13 +635,32 @@ pub struct CopyBody {
 pub async fn copy_doc(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<CopyBody>) -> ApiResult<(StatusCode, Json<DocView>)> {
     let min = if body.seq.is_some() { Role::Editor } else { Role::Viewer };
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, min).await?;
-    let content = match body.seq {
-        Some(seq) => crate::versions::doc_at(&state, &id, seq).await?,
-        None => rooms::read(&state, &id).await?.0,
-    };
+    if let Some(seq) = body.seq
+        && !(0..=doc.seq).contains(&seq)
+    {
+        return Err(ApiError::not_found(&format!("Version {seq}")).hint(format!("This doc's versions go from 0 to {}.", doc.seq)));
+    }
     let title = body.title.unwrap_or_else(|| format!("Copy of {}", doc.display_title()));
-    let new = create_doc(&state, &caller, &title, body.folder_id.as_deref(), Some(content.without_suggestions()), "doc", Origin::Create).await?;
-    activity::record(&state, Some(&new.id), None, &caller.uuid, "doc.copied", json!({ "from": id, "seq": body.seq })).await?;
+    let new = if doc.kind == "pdf" {
+        // A PDF shown as it is: its copy shows the same file.
+        let new = create_doc(&state, &caller, &title, body.folder_id.as_deref(), None, "pdf", Origin::Create).await?;
+        if let Some(asset) = &doc.original_asset {
+            sqlx::query("update docs set original_asset = $2 where id = $1").bind(&new.id).bind(asset).execute(&state.db).await?;
+            sqlx::query("insert into doc_assets (doc_id, asset_id) values ($1, $2) on conflict do nothing")
+                .bind(&new.id)
+                .bind(asset)
+                .execute(&state.db)
+                .await?;
+        }
+        access::load_doc(&state, &new.id).await?
+    } else {
+        let content = match body.seq {
+            Some(seq) => crate::versions::doc_at(&state, &id, seq).await?,
+            None => rooms::read(&state, &id).await?.0,
+        };
+        create_doc(&state, &caller, &title, body.folder_id.as_deref(), Some(content.without_suggestions()), "doc", Origin::Create).await?
+    };
+    activity::record_change(&state, About::Doc(&new.id), &[(Some(&new.id), None)], &caller.uuid, "doc.copied", json!({ "from": id, "seq": body.seq })).await?;
     let role = access::doc_role(&state, Some(&caller), &new).await?.unwrap_or(Role::Owner);
     Ok((StatusCode::CREATED, Json(views::doc_view(&state, &new, role, Some(&caller.uuid)).await?)))
 }
@@ -426,18 +679,26 @@ pub async fn new_folder(State(state): State<AppState>, Auth(caller): Auth, Json(
     let name = clean_folder_name(&body.name)?;
     let (parent, owner) = placement(&state, &caller, body.parent_id.as_deref()).await?;
     let id = ids::new_id("f");
-    sqlx::query("insert into folders (id, owner_uuid, parent_id, name, created_by) values ($1, $2, $3, $4, $5)")
-        .bind(&id)
-        .bind(&owner)
-        .bind(&parent)
-        .bind(&name)
-        .bind(&caller.uuid)
-        .execute(&state.db)
-        .await?;
-    activity::record(&state, None, Some(&id), &caller.uuid, "folder.created", json!({ "folder": id, "name": name })).await?;
-    if let Some(parent) = &parent {
-        activity::record(&state, None, Some(parent), &caller.uuid, "folder.created", json!({ "folder": id, "name": name })).await?;
+    let made = sqlx::query(
+        "insert into folders (id, owner_uuid, parent_id, name, created_by)
+         select $1, $2, $3, $4, $5
+         where $3::text is null or exists (select 1 from folders where id = $3 and deleted_at is null and owner_uuid = $2 for share)",
+    )
+    .bind(&id)
+    .bind(&owner)
+    .bind(&parent)
+    .bind(&name)
+    .bind(&caller.uuid)
+    .execute(&state.db)
+    .await?
+    .rows_affected();
+    if made == 0 {
+        placement(&state, &caller, parent.as_deref()).await?;
+        return Err(changed_meanwhile());
     }
+    let mut histories = vec![(None, Some(id.as_str()))];
+    histories.extend(parent.as_deref().map(|p| (None, Some(p))));
+    activity::record_change(&state, About::Folder(&id), &histories, &caller.uuid, "folder.created", json!({ "folder": id, "name": name })).await?;
     let (folder, role) = access::require_folder(&state, &caller, &id, Role::Viewer).await?;
     Ok((StatusCode::CREATED, Json(serde_json::to_value(views::folder_view(&state, &folder, role, Some(&caller.uuid)).await?).unwrap())))
 }
@@ -464,37 +725,75 @@ pub async fn patch_folder(State(state): State<AppState>, Auth(caller): Auth, Pat
     get_folder(State(state), Auth(caller), Path(id)).await
 }
 
-pub async fn rename_folder(state: &AppState, caller: &Caller, id: &str, name: String) -> ApiResult<()> {
+/// A folder the caller may rename: they edit it, and it isn't in the trash.
+pub async fn renamable_folder(state: &AppState, caller: &Caller, id: &str) -> ApiResult<FolderRow> {
     let (folder, _) = access::require_folder(state, caller, id, Role::Editor).await?;
+    if folder.deleted_at.is_some() {
+        return Err(folder_in_trash());
+    }
+    Ok(folder)
+}
+
+pub async fn rename_folder(state: &AppState, caller: &Caller, id: &str, name: String) -> ApiResult<()> {
+    let folder = renamable_folder(state, caller, id).await?;
     let name = clean_folder_name(&name)?;
     if name == folder.name {
         return Ok(());
     }
-    sqlx::query("update folders set name = $2, updated_at = now() where id = $1").bind(id).bind(&name).execute(&state.db).await?;
-    let data = json!({ "folder": id, "from": folder.name, "to": name });
-    activity::record(state, None, Some(id), &caller.uuid, "folder.renamed", data.clone()).await?;
-    if let Some(parent) = &folder.parent_id {
-        activity::record(state, None, Some(parent), &caller.uuid, "folder.renamed", data).await?;
+    let renamed = sqlx::query("update folders set name = $2, updated_at = now() where id = $1 and deleted_at is null")
+        .bind(id)
+        .bind(&name)
+        .execute(&state.db)
+        .await?
+        .rows_affected();
+    if renamed == 0 {
+        return Err(folder_in_trash());
     }
+    let data = json!({ "folder": id, "from": folder.name, "to": name });
+    let mut histories = vec![(None, Some(id))];
+    histories.extend(folder.parent_id.as_deref().map(|p| (None, Some(p))));
+    activity::record_change(state, About::Folder(id), &histories, &caller.uuid, "folder.renamed", data).await?;
     Ok(())
 }
 
-pub async fn move_folder(state: &AppState, caller: &Caller, id: &str, target: Option<String>) -> ApiResult<()> {
+/// Whether folder `id` is `ancestor` or somewhere inside it, however deep (walking up from it
+/// can't go round forever, even through a loop).
+async fn inside<'e>(db: impl sqlx::PgExecutor<'e>, id: &str, ancestor: &str) -> ApiResult<bool> {
+    Ok(sqlx::query_scalar(
+        "with recursive up as (
+            select id, parent_id from folders where id = $1
+            union
+            select f.id, f.parent_id from folders f join up on f.id = up.parent_id
+         ) select exists (select 1 from up where id = $2)",
+    )
+    .bind(id)
+    .bind(ancestor)
+    .fetch_one(db)
+    .await?)
+}
+
+/// Checks the caller may move a folder into `target` (or with `None` to its owner's top level),
+/// and returns it. It needs edit access to the folder and to the folders it leaves and joins,
+/// which have its owner and aren't in the trash; it never goes into itself or a folder inside it,
+/// and only the owner moves it to the top level. Moving it where it already is needs only edit
+/// access to it.
+pub async fn movable_folder(state: &AppState, caller: &Caller, id: &str, target: Option<&str>) -> ApiResult<FolderRow> {
     let (folder, role) = access::require_folder(state, caller, id, Role::Editor).await?;
-    let target = target.filter(|t| !t.is_empty() && t != "root");
-    if target == folder.parent_id {
-        return Ok(());
+    if folder.deleted_at.is_some() {
+        return Err(folder_in_trash());
     }
-    match &target {
+    let target = target.filter(|t| !t.is_empty() && *t != "root");
+    if target == folder.parent_id.as_deref() {
+        return Ok(folder);
+    }
+    match target {
         Some(parent_id) => {
-            let (parent, _) = access::require_folder(state, caller, parent_id, Role::Editor).await?;
+            let parent = open_folder(state, caller, parent_id).await?;
             if parent.owner_uuid != folder.owner_uuid {
                 return Err(ApiError::invalid("A folder can only move into a folder with the same owner.").hint("Transfer it to that folder's owner first."));
             }
-            // Not into itself or anything inside it.
-            let chain = access::ancestors(state, Some(parent_id)).await?;
-            if chain.iter().any(|f| f.id == id) {
-                return Err(ApiError::invalid("A folder can't move into itself or a folder inside it."));
+            if inside(&state.db, parent_id, id).await? {
+                return Err(into_itself());
             }
         }
         None => {
@@ -506,43 +805,69 @@ pub async fn move_folder(state: &AppState, caller: &Caller, id: &str, target: Op
     if let Some(from) = &folder.parent_id {
         access::require_folder(state, caller, from, Role::Editor).await?;
     }
-    sqlx::query("update folders set parent_id = $2, updated_at = now() where id = $1").bind(id).bind(&target).execute(&state.db).await?;
-    let data = json!({ "folder": id, "from_parent": folder.parent_id, "to_parent": target });
-    activity::record(state, None, Some(id), &caller.uuid, "folder.moved", data.clone()).await?;
-    for place in [folder.parent_id.as_ref(), target.as_ref()].into_iter().flatten() {
-        activity::record(state, None, Some(place), &caller.uuid, "folder.moved", data.clone()).await?;
+    Ok(folder)
+}
+
+pub async fn move_folder(state: &AppState, caller: &Caller, id: &str, target: Option<String>) -> ApiResult<()> {
+    let target = target.filter(|t| !t.is_empty() && t != "root");
+    let folder = movable_folder(state, caller, id, target.as_deref()).await?;
+    if target == folder.parent_id {
+        return Ok(());
     }
-    for doc in docs_under(state, id, false).await? {
+    let mut tx = state.db.begin().await?;
+    hold_folders(&mut tx, &folder.owner_uuid).await?;
+    // Checked again now that no other move can come in between.
+    if let Some(parent) = &target
+        && inside(&mut *tx, parent, id).await?
+    {
+        return Err(into_itself());
+    }
+    let moved = sqlx::query(
+        "update folders m set parent_id = $2, updated_at = now()
+         where m.id = $1 and m.deleted_at is null
+           and ($2::text is null or exists (select 1 from folders f where f.id = $2 and f.deleted_at is null and f.owner_uuid = m.owner_uuid for share))",
+    )
+    .bind(id)
+    .bind(&target)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if moved == 0 {
+        drop(tx);
+        movable_folder(state, caller, id, target.as_deref()).await?;
+        return Err(changed_meanwhile());
+    }
+    tx.commit().await?;
+    // One move, in the folder's history and in the folders it left and joined.
+    let data = json!({ "folder": id, "from_parent": folder.parent_id, "to_parent": target });
+    let mut histories = vec![(None, Some(id))];
+    histories.extend([folder.parent_id.as_deref(), target.as_deref()].into_iter().flatten().map(|f| (None, Some(f))));
+    activity::record_change(state, About::Folder(id), &histories, &caller.uuid, "folder.moved", data).await?;
+    let (_, docs) = live_tree(&mut *state.db.acquire().await?, id).await?;
+    for doc in docs {
         state.rooms.recheck(state, &doc).await;
     }
     Ok(())
 }
 
-/// Every folder under a folder (itself included), and every doc in them.
-async fn tree(state: &AppState, id: &str, include_deleted: bool) -> ApiResult<(Vec<String>, Vec<String>)> {
-    let deleted_filter = if include_deleted { "" } else { "and f.deleted_at is null" };
-    let folders: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+/// Every folder under a folder (itself included) and every doc in them, leaving out what's in the
+/// trash.
+async fn live_tree(db: &mut sqlx::PgConnection, id: &str) -> ApiResult<(Vec<String>, Vec<String>)> {
+    let folders: Vec<String> = sqlx::query_scalar(
         "with recursive t as (
             select id from folders where id = $1
-            union all
-            select f.id from folders f join t on f.parent_id = t.id where true {deleted_filter}
-        ) select id from t"
-    )))
+            union
+            select f.id from folders f join t on f.parent_id = t.id where f.deleted_at is null
+         ) select id from t",
+    )
     .bind(id)
-    .fetch_all(&state.db)
+    .fetch_all(&mut *db)
     .await?;
-    let docs: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "select id from docs where folder_id = any($1) {}",
-        if include_deleted { "" } else { "and deleted_at is null" }
-    )))
-    .bind(&folders)
-    .fetch_all(&state.db)
-    .await?;
+    let docs: Vec<String> = sqlx::query_scalar("select id from docs where folder_id = any($1) and deleted_at is null")
+        .bind(&folders)
+        .fetch_all(&mut *db)
+        .await?;
     Ok((folders, docs))
-}
-
-async fn docs_under(state: &AppState, id: &str, include_deleted: bool) -> ApiResult<Vec<String>> {
-    Ok(tree(state, id, include_deleted).await?.1)
 }
 
 pub async fn trash_folder(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>) -> ApiResult<StatusCode> {
@@ -555,26 +880,53 @@ pub async fn trash_folder_inner(state: &AppState, caller: &Caller, id: &str) -> 
     if folder.deleted_at.is_some() {
         return Ok(());
     }
-    let (folders, docs) = tree(state, id, false).await?;
     let mut tx = state.db.begin().await?;
-    sqlx::query("update folders set deleted_at = now(), deleted_by = $2, trashed_with = null where id = $1").bind(id).bind(&caller.uuid).execute(&mut *tx).await?;
-    sqlx::query("update folders set deleted_at = now(), deleted_by = $2, trashed_with = $1 where id = any($3) and id <> $1 and deleted_at is null")
+    hold_folders(&mut tx, &folder.owner_uuid).await?;
+    // The folder first: from here on nothing new goes into it.
+    let trashed = sqlx::query("update folders set deleted_at = now(), deleted_by = $2, trashed_with = null where id = $1 and deleted_at is null and owner_uuid = $2")
         .bind(id)
         .bind(&caller.uuid)
-        .bind(&folders)
         .execute(&mut *tx)
-        .await?;
-    sqlx::query("update docs set deleted_at = now(), deleted_by = $2, trashed_with = $1 where id = any($3) and deleted_at is null")
-        .bind(id)
-        .bind(&caller.uuid)
-        .bind(&docs)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    activity::record(state, None, Some(id), &caller.uuid, "folder.trashed", json!({ "folder": id, "name": folder.name })).await?;
-    if let Some(parent) = &folder.parent_id {
-        activity::record(state, None, Some(parent), &caller.uuid, "folder.trashed", json!({ "folder": id, "name": folder.name })).await?;
+        .await?
+        .rows_affected();
+    if trashed == 0 {
+        drop(tx);
+        // In the trash already, or handed over meanwhile.
+        return match access::load_folder(state, id).await?.deleted_at {
+            Some(_) => Ok(()),
+            None => Err(ApiError::forbidden("Only the folder's owner can do this.")),
+        };
     }
+    // Then everything inside that isn't in the trash already goes with it.
+    sqlx::query(
+        "with recursive inside as (
+            select id from folders where parent_id = $1 and deleted_at is null
+            union
+            select f.id from folders f join inside on f.parent_id = inside.id where f.deleted_at is null
+         )
+         update folders set deleted_at = now(), deleted_by = $2, trashed_with = $1 where id in (select id from inside)",
+    )
+    .bind(id)
+    .bind(&caller.uuid)
+    .execute(&mut *tx)
+    .await?;
+    let folders: Vec<String> = sqlx::query_scalar("select id from folders where id = $1 or trashed_with = $1").bind(id).fetch_all(&mut *tx).await?;
+    let docs: Vec<String> = sqlx::query_scalar(
+        "update docs set deleted_at = now(), deleted_by = $2, trashed_with = $1
+         where deleted_at is null and folder_id = any($3)
+         returning id",
+    )
+    .bind(id)
+    .bind(&caller.uuid)
+    .bind(&folders)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    cancel_offers(&state.db, &docs, &folders).await?;
+    let data = json!({ "folder": id, "name": folder.name });
+    let mut histories = vec![(None, Some(id))];
+    histories.extend(folder.parent_id.as_deref().map(|p| (None, Some(p))));
+    activity::record_change(state, About::Folder(id), &histories, &caller.uuid, "folder.trashed", data).await?;
     for doc in docs {
         state.rooms.recheck(state, &doc).await;
     }
@@ -590,25 +942,52 @@ pub async fn restore_folder(State(state): State<AppState>, Auth(caller): Auth, P
     get_folder(State(state), Auth(caller), Path(id)).await
 }
 
+/// Brings a folder back with what went to the trash when it did (with it, or with a folder above
+/// it), and not what was put in the trash on its own before.
 pub async fn restore_folder_inner(state: &AppState, caller: &Caller, id: &str) -> ApiResult<()> {
     let (folder, _) = access::require_folder(state, caller, id, Role::Owner).await?;
     if folder.deleted_at.is_none() {
         return Ok(());
     }
-    let parent_alive = match &folder.parent_id {
-        Some(p) => access::load_folder(state, p).await.map(|f| f.deleted_at.is_none()).unwrap_or(false),
-        None => true,
-    };
-    let parent = if parent_alive { folder.parent_id.clone() } else { None };
     let mut tx = state.db.begin().await?;
-    sqlx::query("update folders set deleted_at = null, deleted_by = null, trashed_with = null, parent_id = $2 where id = $1").bind(id).bind(&parent).execute(&mut *tx).await?;
-    sqlx::query("update folders set deleted_at = null, deleted_by = null, trashed_with = null where trashed_with = $1").bind(id).execute(&mut *tx).await?;
-    let docs: Vec<String> = sqlx::query_scalar("update docs set deleted_at = null, deleted_by = null, trashed_with = null where trashed_with = $1 returning id")
+    let with: Option<Option<String>> = sqlx::query_scalar("select trashed_with from folders where id = $1 and deleted_at is not null for update")
         .bind(id)
-        .fetch_all(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await?;
+    let Some(with) = with else { return Ok(()) };
+    let with = with.unwrap_or_else(|| id.to_owned());
+    // Back where it was, unless that folder is in the trash, gone, or someone else's now: then to
+    // the top level.
+    sqlx::query(
+        "update folders m set deleted_at = null, deleted_by = null, trashed_with = null,
+            parent_id = (select p.id from folders p where p.id = m.parent_id and p.deleted_at is null and p.owner_uuid = m.owner_uuid for share)
+         where m.id = $1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    let mut folders: Vec<String> = sqlx::query_scalar(
+        "with recursive inside as (
+            select id from folders where parent_id = $1 and trashed_with = $2
+            union
+            select f.id from folders f join inside on f.parent_id = inside.id where f.trashed_with = $2
+         )
+         update folders set deleted_at = null, deleted_by = null, trashed_with = null where id in (select id from inside) returning id",
+    )
+    .bind(id)
+    .bind(&with)
+    .fetch_all(&mut *tx)
+    .await?;
+    folders.push(id.to_owned());
+    let docs: Vec<String> = sqlx::query_scalar(
+        "update docs set deleted_at = null, deleted_by = null, trashed_with = null where trashed_with = $1 and folder_id = any($2) returning id",
+    )
+    .bind(&with)
+    .bind(&folders)
+    .fetch_all(&mut *tx)
+    .await?;
     tx.commit().await?;
-    activity::record(state, None, Some(id), &caller.uuid, "folder.restored", json!({ "folder": id })).await?;
+    activity::record_change(state, About::Folder(id), &[(None, Some(id))], &caller.uuid, "folder.restored", json!({ "folder": id })).await?;
     for doc in docs {
         state.rooms.recheck(state, &doc).await;
     }
@@ -616,18 +995,11 @@ pub async fn restore_folder_inner(state: &AppState, caller: &Caller, id: &str) -
 }
 
 pub async fn purge_folder(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Query(q): Query<Confirm>) -> ApiResult<StatusCode> {
-    let (folder, _) = access::require_folder(&state, &caller, &id, Role::Owner).await?;
+    access::require_folder(&state, &caller, &id, Role::Owner).await?;
     if q.confirm.as_deref() != Some(id.as_str()) {
         return Err(ApiError::invalid("Deleting permanently needs confirming.").hint(format!("Pass ?confirm={id}. This can't be undone.")));
     }
-    if folder.deleted_at.is_none() {
-        return Err(ApiError::conflict("Only folders in the trash can be deleted permanently.").hint("Move it to the trash first."));
-    }
-    let (folders, docs) = tree(&state, &id, true).await?;
-    purge_docs(&state, &docs).await?;
-    // Children first.
-    sqlx::query("update folders set parent_id = null where id = any($1)").bind(&folders).execute(&state.db).await?;
-    sqlx::query("delete from folders where id = any($1)").bind(&folders).execute(&state.db).await?;
+    purge(&state, Purge::Folder(&id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -650,6 +1022,8 @@ struct TransferRow {
     status: String,
     created_at: time::OffsetDateTime,
 }
+
+const TRANSFER_COLUMNS: &str = "id, doc_id, folder_id, from_uuid, to_uuid, status, created_at";
 
 async fn transfer_view(state: &AppState, t: &TransferRow) -> ApiResult<Value> {
     let people = accounts::many(state, &[t.from_uuid.clone(), t.to_uuid.clone()]).await?;
@@ -674,6 +1048,14 @@ async fn transfer_view(state: &AppState, t: &TransferRow) -> ApiResult<Value> {
     }))
 }
 
+async fn load_transfer(state: &AppState, id: &str) -> ApiResult<TransferRow> {
+    sqlx::query_as(sqlx::AssertSqlSafe(format!("select {TRANSFER_COLUMNS} from transfers where id = $1")))
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::not_found("This transfer"))
+}
+
 async fn start_transfer(state: &AppState, caller: &Caller, doc: Option<&DocRow>, folder: Option<&FolderRow>, to: &str) -> ApiResult<Value> {
     let target: Account = accounts::by_public_id(state, to).await?;
     if target.uuid == caller.uuid {
@@ -693,33 +1075,36 @@ async fn start_transfer(state: &AppState, caller: &Caller, doc: Option<&DocRow>,
         .bind(&target.uuid)
         .execute(&state.db)
         .await?;
-    activity::record(
-        state,
-        doc.map(|d| d.id.as_str()),
-        folder.map(|f| f.id.as_str()),
-        &caller.uuid,
-        "transfer.started",
-        json!({ "transfer": id, "to": target.uuid }),
-    )
-    .await?;
-    let row: TransferRow = sqlx::query_as("select id, doc_id, folder_id, from_uuid, to_uuid, status, created_at from transfers where id = $1").bind(&id).fetch_one(&state.db).await?;
-    transfer_view(state, &row).await
+    let about = match (doc, folder) {
+        (Some(doc), _) => About::Doc(&doc.id),
+        (_, Some(folder)) => About::Folder(&folder.id),
+        _ => return Err(ApiError::invalid("There is nothing to transfer.")),
+    };
+    let histories = [(doc.map(|d| d.id.as_str()), folder.map(|f| f.id.as_str()))];
+    activity::record_change(state, about, &histories, &caller.uuid, "transfer.started", json!({ "transfer": id, "to": target.uuid })).await?;
+    transfer_view(state, &load_transfer(state, &id).await?).await
 }
 
 pub async fn transfer_doc(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<TransferBody>) -> ApiResult<Json<Value>> {
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Owner).await?;
+    if doc.deleted_at.is_some() {
+        return Err(doc_in_trash());
+    }
     Ok(Json(start_transfer(&state, &caller, Some(&doc), None, &body.to).await?))
 }
 
 pub async fn transfer_folder(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<TransferBody>) -> ApiResult<Json<Value>> {
     let (folder, _) = access::require_folder(&state, &caller, &id, Role::Owner).await?;
+    if folder.deleted_at.is_some() {
+        return Err(folder_in_trash());
+    }
     Ok(Json(start_transfer(&state, &caller, None, Some(&folder), &body.to).await?))
 }
 
 pub async fn transfers(State(state): State<AppState>, Auth(caller): Auth) -> ApiResult<Json<Value>> {
-    let rows: Vec<TransferRow> = sqlx::query_as(
-        "select id, doc_id, folder_id, from_uuid, to_uuid, status, created_at from transfers where (to_uuid = $1 or from_uuid = $1) order by created_at desc limit 200",
-    )
+    let rows: Vec<TransferRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "select {TRANSFER_COLUMNS} from transfers where (to_uuid = $1 or from_uuid = $1) order by created_at desc limit 200"
+    )))
     .bind(&caller.uuid)
     .fetch_all(&state.db)
     .await?;
@@ -736,14 +1121,14 @@ pub async fn transfers(State(state): State<AppState>, Auth(caller): Auth) -> Api
     Ok(Json(json!({ "incoming": incoming, "outgoing": outgoing })))
 }
 
+fn already_decided(status: &str) -> ApiError {
+    ApiError::conflict(format!("This transfer is already {status}."))
+}
+
 pub async fn decide_transfer(State(state): State<AppState>, Auth(caller): Auth, Path((id, action)): Path<(String, String)>) -> ApiResult<Json<Value>> {
-    let row: TransferRow = sqlx::query_as("select id, doc_id, folder_id, from_uuid, to_uuid, status, created_at from transfers where id = $1")
-        .bind(&id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| ApiError::not_found("This transfer"))?;
+    let row = load_transfer(&state, &id).await?;
     if row.status != "pending" {
-        return Err(ApiError::conflict(format!("This transfer is already {}.", row.status)));
+        return Err(already_decided(&row.status));
     }
     match action.as_str() {
         "accept" | "decline" if row.to_uuid != caller.uuid => return Err(ApiError::not_found("This transfer")),
@@ -751,28 +1136,60 @@ pub async fn decide_transfer(State(state): State<AppState>, Auth(caller): Auth, 
         "accept" | "decline" | "cancel" => {}
         _ => return Err(ApiError::not_found("This action")),
     }
-    let status = match action.as_str() {
-        "accept" => "accepted",
-        "decline" => "declined",
-        _ => "cancelled",
-    };
     if action == "accept" {
-        accept_transfer(&state, &row).await?;
+        if let Err(error) = accept_transfer(&state, &row).await {
+            // An offer that can no longer be accepted doesn't stay pending.
+            if error.code == "conflict" {
+                sqlx::query("update transfers set status = 'cancelled', decided_at = now() where id = $1 and status = 'pending'")
+                    .bind(&id)
+                    .execute(&state.db)
+                    .await?;
+            }
+            return Err(error);
+        }
+    } else {
+        let status = if action == "decline" { "declined" } else { "cancelled" };
+        let decided = sqlx::query("update transfers set status = $2, decided_at = now() where id = $1 and status = 'pending'")
+            .bind(&id)
+            .bind(status)
+            .execute(&state.db)
+            .await?
+            .rows_affected();
+        if decided == 0 {
+            return Err(already_decided(&load_transfer(&state, &id).await?.status));
+        }
     }
-    sqlx::query("update transfers set status = $2, decided_at = now() where id = $1").bind(&id).bind(status).execute(&state.db).await?;
-    let updated: TransferRow = sqlx::query_as("select id, doc_id, folder_id, from_uuid, to_uuid, status, created_at from transfers where id = $1").bind(&id).fetch_one(&state.db).await?;
-    Ok(Json(transfer_view(&state, &updated).await?))
+    Ok(Json(transfer_view(&state, &load_transfer(&state, &id).await?).await?))
 }
 
-/// Moves ownership. The previous owner keeps edit access, and the item moves to the new owner's
-/// top level when it sat in a folder of someone else.
+/// Moves ownership, once. The previous owner keeps edit access, and the item moves to the new
+/// owner's top level when it sat in a folder of someone else; that folder's history keeps that it
+/// left. Only what isn't in the trash moves: what the previous owner had deleted stays in their
+/// trash. Answers `conflict` when the offer can no longer be accepted.
 async fn accept_transfer(state: &AppState, t: &TransferRow) -> ApiResult<()> {
     let mut tx = state.db.begin().await?;
+    hold_folders(&mut tx, &t.from_uuid).await?;
+    let decided = sqlx::query("update transfers set status = 'accepted', decided_at = now() where id = $1 and status = 'pending'")
+        .bind(&t.id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if decided == 0 {
+        let status: String = sqlx::query_scalar("select status from transfers where id = $1").bind(&t.id).fetch_one(&mut *tx).await?;
+        return Err(already_decided(&status));
+    }
     let mut touched_docs = vec![];
-    if let Some(doc_id) = &t.doc_id {
-        let doc = access::load_doc(state, doc_id).await?;
-        if doc.owner_uuid != t.from_uuid {
+    // What moved, the folder it sat in (with the key the history names that folder by), and what
+    // the history says.
+    let (about, left, mut data) = if let Some(doc_id) = &t.doc_id {
+        let doc: Option<(String, Option<String>, Option<time::OffsetDateTime>)> =
+            sqlx::query_as("select owner_uuid, folder_id, deleted_at from docs where id = $1 for update").bind(doc_id).fetch_optional(&mut *tx).await?;
+        let Some((owner, folder, deleted)) = doc else { return Err(ApiError::not_found("This doc")) };
+        if owner != t.from_uuid {
             return Err(ApiError::conflict("The doc changed owner since this transfer started."));
+        }
+        if deleted.is_some() {
+            return Err(doc_in_trash().hint("Its owner can restore it and offer it again."));
         }
         sqlx::query("update docs set owner_uuid = $2, folder_id = null, updated_at = now() where id = $1").bind(doc_id).bind(&t.to_uuid).execute(&mut *tx).await?;
         sqlx::query("delete from shares where doc_id = $1 and account_uuid = $2").bind(doc_id).bind(&t.to_uuid).execute(&mut *tx).await?;
@@ -784,17 +1201,38 @@ async fn accept_transfer(state: &AppState, t: &TransferRow) -> ApiResult<()> {
             .execute(&mut *tx)
             .await?;
         touched_docs.push(doc_id.clone());
-    }
-    if let Some(folder_id) = &t.folder_id {
-        let folder = access::load_folder(state, folder_id).await?;
-        if folder.owner_uuid != t.from_uuid {
+        (About::Doc(doc_id), folder.map(|f| ("from_folder", f)), json!({ "transfer": t.id, "doc": doc_id, "from": t.from_uuid, "to": t.to_uuid }))
+    } else if let Some(folder_id) = &t.folder_id {
+        let folder: Option<(String, Option<String>, Option<time::OffsetDateTime>)> =
+            sqlx::query_as("select owner_uuid, parent_id, deleted_at from folders where id = $1 for update").bind(folder_id).fetch_optional(&mut *tx).await?;
+        let Some((owner, parent, deleted)) = folder else { return Err(ApiError::not_found("This folder")) };
+        if owner != t.from_uuid {
             return Err(ApiError::conflict("The folder changed owner since this transfer started."));
         }
-        let (folders, docs) = tree(state, folder_id, true).await?;
+        if deleted.is_some() {
+            return Err(folder_in_trash().hint("Its owner can restore it and offer it again."));
+        }
+        // The folders hold still (`hold_folders`); docs can still move or go to the trash meanwhile,
+        // so the docs that move are the ones in those folders and out of the trash as they move.
+        let (folders, _) = live_tree(&mut tx, folder_id).await?;
         sqlx::query("update folders set owner_uuid = $2 where id = any($1)").bind(&folders).bind(&t.to_uuid).execute(&mut *tx).await?;
         sqlx::query("update folders set parent_id = null where id = $1").bind(folder_id).execute(&mut *tx).await?;
-        sqlx::query("update docs set owner_uuid = $2 where id = any($1)").bind(&docs).bind(&t.to_uuid).execute(&mut *tx).await?;
-        sqlx::query("delete from shares where folder_id = $1 and account_uuid = $2").bind(folder_id).bind(&t.to_uuid).execute(&mut *tx).await?;
+        let docs: Vec<String> = sqlx::query_scalar("update docs set owner_uuid = $2 where folder_id = any($1) and deleted_at is null returning id")
+            .bind(&folders)
+            .bind(&t.to_uuid)
+            .fetch_all(&mut *tx)
+            .await?;
+        // What stays in the previous owner's trash no longer sits in folders that are now someone
+        // else's: restoring it brings it back to their top level.
+        sqlx::query("update docs set folder_id = null where folder_id = any($1) and deleted_at is not null").bind(&folders).execute(&mut *tx).await?;
+        sqlx::query("update folders set parent_id = null where parent_id = any($1) and deleted_at is not null").bind(&folders).execute(&mut *tx).await?;
+        // The new owner owns all of it now, so isn't also a member of any of it.
+        sqlx::query("delete from shares where account_uuid = $3 and (folder_id = any($1) or doc_id = any($2))")
+            .bind(&folders)
+            .bind(&docs)
+            .bind(&t.to_uuid)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("insert into shares (id, folder_id, account_uuid, role, invited_by) values ($1, $2, $3, 'editor', $4) on conflict do nothing")
             .bind(ids::new_id("m"))
             .bind(folder_id)
@@ -802,10 +1240,21 @@ async fn accept_transfer(state: &AppState, t: &TransferRow) -> ApiResult<()> {
             .bind(&t.to_uuid)
             .execute(&mut *tx)
             .await?;
+        // Offers for anything inside were the previous owner's to make.
+        cancel_offers(&mut *tx, &docs, &folders).await?;
         touched_docs.extend(docs);
-    }
+        (About::Folder(folder_id), parent.map(|p| ("from_parent", p)), json!({ "transfer": t.id, "folder": folder_id, "from": t.from_uuid, "to": t.to_uuid }))
+    } else {
+        return Err(ApiError::invalid("There is nothing to transfer."));
+    };
     tx.commit().await?;
-    activity::record(state, t.doc_id.as_deref(), t.folder_id.as_deref(), &t.to_uuid, "transfer.accepted", json!({ "transfer": t.id, "from": t.from_uuid, "to": t.to_uuid })).await?;
+    // In the history of what moved, and in that of the folder it left.
+    let mut histories = vec![(t.doc_id.as_deref(), t.folder_id.as_deref())];
+    if let Some((key, folder)) = &left {
+        data[*key] = json!(folder);
+        histories.push((None, Some(folder)));
+    }
+    activity::record_change(state, about, &histories, &t.to_uuid, "transfer.accepted", data).await?;
     for doc in touched_docs {
         state.rooms.recheck(state, &doc).await;
         state.rooms.notify(&doc, json!({ "type": "meta" })).await;
