@@ -26,7 +26,7 @@ fn words(rng: &mut Rng, n: usize) -> String {
     (0..n).map(|_| *rng.pick(WORDS)).collect::<Vec<_>>().join(" ")
 }
 
-fn inline(rng: &mut Rng) -> String {
+fn inline_plain(rng: &mut Rng) -> String {
     let n = 1 + (rng.next() % 5) as usize;
     let w = words(rng, n);
     match rng.next() % 9 {
@@ -38,6 +38,16 @@ fn inline(rng: &mut Rng) -> String {
         5 => format!("<mark>{w}</mark>"),
         6 => format!("`{w}`"),
         _ => w,
+    }
+}
+
+fn inline(rng: &mut Rng) -> String {
+    match rng.next() % 8 {
+        0 => format!("$x_{}$", rng.next() % 20),
+        1 => format!("[[Doc {}|Alias]]", rng.next() % 20),
+        2 => "before\\\nafter".to_owned(),
+        3 => format!("[![pic](https://example.test/p{}.png)](https://example.test)", rng.next() % 20),
+        _ => inline_plain(rng),
     }
 }
 
@@ -176,7 +186,7 @@ fn suggestions_accept_to_the_target_and_reject_to_the_original() {
         for accept in [true, false] {
             let mut rng = Rng(seed * 104729);
             // Text-only docs: suggestions are about text (structure changes apply directly in the editor).
-            let md = (0..3).map(|_| line(&mut rng)).collect::<Vec<_>>().join("\n\n") + "\n";
+            let md = (0..3).map(|_| (0..3).map(|_| inline_plain(&mut rng)).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join("\n\n") + "\n";
             let start = from_markdown(&md);
             let original = to_markdown(&start);
             let y = live(&start, 1);

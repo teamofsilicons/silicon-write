@@ -77,7 +77,7 @@ fn block(block: &Block) -> Value {
                                     .map(|cell| {
                                         node(
                                             if cell.header { TABLE_HEADER } else { TABLE_CELL },
-                                            Some(json!({ "colspan": cell.colspan, "rowspan": cell.rowspan })),
+                                            Some({ let mut attrs = json!({ "colspan": cell.colspan, "rowspan": cell.rowspan }); if let Some(align) = &cell.align { attrs["textAlign"] = json!(align); } attrs }),
                                             Some(blocks(&cell.blocks)),
                                         )
                                     })
@@ -111,7 +111,8 @@ fn inlines(content: &[Inline]) -> Vec<Value> {
             Inline::HardBreak => Some(node(HARD_BREAK, None, None)),
             Inline::InlineMath { latex } => Some(node(INLINE_MATH, Some(json!({ "latex": latex })), None)),
             Inline::Footnote { content } => Some(node(FOOTNOTE, Some(json!({ "content": content })), None)),
-            Inline::DocLink { title } => Some(node(DOC_LINK, Some(json!({ "title": title })), None)),
+            Inline::DocLink { title, alias } => { let mut attrs = json!({"title": title}); if let Some(alias) = alias { attrs["alias"] = json!(alias); } Some(node(DOC_LINK, Some(attrs), None)) },
+            Inline::Image { src, alt, title, link, link_title } => Some(node(INLINE_IMAGE, Some(json!({"src":src,"alt":alt,"title":title,"link":link,"linkTitle":link_title})), None)),
         })
         .collect()
 }
@@ -120,7 +121,8 @@ fn mark_list(marks: &Marks) -> Vec<Value> {
     let mut out = vec![];
     let simple = |name: &str| json!({ "type": name });
     if let Some(href) = &marks.link {
-        out.push(json!({ "type": LINK, "attrs": { "href": href } }));
+        let mut attrs = json!({"href":href}); if let Some(title) = &marks.link_title { attrs["title"] = json!(title); }
+        out.push(json!({ "type": LINK, "attrs": attrs }));
     }
     if marks.bold {
         out.push(simple(BOLD));
@@ -134,6 +136,8 @@ fn mark_list(marks: &Marks) -> Vec<Value> {
     if marks.strike {
         out.push(simple(STRIKE));
     }
+    if marks.subscript { out.push(simple(SUBSCRIPT)); }
+    if marks.superscript { out.push(simple(SUPERSCRIPT)); }
     if marks.code {
         out.push(simple(CODE));
     }

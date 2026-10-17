@@ -96,7 +96,8 @@ impl Writer {
         let mut parts: Vec<String> = vec![];
         for (i, block) in blocks.iter().enumerate() {
             if !block.is_empty_paragraph() {
-                parts.push(self.blocks(std::slice::from_ref(block)));
+                let rendered = self.blocks(std::slice::from_ref(block));
+                if !rendered.is_empty() { parts.push(rendered); }
             }
             for (_, note) in annotations.iter().filter(|(at, _)| *at == i) {
                 parts.push(note.clone());
@@ -126,14 +127,20 @@ impl Writer {
                 (Some(Block::BulletList { .. }), Block::BulletList { .. })
                     | (Some(Block::TaskList { .. }), Block::TaskList { .. })
                     | (Some(Block::OrderedList { .. }), Block::OrderedList { .. })
-                    | (Some(Block::BulletList { .. }), Block::TaskList { .. })
-                    | (Some(Block::TaskList { .. }), Block::BulletList { .. })
+
             );
             list_alt = same_kind_list && !list_alt;
             if !same_kind_list {
                 list_alt = false;
             }
-            parts.push(self.block(block, list_alt));
+            let rendered = self.block(block, list_alt);
+            let mixed_list = matches!((previous, block),
+                (Some(Block::BulletList { .. }), Block::TaskList { .. })
+                | (Some(Block::TaskList { .. }), Block::BulletList { .. }));
+            if mixed_list && let Some(part) = parts.last_mut() {
+                part.push('\n');
+                part.push_str(&rendered);
+            } else { parts.push(rendered); }
             previous = Some(block);
         }
         parts.join("\n\n")
@@ -273,7 +280,7 @@ impl Writer {
         let mut first = true;
         let mut previous: Option<&Block> = None;
         for block in blocks {
-            if block.is_empty_paragraph() && !first {
+            if block.is_empty_paragraph() {
                 continue;
             }
             let rendered = if block.is_empty_paragraph() {
@@ -316,6 +323,7 @@ impl Writer {
                 if cell.rowspan > 1 {
                     attrs.push_str(&format!(" rowspan=\"{}\"", cell.rowspan));
                 }
+                if let Some(align) = &cell.align { attrs.push_str(&format!(" style=\"text-align: {}\"", attr_escape(align))); }
                 let inner = self.blocks(&cell.blocks);
                 if inner.is_empty() {
                     out.push_str(&format!("\n<{tag}{attrs}>\n</{tag}>"));
@@ -364,7 +372,10 @@ impl Writer {
                 .collect();
             lines.push(format!("| {} |", cells.join(" | ")));
             if r == 0 {
-                lines.push(format!("|{}", " --- |".repeat(columns)));
+                let alignments: Vec<&str> = row.cells.iter().map(|c| match c.align.as_deref() {
+                    Some("left") => ":---", Some("right") => "---:", Some("center") => ":---:", _ => "---"
+                }).collect();
+                lines.push(format!("| {} |", alignments.join(" | ")));
             }
         }
         Some(lines.join("\n"))
@@ -485,7 +496,8 @@ impl Writer {
             match run {
                 Run::Text { text, marks } => {
                     if marks.code {
-                        out.push_str(&code_span(text));
+                        let code = code_span(text);
+                        out.push_str(&if ctx.in_table { code.replace('|', "\\|") } else { code });
                     } else {
                         let at_line_start = out.is_empty() || out.ends_with('\n');
                         out.push_str(&escape_text(text, at_line_start, ctx.in_table));
@@ -507,9 +519,15 @@ impl Writer {
                     self.footnotes.push(text.clone());
                     out.push_str(&format!("[^{}]", self.footnotes.len()));
                 }
-                Run::DocLink(title) => {
+                Run::Image { src, alt, title, link, link_title } => {
+                    let image = image_markdown(src, alt.as_deref(), title.as_deref());
+                    if let Some(link) = link { out.push_str(&format!("[{image}]({}{})", link_destination(link), markdown_title(link_title.as_deref()))); }
+                    else { out.push_str(&image); }
+                }
+                Run::DocLink(title, alias) => {
                     out.push_str("[[");
                     out.push_str(title);
+                    if let Some(alias) = alias { out.push('|'); out.push_str(alias); }
                     out.push_str("]]");
                 }
             }
@@ -549,7 +567,9 @@ fn comparable(content: &[Inline]) -> Vec<Inline> {
 
 #[derive(Debug, Clone, PartialEq)]
 enum MarkKey {
-    Link(String),
+    Link(String, Option<String>),
+    Subscript,
+    Superscript,
     Color(String),
     Highlight(Option<String>),
     Underline,
@@ -562,7 +582,8 @@ enum MarkKey {
 impl MarkKey {
     fn order(&self) -> u8 {
         match self {
-            MarkKey::Link(_) => 0,
+            MarkKey::Link(..) => 0,
+            MarkKey::Subscript | MarkKey::Superscript => 8,
             MarkKey::Color(_) => 1,
             MarkKey::Highlight(_) => 2,
             MarkKey::Underline => 3,
@@ -579,7 +600,8 @@ enum Run {
     HardBreak,
     Math(String),
     Footnote(String),
-    DocLink(String),
+    DocLink(String, Option<String>),
+    Image { src: String, alt: Option<String>, title: Option<String>, link: Option<String>, link_title: Option<String> },
 }
 
 impl Run {
@@ -594,7 +616,7 @@ impl Run {
 fn mark_keys(marks: &Marks) -> Vec<MarkKey> {
     let mut keys = vec![];
     if let Some(href) = &marks.link {
-        keys.push(MarkKey::Link(href.clone()));
+        keys.push(MarkKey::Link(href.clone(), marks.link_title.clone()));
     }
     if let Some(color) = &marks.color {
         keys.push(MarkKey::Color(color.clone()));
@@ -614,6 +636,8 @@ fn mark_keys(marks: &Marks) -> Vec<MarkKey> {
     if marks.italic {
         keys.push(MarkKey::Italic);
     }
+    if marks.subscript { keys.push(MarkKey::Subscript); }
+    if marks.superscript { keys.push(MarkKey::Superscript); }
     if marks.code {
         keys.push(MarkKey::Code);
     }
@@ -631,20 +655,23 @@ fn to_runs(content: &[Inline]) -> Vec<Run> {
             Inline::HardBreak => Run::HardBreak,
             Inline::InlineMath { latex } => Run::Math(latex.clone()),
             Inline::Footnote { content } => Run::Footnote(content.clone()),
-            Inline::DocLink { title } => Run::DocLink(title.clone()),
+            Inline::DocLink { title, alias } => Run::DocLink(title.clone(), alias.clone()),
+            Inline::Image { src, alt, title, link, link_title } => Run::Image {src:src.clone(),alt:alt.clone(),title:title.clone(),link:link.clone(),link_title:link_title.clone()},
         })
         .collect()
 }
 
 fn open_mark(mark: &MarkKey, html: bool) -> String {
     match (mark, html) {
-        (MarkKey::Link(_), false) => "[".to_owned(),
-        (MarkKey::Link(href), true) => format!("<a href=\"{}\">", attr_escape(href)),
+        (MarkKey::Link(..), false) => "[".to_owned(),
+        (MarkKey::Link(href, title), true) => format!("<a href=\"{}\"{}>", attr_escape(href), title.as_ref().map(|t| format!(" title=\"{}\"", attr_escape(t))).unwrap_or_default()),
         (MarkKey::Color(color), _) => format!("<span style=\"color: {}\">", attr_escape(color)),
         (MarkKey::Highlight(None), _) => "<mark>".to_owned(),
         (MarkKey::Highlight(Some(color)), _) => {
             format!("<mark style=\"background-color: {}\">", attr_escape(color))
         }
+        (MarkKey::Subscript, _) => "<sub>".to_owned(),
+        (MarkKey::Superscript, _) => "<sup>".to_owned(),
         (MarkKey::Underline, _) => "<u>".to_owned(),
         (MarkKey::Strike, false) => "~~".to_owned(),
         (MarkKey::Strike, true) => "<s>".to_owned(),
@@ -658,10 +685,12 @@ fn open_mark(mark: &MarkKey, html: bool) -> String {
 
 fn close_mark(mark: &MarkKey, html: bool) -> String {
     match (mark, html) {
-        (MarkKey::Link(href), false) => format!("]({})", link_destination(href)),
-        (MarkKey::Link(_), true) => "</a>".to_owned(),
+        (MarkKey::Link(href, title), false) => format!("]({}{})", link_destination(href), markdown_title(title.as_deref())),
+        (MarkKey::Link(..), true) => "</a>".to_owned(),
         (MarkKey::Color(_), _) => "</span>".to_owned(),
         (MarkKey::Highlight(_), _) => "</mark>".to_owned(),
+        (MarkKey::Subscript, _) => "</sub>".to_owned(),
+        (MarkKey::Superscript, _) => "</sup>".to_owned(),
         (MarkKey::Underline, _) => "</u>".to_owned(),
         (MarkKey::Strike, false) => "~~".to_owned(),
         (MarkKey::Strike, true) => "</s>".to_owned(),
@@ -689,6 +718,10 @@ fn link_destination(href: &str) -> String {
     } else {
         href.replace('\\', "\\\\")
     }
+}
+
+fn markdown_title(title: Option<&str>) -> String {
+    title.filter(|s| !s.is_empty()).map(|s| format!(" \"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))).unwrap_or_default()
 }
 
 fn image_markdown(src: &str, alt: Option<&str>, title: Option<&str>) -> String {
@@ -748,6 +781,7 @@ fn prefix_lines(text: &str, prefix: &str, blank: &str) -> String {
 fn escape_text(text: &str, at_line_start: bool, in_table: bool) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len() + 8);
+    let mut start = 0;
     for (i, &c) in chars.iter().enumerate() {
         let prev = if i == 0 { None } else { Some(chars[i - 1]) };
         let next = chars.get(i + 1).copied();
@@ -768,11 +802,7 @@ fn escape_text(text: &str, at_line_start: bool, in_table: bool) -> String {
             '-' if line_start => true,
             '.' | ')' => {
                 // `12.` or `3)` at the start of a line would start a list.
-                let start = chars[..i]
-                    .iter()
-                    .rposition(|&p| p == '\n')
-                    .map(|p| p + 1)
-                    .unwrap_or(0);
+
                 let digits = &chars[start..i];
                 (start > 0 || at_line_start)
                     && !digits.is_empty()
@@ -785,6 +815,7 @@ fn escape_text(text: &str, at_line_start: bool, in_table: bool) -> String {
             out.push('\\');
         }
         out.push(c);
+        if c == '\n' { start = i + 1; }
     }
     out
 }
@@ -816,6 +847,8 @@ fn options() -> Options<'static> {
 /// Reads Markdown into a doc.
 pub fn from_markdown(markdown: &str) -> Doc {
     let arena = Arena::new();
+    let cleaned;
+    let markdown = if markdown.contains('\0') { cleaned = markdown.replace('\0', ""); &cleaned } else { markdown };
     let root = parse_document(&arena, markdown, &options());
     let mut footnotes: HashMap<String, String> = HashMap::new();
     for node in root.children() {
@@ -850,7 +883,7 @@ fn read_blocks<'a>(parent: AstNode<'a>, footnotes: &HashMap<String, String>) -> 
                     content,
                 });
             }
-            NodeValue::List(list) => blocks.push(read_list(node, list.list_type, list.start, footnotes)),
+            NodeValue::List(list) => blocks.extend(read_list(node, list.list_type, list.start, footnotes)),
             NodeValue::BlockQuote | NodeValue::MultilineBlockQuote(_) => blocks.push(Block::Blockquote {
                 blocks: read_blocks(node, footnotes),
             }),
@@ -986,52 +1019,36 @@ fn plain_of<'a>(node: AstNode<'a>) -> String {
     out
 }
 
-fn read_list<'a>(
-    node: AstNode<'a>,
-    list_type: ListType,
-    start: usize,
-    footnotes: &HashMap<String, String>,
-) -> Block {
-    let items: Vec<AstNode<'a>> = node.children().collect();
-    let is_task = items
-        .iter()
-        .any(|item| matches!(item.data().value, NodeValue::TaskItem(_)));
-    if is_task {
-        let items = items
-            .into_iter()
-            .map(|item| {
-                let checked = matches!(&item.data().value, NodeValue::TaskItem(t) if t.symbol.is_some());
-                TaskItem {
-                    checked,
-                    blocks: read_blocks(item, footnotes),
-                }
-            })
-            .collect();
-        return Block::TaskList { items };
+fn read_list<'a>(node: AstNode<'a>, list_type: ListType, start: usize, footnotes: &HashMap<String, String>) -> Vec<Block> {
+    let mut out = vec![];
+    for item in node.children() {
+        let blocks = read_blocks(item, footnotes);
+        if let NodeValue::TaskItem(task) = &item.data().value {
+            let task = TaskItem { checked: task.symbol.is_some(), blocks };
+            if let Some(Block::TaskList { items }) = out.last_mut() { items.push(task); }
+            else { out.push(Block::TaskList { items: vec![task] }); }
+        } else {
+            let item = ListItem { blocks };
+            match (list_type, out.last_mut()) {
+                (ListType::Bullet, Some(Block::BulletList { items })) | (ListType::Ordered, Some(Block::OrderedList { items, .. })) => items.push(item),
+                (ListType::Bullet, _) => out.push(Block::BulletList { items: vec![item] }),
+                (ListType::Ordered, _) => out.push(Block::OrderedList { start: start as u32, items: vec![item] }),
+            }
+        }
     }
-    let items: Vec<ListItem> = items
-        .into_iter()
-        .map(|item| ListItem {
-            blocks: read_blocks(item, footnotes),
-        })
-        .collect();
-    match list_type {
-        ListType::Bullet => Block::BulletList { items },
-        ListType::Ordered => Block::OrderedList {
-            start: start as u32,
-            items,
-        },
-    }
+    out
 }
 
 fn read_table<'a>(node: AstNode<'a>, footnotes: &HashMap<String, String>) -> Block {
+    let alignments = if let NodeValue::Table(table) = &node.data().value { table.alignments.clone() } else { vec![] };
     let mut rows = vec![];
     for row in node.children() {
         let header = matches!(row.data().value, NodeValue::TableRow(true));
         let cells = row
-            .children()
-            .map(|cell| TableCell {
+            .children().enumerate()
+            .map(|(i, cell)| TableCell {
                 header,
+                align: alignments.get(i).and_then(|a| match a { comrak::nodes::TableAlignment::Left => Some("left"), comrak::nodes::TableAlignment::Right => Some("right"), comrak::nodes::TableAlignment::Center => Some("center"), _ => None }).map(str::to_owned),
                 colspan: 1,
                 rowspan: 1,
                 blocks: vec![Block::paragraph(read_inlines(cell, footnotes))],
@@ -1073,6 +1090,7 @@ fn read_html_table<'a>(
                             };
                             cell = Some(TableCell {
                                 header: tag.name == "th",
+                                align: tag.attr("style").and_then(|s| style_value(s, "text-align")),
                                 colspan: span("colspan"),
                                 rowspan: span("rowspan"),
                                 blocks: vec![],
@@ -1115,7 +1133,7 @@ fn read_single<'a>(node: AstNode<'a>, footnotes: &HashMap<String, String>) -> Ve
             level: h.level,
             content: read_inlines(node, footnotes),
         }],
-        NodeValue::List(list) => vec![read_list(node, list.list_type, list.start, footnotes)],
+        NodeValue::List(list) => read_list(node, list.list_type, list.start, footnotes),
         NodeValue::BlockQuote => vec![Block::Blockquote {
             blocks: read_blocks(node, footnotes),
         }],
@@ -1274,13 +1292,11 @@ fn read_inline_node<'a>(
         NodeValue::Highlight => with(state, out, &|m| m.highlight = Some(None)),
         NodeValue::Link(link) => {
             let url = link.url.clone();
-            with(state, out, &|m| m.link = Some(url.clone()))
+            with(state, out, &|m| {m.link = Some(url.clone()); m.link_title = (!link.title.is_empty()).then(|| link.title.clone());})
         }
         NodeValue::Image(link) => {
-            // An image inside other inline content (a link, a table cell): keep its text.
             let alt = plain_of(node);
-            let _ = link;
-            out.push(Inline::marked(alt, state.marks.clone()));
+            out.push(Inline::Image { src: link.url, alt: (!alt.is_empty()).then_some(alt), title: (!link.title.is_empty()).then_some(link.title), link: state.marks.link.clone(), link_title: state.marks.link_title.clone() });
         }
         NodeValue::FootnoteReference(reference) => out.push(Inline::Footnote {
             content: footnotes
@@ -1293,6 +1309,7 @@ fn read_inline_node<'a>(
         }),
         NodeValue::WikiLink(link) => out.push(Inline::DocLink {
             title: link.url.clone(),
+            alias: { let label = plain_of(node); (!label.is_empty() && label != link.url).then_some(label) },
         }),
         NodeValue::HtmlInline(raw) => read_html_inline(&raw, state, out),
         NodeValue::Escaped | NodeValue::EscapedTag(_) => {
@@ -1337,6 +1354,8 @@ fn read_html_inline(raw: &str, state: &mut InlineState, out: &mut Vec<Inline>) {
     let saved = state.marks.clone();
     let marks = &mut state.marks;
     match tag.name.as_str() {
+        "sub" => marks.subscript = true,
+        "sup" => marks.superscript = true,
         "u" | "ins" => marks.underline = true,
         "s" | "del" | "strike" => marks.strike = true,
         "strong" | "b" => marks.bold = true,
@@ -1355,6 +1374,7 @@ fn read_html_inline(raw: &str, state: &mut InlineState, out: &mut Vec<Inline>) {
         "a" => {
             if let Some(href) = tag.attr("href") {
                 marks.link = Some(href.to_owned());
+                marks.link_title = tag.attr("title").map(str::to_owned);
             }
         }
         _ => {}

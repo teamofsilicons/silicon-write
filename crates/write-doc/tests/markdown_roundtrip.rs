@@ -93,6 +93,7 @@ fn hard_marks() {
 fn complex_table_and_lists() {
     let cell = |header: bool, text: &str, colspan: u32| TableCell {
         header,
+        align: None,
         colspan,
         rowspan: 1,
         blocks: vec![Block::text_paragraph(text)],
@@ -105,6 +106,7 @@ fn complex_table_and_lists() {
                     cell(false, "a", 1),
                     TableCell {
                         header: false,
+                        align: None,
                         colspan: 1,
                         rowspan: 1,
                         blocks: vec![
@@ -143,4 +145,28 @@ fn suggestions_views() {
     let critic = to_markdown_with(&doc, &WriteOptions { suggestions: SuggestionView::Critic, ..Default::default() });
     assert_eq!(critic, "keep {++new ++}{--old --}end\n");
     assert_eq!(doc.suggestions().len(), 2);
+}
+
+#[test]
+fn lossless_markdown_features_and_live_encoding() {
+    let samples = [
+        "[![badge](https://example.com/badge.svg)](https://example.com \"Badge link\")\n",
+        "| A |\n| --- |\n| ![cell image](https://example.com/cell.png) |\n",
+        "- ![x](https://example.com/x.png)\n- second\n",
+        "| A |\n| --- |\n| `a\\|b` |\n",
+        "| Left | Right | Centre |\n| :--- | ---: | :---: |\n| a | b | c |\n",
+        "See [[Other doc|the other one]].\n",
+        "[docs](https://example.com/docs \"The docs\")\n",
+        "H<sub>2</sub>O and x<sup>2</sup>\n",
+        "- a plain bullet\n- [ ] a task\n",
+    ];
+    for sample in samples {
+        let doc = from_markdown(sample);
+        assert_eq!(to_markdown(&doc), sample, "Markdown must keep {sample}");
+        assert_eq!(from_markdown(&to_markdown(&doc)), doc);
+        let live = write_doc::ydoc::new_ydoc(1);
+        write_doc::ydoc::with_txn(&live, |txn, fragment| write_doc::ydoc::write_all(txn, fragment, &doc));
+        assert_eq!(write_doc::ydoc::read_doc(&live), doc);
+    }
+    assert_eq!(to_markdown(&from_markdown("before\0after\n")), "beforeafter\n");
 }
