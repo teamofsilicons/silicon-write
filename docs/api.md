@@ -74,6 +74,7 @@ file is the technical reference.
   `{ "seq": 42, "markdown": "…", "title": "…" }`. `current` (default) is the doc as it reads now; `critic` shows pending
   suggestions as `{++inserted++}` / `{--deleted--}`. `comments=inline` adds every open thread after the block it's on:
   `> [!comment t_… by c:saket on "quoted text"] body` (replies follow as `> ↳ si:x: reply`).
+  Inline comment notes are for reading: writing them back is refused. Read with `comments=none` before editing.
 - `GET /v1/docs/{id}/prosemirror?seq=<n>` **public** → `{ "seq", "doc": <ProseMirror JSON> }` (read-only rendering).
 - `POST /v1/docs/{id}/edits` `{ "edits": [{ "old": "exact text", "new": "replacement", "all"?: false }], "suggest"?: false }`
   → `{ "seq", "markdown", "suggested" }`. Each `old` is exact text from the current Markdown and must appear once (or
@@ -107,7 +108,8 @@ file is the technical reference.
   editor's fragment `default`, plus server messages of type `100` carrying JSON:
   `{"type":"authors","clients":{"<client id>":Account}}`, `{"type":"threads"}` (threads changed),
   `{"type":"meta"}` (title, folder or access changed), `{"type":"role","role":"viewer"}`, `{"type":"rejected","reason"}`
-  (an edit the caller's role doesn't allow; reload).
+  (a change that cannot be accepted; reload). Removing access sends `{"type":"role","role":null}` and closes the
+  connection with code `4403`; stop reconnecting until access is granted again.
 
 ## Sharing
 
@@ -154,7 +156,12 @@ file is the technical reference.
 ## Suggestions
 
 - `GET /v1/docs/{id}/suggestions` → `{ "suggestions": [{ "id", "author": Account | null, "inserted", "deleted" }] }`.
-- `POST /v1/docs/{id}/suggestions/{sid}/accept|reject`, `POST /v1/docs/{id}/suggestions/accept-all|reject-all` (editors) → `{ "seq" }`.
+- Suggestions can propose text, formatting, blocks, lists, tables, images, maths and other document structure.
+  The current reading stays unchanged until a proposal is accepted; rejecting it restores the original structure.
+- `POST /v1/docs/{id}/suggestions/{sid}/accept|reject` (editors) → `{ "seq" }`.
+  A decision that would discard another pending suggestion returns `409 conflict`; decide the nested suggestion first.
+- `POST /v1/docs/{id}/suggestions/accept-all|reject-all` (editors) → `{ "seq", "count" }`.
+  Nested proposals are decided in a safe order within the same saved change.
 
 ## Versions and history (editors and owner)
 
@@ -162,6 +169,7 @@ file is the technical reference.
   `Version = { "seq", "from_seq", "authors": [Account], "summary": "si:writer edited “Introduction”", "name": "…" | null, "created_at" }`.
 - `GET /v1/docs/{id}/versions/{seq}/markdown` → `{ "seq", "markdown" }`. `GET /v1/docs/{id}/prosemirror?seq=` renders it.
 - `PUT /v1/docs/{id}/versions/{seq}/name` `{ "name" }` → `{ "seq", "name" }` / `DELETE` → `204`: names a version.
+  Naming or removing a name from a trashed doc returns `409 conflict`; restore the doc first.
 - `GET /v1/docs/{id}/compare?from=<seq>&to=<seq>` (`to` defaults to the latest) → `{ "from", "to", "blocks": [{
   "change": "same"|"added"|"removed"|"changed", "before"?: "md", "after"?: "md", "before_index"?, "after_index"?,
   "by": [Account], "parts"?: [{ "op": "same"|"added"|"removed", "text", "by"?: Account }] }] }`. `before_index` is the
