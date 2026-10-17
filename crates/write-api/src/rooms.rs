@@ -1320,6 +1320,11 @@ async fn apply_client_update(
             .claim_client(state, &room.doc_id, client, &account.uuid)
             .await?;
     }
+    // Receivers need the account map before the first update from a new live writer, so its
+    // insertion highlight is attributed from the moment it appears.
+    if claimed {
+        inner.broadcast_authors(state).await;
+    }
     inner
         .ydoc
         .transact_mut()
@@ -1334,9 +1339,6 @@ async fn apply_client_update(
             Some(conn_id),
         )
         .await?;
-    if claimed {
-        inner.broadcast_authors(state).await;
-    }
     Ok(())
 }
 

@@ -2842,3 +2842,98 @@ test("an offline change's deleted text stays private during live broadcasts, whi
   assert.equal(receivedText(editor, secret), true, "editors keep access to the stored history");
   scratch.destroy();
 });
+
+test("structural proposals pass the live handshake, stay pending and resolve without losing their author", { timeout: TEST_TIMEOUT }, async () => {
+  const owner = await carbon("liveowner");
+  const commenter = await carbon("livecommenter");
+  for (const kind of ["codeBlock", "image", "table"]) {
+    const doc = await newDoc(owner, "Original paragraph");
+    await share(owner, doc.id, commenter, "commenter");
+    const writer = quiet(await connect(commenter, doc.id));
+    const observer = quiet(await connect(owner, doc.id));
+    const scratch = scratchFrom(writer);
+    const id = `s_${unique()}`;
+    const seq = await docSeq(owner, doc.id);
+    const update = updateOf(scratch, frag => {
+      frag.get(0).setAttribute("suggestion", { kind: "delete", id, author: commenter.uuid });
+      const node = new Y.XmlElement(kind);
+      node.setAttribute("suggestion", { kind: "insert", id, author: commenter.uuid });
+      if (kind === "codeBlock") {
+        node.setAttribute("language", "js");
+        const text = new Y.XmlText(); text.insert(0, "let proposed = 1;"); node.insert(0, [text]);
+      } else if (kind === "image") {
+        node.setAttribute("src", "https://example.test/proposed.png");
+        node.setAttribute("width", 120);
+        node.setAttribute("alt", "proposed");
+      } else {
+        const row = new Y.XmlElement("tableRow"), cell = new Y.XmlElement("tableCell");
+        cell.setAttribute("colspan", 1); cell.setAttribute("rowspan", 1);
+        cell.setAttribute("align", null); cell.setAttribute("textAlign", "right"); cell.setAttribute("colwidth", [120]);
+        cell.insert(0, [paragraphElement("Proposed cell")]); row.insert(0, [cell]); node.insert(0, [row]);
+      }
+      frag.insert(1, [node]);
+    });
+    sendUpdate(writer, update);
+    await storedAfter(owner, doc.id, seq);
+    await until("the structural proposal to reach the observer", () => observer.frag.length === 2);
+    assert.equal(writer.event("rejected"), undefined, kind);
+    assert.equal((await markdown(owner, doc.id)).markdown, "Original paragraph\n", kind);
+    const proposals = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
+    assert.deepEqual(proposals.map(s => [s.id, s.author.uuid]), [[id, commenter.uuid]], kind);
+    const accepted = await owner.api.post(`/v1/docs/${doc.id}/suggestions/${id}/accept`);
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+    await until("the decision to reach the observer", () => observer.frag.length === 1 && !observer.frag.get(0).getAttribute("suggestion"));
+    assert.equal(observer.frag.get(0).nodeName, kind);
+    scratch.destroy(); writer.stop(); observer.stop();
+  }
+});
+
+test("malformed live attributes and direct browser-only formatting from commenters are refused", { timeout: TEST_TIMEOUT }, async () => {
+  const owner = await carbon("liveowner");
+  const commenter = await carbon("livecommenter");
+  const doc = await newDoc(owner, "![image](https://example.test/image.png)");
+  await share(owner, doc.id, commenter, "commenter");
+  const editor = quiet(await connect(owner, doc.id));
+  const reader = quiet(await connect(commenter, doc.id));
+  const seq = await docSeq(owner, doc.id);
+  const attempts = [
+    [editor, frag => frag.get(0).setAttribute("src", { invalid: "object" })],
+    [editor, frag => { const heading = new Y.XmlElement("heading"); heading.setAttribute("level", 999); frag.insert(1, [heading]); }],
+    [reader, frag => frag.get(0).setAttribute("width", 120)],
+  ];
+  for (const [client, change] of attempts) {
+    const count = client.eventsOf("rejected").length;
+    const scratch = scratchFrom(client);
+    sendUpdate(client, updateOf(scratch, change));
+    await until("the malformed or direct formatting change to be refused", () => client.eventsOf("rejected").length > count);
+    assert.equal(await docSeq(owner, doc.id), seq);
+    scratch.destroy();
+  }
+});
+
+test("a new live writer's author map reaches observers before their first change", { timeout: TEST_TIMEOUT }, async () => {
+  const owner = await carbon("liveowner");
+  const editor = await carbon("liveeditor");
+  const doc = await newDoc(owner);
+  await share(owner, doc.id, editor, "editor");
+  const observer = quiet(await connect(owner, doc.id));
+  const writer = quiet(await connect(editor, doc.id));
+  const start = observer.frames.length;
+  const seq = await docSeq(owner, doc.id);
+  appendParagraph(writer, "First live attribution");
+  await storedAfter(owner, doc.id, seq);
+  await until("the first live change to arrive", () => blockTexts(observer).includes("First live attribution"));
+  const frames = observer.frames.slice(start);
+  const authors = frames.findIndex(frame => {
+    const decoder = decoding.createDecoder(frame);
+    if (decoding.readVarUint(decoder) !== MESSAGE_EVENT) return false;
+    const event = JSON.parse(new TextDecoder().decode(decoding.readVarUint8Array(decoder)));
+    return event.type === "authors" && event.clients[String(writer.ydoc.clientID)]?.uuid === editor.uuid;
+  });
+  const change = frames.findIndex(frame => {
+    const decoder = decoding.createDecoder(frame);
+    if (decoding.readVarUint(decoder) !== MESSAGE_SYNC || decoding.readVarUint(decoder) === 0) return false;
+    return Buffer.from(decoding.readVarUint8Array(decoder)).includes(Buffer.from("First live attribution"));
+  });
+  assert.ok(authors >= 0 && change > authors, `author map frame ${authors} must precede change frame ${change}`);
+});
