@@ -6,8 +6,7 @@
  *
  * In suggesting mode (`SuggestMode`), every edit becomes a suggestion: typed text is marked as an insertion, and text
  * that is deleted is put back marked as a deletion (unless it was the author's own suggested insertion, which simply
- * goes). Commenters can only edit this way; the service refuses anything else from them. Changes that can't be a
- * suggestion (splitting paragraphs, formatting, tables) are refused here, with a short explanation.
+ * goes). Commenters can only edit this way; the service refuses anything else from them. Structural changes use a node attribute, so paragraphs, formatting, tables and pictures can all be proposed.
  */
 import { Extension, Mark, mergeAttributes } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
@@ -64,7 +63,7 @@ function suggestible(step: unknown, doc: PMNode): boolean {
   const s = step as ReplaceStep & { structure?: boolean };
   const $from = doc.resolve(s.from);
   const $to = doc.resolve(s.to);
-  if (!$from.parent.isTextblock || !$from.sameParent($to)) return false;
+  if (!$from.parent.isTextblock || $from.parent.type.name === "codeBlock" || !$from.sameParent($to)) return false;
   if (s.slice.openStart !== s.slice.openEnd) return false;
   let inlineOnly = true;
   s.slice.content.forEach(node => {
@@ -77,13 +76,74 @@ function ownInsert(marks: readonly PMMark[], author: string): boolean {
   return marks.some(m => m.type.name === "suggestionInsert" && m.attrs.author === author);
 }
 
+export interface NodeSuggestion { kind: "insert" | "delete"; id: string; author: string }
+
+const nodeTypes = ["paragraph", "heading", "bulletList", "orderedList", "listItem", "taskList", "taskItem", "blockquote", "codeBlock", "horizontalRule", "image", "inlineImage", "table", "tableRow", "tableCell", "tableHeader", "blockMath", "inlineMath", "hardBreak", "footnote", "docLink", "tableOfContents"];
+
+/** Removes pending changes from a proposed replacement; their original nodes stay alongside it. */
+function currentNode(node: PMNode): PMNode | null {
+  const suggestion = node.attrs.suggestion as NodeSuggestion | null;
+  if (suggestion?.kind === "insert" || node.marks.some(m => m.type.name === "suggestionInsert")) return null;
+  const marks = node.marks.filter(m => m.type.name !== "suggestionInsert" && m.type.name !== "suggestionDelete");
+  if (node.isText) return node.mark(marks);
+  const children: PMNode[] = [];
+  node.forEach(child => { const kept = currentNode(child); if (kept) children.push(kept); });
+  return node.type.createAndFill({ ...node.attrs, suggestion: null }, children, marks);
+}
+
+/** Proposes structural edits as old and new nodes, preserving the unchanged surrounding nodes. */
+export function structuralSuggestion(oldState: EditorState, newState: EditorState, id: string, author: string): Transaction | null {
+  const before: PMNode[] = [], after: PMNode[] = [];
+  oldState.doc.forEach(node => before.push(node));
+  newState.doc.forEach(node => after.push(node));
+  let first = 0, endBefore = before.length, endAfter = after.length;
+  while (first < endBefore && first < endAfter && before[first]!.eq(after[first]!)) first++;
+  while (endBefore > first && endAfter > first && before[endBefore - 1]!.eq(after[endAfter - 1]!)) { endBefore--; endAfter--; }
+  if (first === endBefore && first === endAfter) return null;
+  const mark = (node: PMNode, kind: "insert" | "delete") => node.type.create({ ...node.attrs, suggestion: { kind, id, author } }, node.content, node.marks);
+  const ownNode = (node: PMNode) => node.attrs.suggestion?.kind === "insert" && node.attrs.suggestion.author === author;
+  const originals = before.slice(first, endBefore).filter(node => !ownNode(node)).map(node => node.attrs.suggestion ? node : mark(node, "delete"));
+  const proposed = after.slice(first, endAfter).flatMap(node => {
+    if (ownNode(node)) return [node];
+    const clean = currentNode(node);
+    return clean ? [mark(clean, "insert")] : [];
+  });
+  const from = after.slice(0, first).reduce((n, node) => n + node.nodeSize, 0);
+  const to = after.slice(0, endAfter).reduce((n, node) => n + node.nodeSize, 0);
+  return newState.tr.replaceWith(from, to, [...originals, ...proposed]).setMeta(FIX, true);
+}
+
+/** The shared schema retains node proposals in live editors and version/read-only views. */
+export const SuggestionNodes = Extension.create({
+  name: "suggestionNodes",
+  addGlobalAttributes() {
+    return [{ types: nodeTypes, attributes: {
+      suggestion: {
+        default: null,
+        parseHTML: (el: HTMLElement) => {
+          const kind = el.getAttribute("data-suggestion-kind"), id = el.getAttribute("data-suggestion"), author = el.getAttribute("data-author");
+          return (kind === "insert" || kind === "delete") && id && author ? { kind, id, author } : null;
+        },
+        renderHTML: (attrs: Record<string, unknown>) => {
+          const s = attrs.suggestion as NodeSuggestion | null;
+          return s ? { "data-suggestion-kind": s.kind, "data-suggestion": s.id, "data-author": s.author } : {};
+        },
+      },
+    } }];
+  },
+});
+
 export const SuggestMode = Extension.create<SuggestModeOptions>({
   name: "suggestMode",
   addOptions() {
     return { author: "", isOn: () => false, onRefused: () => {} };
   },
   addProseMirrorPlugins() {
-    const options = this.options;
+    return [suggestionPlugin(this.options)];
+  },
+});
+
+export function suggestionPlugin(options: SuggestModeOptions): Plugin {
     let current: { id: string; at: number; time: number } | null = null;
     const idFor = (pos: number) => {
       const now = Date.now();
@@ -91,27 +151,15 @@ export const SuggestMode = Extension.create<SuggestModeOptions>({
       current.time = now;
       return current.id;
     };
-    return [
-      new Plugin({
+    return new Plugin({
         key: suggestModeKey,
-        filterTransaction(tr: Transaction, state: EditorState) {
-          if (!options.isOn() || !tr.docChanged || isRemote(tr) || tr.getMeta(FIX)) return true;
-          let doc = state.doc;
-          for (const step of tr.steps) {
-            if (!suggestible(step, doc)) {
-              options.onRefused("In suggesting mode you can add and remove text within a paragraph. Switch to editing for other changes.");
-              return false;
-            }
-            const next = step.apply(doc).doc;
-            if (!next) return false;
-            doc = next;
-          }
-          return true;
-        },
         appendTransaction(transactions, oldState, newState) {
           if (!options.isOn()) return null;
           const local = transactions.filter(tr => tr.docChanged && !isRemote(tr) && !tr.getMeta(FIX));
           if (!local.length) return null;
+          if (local.some(tr => tr.steps.some((step, index) => !suggestible(step, tr.docs[index]!)))) {
+            return structuralSuggestion(oldState, newState, idFor(newState.selection.from), options.author);
+          }
           const schema = newState.schema;
           const insertType = schema.marks.suggestionInsert;
           const deleteType = schema.marks.suggestionDelete;
@@ -149,7 +197,8 @@ export const SuggestMode = Extension.create<SuggestModeOptions>({
                   const end = Math.min(s.to, pos + node.nodeSize);
                   if (end <= start) return false;
                   // Removing your own suggested text really removes it.
-                  if (ownInsert(node.marks, options.author)) return false;
+                  const suggested = node.attrs.suggestion as NodeSuggestion | null;
+                  if (ownInsert(node.marks, options.author) || suggested?.kind === "insert" && suggested.author === options.author) return false;
                   const piece = node.isText ? node.cut(start - pos, end - pos) : node;
                   nodes.push(piece);
                   return false;
@@ -165,6 +214,11 @@ export const SuggestMode = Extension.create<SuggestModeOptions>({
             const id = idFor(a);
             fix.removeMark(a, b, deleteType);
             fix.addMark(a, b, insertType.create({ id, author: options.author }));
+            fix.doc.nodesBetween(a, b, (node, pos) => {
+              if (node.isInline && !node.isText && !node.attrs.suggestion) {
+                fix.setNodeMarkup(pos, undefined, { ...node.attrs, suggestion: { kind: "insert", id, author: options.author } }, node.marks.filter(m => m.type !== insertType && m.type !== deleteType));
+              }
+            });
           }
           // Put deleted text back, marked as a suggested deletion (from the end, so positions hold).
           restore.sort((x, y) => y.pos - x.pos);
@@ -174,8 +228,10 @@ export const SuggestMode = Extension.create<SuggestModeOptions>({
             const id = idFor(at);
             let offset = at;
             for (const node of nodes) {
-              const already = node.marks.some(m => m.type === deleteType);
-              const marked = already || !node.isText ? node : node.mark(deleteType.create({ id, author: options.author }).addToSet(node.marks.filter(m => m.type !== insertType)));
+              const already = node.marks.some(m => m.type === deleteType || m.type === insertType);
+              const marked = node.isText
+                ? (already ? node : node.mark(deleteType.create({ id, author: options.author }).addToSet(node.marks.filter(m => m.type !== insertType))))
+                : (node.attrs.suggestion ? node : node.type.create({ ...node.attrs, suggestion: { kind: "delete", id, author: options.author } }, node.content, node.marks));
               fix.insert(offset, marked);
               offset += marked.nodeSize;
             }
@@ -184,15 +240,25 @@ export const SuggestMode = Extension.create<SuggestModeOptions>({
           if (cursor !== null && !inserted.length) fix.setSelection(TextSelection.create(fix.doc, cursor));
           return fix;
         },
-      }),
-    ];
-  },
-});
+      });
+}
+
 
 /** The suggestions in the doc, by id, in document order. */
 export function suggestionsIn(doc: PMNode): { id: string; author: string; from: number; to: number; inserted: string; deleted: string }[] {
   const found = new Map<string, { id: string; author: string; from: number; to: number; inserted: string; deleted: string }>();
   doc.descendants((node, pos) => {
+    const suggestion = node.attrs.suggestion as NodeSuggestion | null;
+    if (suggestion) {
+      const { id, author, kind } = suggestion;
+      const entry = found.get(id) ?? { id, author, from: pos, to: pos + node.nodeSize, inserted: "", deleted: "" };
+      entry.from = Math.min(entry.from, pos);
+      entry.to = Math.max(entry.to, pos + node.nodeSize);
+      const label = node.textContent || String(node.attrs.alt || node.attrs.latex || node.attrs.title || node.type.name);
+      if (kind === "insert") entry.inserted += label;
+      else entry.deleted += label;
+      found.set(id, entry);
+    }
     if (!node.isText) return true;
     for (const mark of node.marks) {
       if (mark.type.name !== "suggestionInsert" && mark.type.name !== "suggestionDelete") continue;

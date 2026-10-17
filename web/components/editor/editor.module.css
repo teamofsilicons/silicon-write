@@ -260,3 +260,9 @@
 }
 .prose :global(.authorship-silicon) { background: var(--accent-subtle); color: var(--accent-ink); }
 @media (max-width: 900px) { .prose :global(.authorship-gutter) { position: static; display: inline-flex; margin-right: .4em; vertical-align: middle; } }
+
+/* Structural proposals carry the same author and decision as text proposals. */
+.prose :global([data-suggestion-kind="insert"]) { background: rgb(43 113 72 / .08); outline: 1px solid rgb(43 113 72 / .3); }
+.prose :global([data-suggestion-kind="delete"]) { background: rgb(180 35 24 / .06); outline: 1px dashed rgb(180 35 24 / .35); }
+.editor[data-mode="viewing"] .prose :global([data-suggestion-kind="insert"]) { display: none; }
+.editor[data-mode="viewing"] .prose :global([data-suggestion-kind="delete"]) { background: none; outline: none; }
