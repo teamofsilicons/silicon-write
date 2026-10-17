@@ -1441,7 +1441,6 @@ function historyCalls(docId, ownerId) {
     ["GET", `/v1/docs/${docId}/prosemirror?seq=1`],
     ["GET", `/v1/docs/${docId}/export?format=md&seq=1`],
     ["GET", `/v1/docs/${docId}/activity`],
-    ["GET", `/v1/docs/${docId}/authorship`],
   ];
 }
 
@@ -1473,6 +1472,12 @@ describe("only editors use the history", () => {
     expectStatus(await owner.api.put(`/v1/docs/${doc.id}/public`, { access: "comment" }), 200, "letting anyone with the link comment");
     await check(stranger, [403], "a stranger with the comment link");
     await check(anonymous(), [401, 403], "anonymous with the comment link");
+    // Who wrote each part isn't history: it's for everyone signed in who can open the doc
+    // (UNDERSTANDING.md, "Any part of a doc shows who wrote it").
+    for (const [who, label] of [[viewer, "a viewer"], [commenter, "a Silicon commenter"], [stranger, "a stranger with the comment link"]]) {
+      expectStatus(await who.api.get(`/v1/docs/${doc.id}/authorship`), 200, `${label} asking who wrote what`);
+    }
+    expectOneOf(await anonymous().api.raw("GET", `/v1/docs/${doc.id}/authorship`), [401], "anonymous asking who wrote what");
 
     assert.equal(await docSeq(owner, doc.id), latest, "nothing refused made a version");
     assert.equal(await currentMarkdown(owner, doc.id), before);

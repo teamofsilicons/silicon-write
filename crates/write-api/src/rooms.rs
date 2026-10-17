@@ -833,7 +833,20 @@ async fn handle(state: &AppState, room: &Arc<Room>, conn_id: u64, bytes: &[u8]) 
         match message {
             Message::Sync(SyncMessage::SyncStep1(sv)) => {
                 let inner = room.inner.lock().await;
-                let update = inner.ydoc.transact().encode_state_as_update_v1(&sv);
+                // The history (the text of everything deleted) is for editors, like versions: anyone else
+                // syncs from a copy without it.
+                let reader = inner.conns.get(&conn_id).is_some_and(|c| c.role < Role::Editor);
+                let update = if reader {
+                    match write_doc::history::without_history(&inner.full_state()) {
+                        Ok(doc) => doc.transact().encode_state_as_update_v1(&sv),
+                        Err(e) => {
+                            tracing::warn!(doc = %room.doc_id, error = %e, "couldn't make a copy without the history");
+                            continue;
+                        }
+                    }
+                } else {
+                    inner.ydoc.transact().encode_state_as_update_v1(&sv)
+                };
                 if let Some(conn) = inner.conns.get(&conn_id) {
                     let _ = conn.tx.send(WsMessage::Binary(encode(&Message::Sync(SyncMessage::SyncStep2(update))).into()));
                 }

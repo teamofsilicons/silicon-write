@@ -139,6 +139,20 @@ pub fn undo_author_since(
     Ok(ydoc::read_doc(&ydoc))
 }
 
+/// The doc a full state describes, without the text of anything deleted: what someone who may not
+/// read its history (a viewer, a commenter, someone with a public link) is given. Deleted items keep
+/// their place (so later changes still land right), only their content goes.
+pub fn without_history(full_state: &[u8]) -> Result<yrs::Doc, yrs::encoding::read::Error> {
+    let doc = yrs::Doc::with_options(yrs::Options {
+        skip_gc: false,
+        offset_kind: yrs::OffsetKind::Utf16,
+        ..yrs::Options::default()
+    });
+    let update = Update::decode_v1(full_state)?;
+    doc.transact_mut().apply_update(update).map_err(|_| yrs::encoding::read::Error::UnexpectedValue)?;
+    Ok(doc)
+}
+
 /// For each client that inserted anything in an update: the clock just past its last insertion.
 /// (`Update::state_vector` only counts updates that start at clock 0, i.e. whole documents.)
 pub fn inserted_upper(update: &Update) -> Vec<(u64, u32)> {
