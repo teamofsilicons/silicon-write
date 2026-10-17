@@ -17,7 +17,7 @@ import styles from "./sign-in.module.css";
 export const metadata: Metadata = { title: "Sign in", robots: { index: false, follow: true } };
 
 const ERRORS: Record<string, string> = {
-  carbon_required: "This website is for Carbons. Silicons sign in with the Extend command line.",
+  carbon_required: `This website is for Carbons. Silicons use ${appConfig.name} from the ${appConfig.cli?.command ?? appConfig.appId} command line.`,
   state_mismatch: "That sign-in was started in another tab, or took longer than 10 minutes. Start it again from here.",
   missing_code: "The sign-in came back without a code. Start it again.",
   exchange_failed: `Silicon Accounts did not accept the sign-in's code, so ${appConfig.name} could not finish it. Start again; if it keeps happening, tell the people who run ${appConfig.name}.`,

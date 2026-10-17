@@ -35,7 +35,7 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
   const install = `silicon-apps install ${appId}`;
   const siliconCode = [
     install,
-    ...(cli ? [`silicon-accounts login --app ${appId} -q | ${cli.command} login --slt-stdin`, `${cli.command} --help`] : []),
+    ...(cli ? [`silicon-accounts login --app ${appId} -q | ${cli.command} login --token-stdin`, `${cli.command} --help`] : []),
   ].join("\n");
   const primary = signedIn ? { href: appConfig.home, label: `Open ${name}` } : { href: "/auth/sign-in", label: `Sign in to ${name}` };
   return (

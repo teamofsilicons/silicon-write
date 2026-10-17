@@ -718,7 +718,7 @@ struct LoginArgs {
     #[arg(long, value_name = "TOKEN", conflicts_with = "token_stdin")]
     slt: Option<String>,
     /// Silicon: read the short-lived token from stdin
-    #[arg(long)]
+    #[arg(long, alias = "slt-stdin")]
     token_stdin: bool,
     /// Sign in again even if already signed in
     #[arg(long)]
