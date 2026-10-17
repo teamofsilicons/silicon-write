@@ -1506,7 +1506,8 @@ pub fn quote_map<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, map: &TextMap) -> (
                         let text = match atom {
                             Inline::HardBreak => "\n".to_owned(),
                             Inline::InlineMath { latex } => latex,
-                            Inline::DocLink { title, .. } => title,
+                            Inline::DocLink { title, alias } => alias.unwrap_or(title),
+                            Inline::Image { alt, .. } => alt.unwrap_or_default(),
                             _ => String::new(),
                         };
                         out.add(&text, |_| (at, at + 1));

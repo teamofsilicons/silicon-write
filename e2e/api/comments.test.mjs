@@ -797,6 +797,28 @@ describe("comments stay on their text as the doc changes", () => {
     assert.deepEqual(got, { "restore-version": back, undo: back }, "the paragraph is back, but its comment still says its text was deleted");
   });
 
+  test("a deleted comment never jumps to duplicate or retyped words, and an explicit restore finds its original place", async () => {
+    const owner = await solo();
+    const original = "Before.\n\nCommented passage.\n\nAfter.\n";
+    const doc = await newDoc(owner, original);
+    const thread = await comment(owner, doc.id, quote("Commented passage"), "Original occurrence");
+    const before = await seqOf(owner, doc.id);
+    assert.equal((await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{old: "After.", new: "After.\n\nCommented passage."}] })).status, 200);
+    assert.equal((await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{old: "Before.\n\nCommented passage.\n\nAfter.", new: "Before.\n\nAfter."}] })).status, 200);
+    assert.equal((await threadNow(owner,doc.id,thread.id)).orphaned,true,"the other copy is not the original passage");
+    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/markdown`, {markdown:original})).status,200);
+    assert.equal((await threadNow(owner,doc.id,thread.id)).orphaned,true,"ordinary retyping does not restore a deleted comment");
+    assert.equal((await owner.api.put(`/v1/docs/${doc.id}/markdown`, {markdown:"Before.\n\nAfter.\n"})).status,200);
+    assert.equal((await owner.api.post(`/v1/docs/${doc.id}/restore-version`, {seq:before})).status,200);
+    const restored = await threadNow(owner,doc.id,thread.id);
+    assert.deepEqual([restored.orphaned,restored.current_quote,restored.block_index],[false,"Commented passage",1]);
+    const browser = await live(owner,doc.id);
+    try {
+      const start = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(Buffer.from(restored.anchor.start,"base64")),browser.ydoc);
+      assert.ok(start,"the returned anchor also resolves in the web editor");
+    } finally {browser.close();}
+  });
+
   test("when its text is deleted the thread stays, orphaned, showing the text it was on", async () => {
     const owner = await carbon("follow-delete");
     const commenter = await carbon("follow-delete-c");
@@ -923,7 +945,7 @@ describe("comments stay on their text as the doc changes", () => {
       await liveChange(owner, doc.id, () => client.fragment.delete(indexOfBlock(client.fragment, "bulletList"), 1));
       all = await threads(owner, doc.id);
       assert.equal(where(list.id).orphaned, true, "deleting the section orphans its thread");
-      assert.equal(where(list.id).quote, "onetwo");
+      assert.equal(where(list.id).quote, "one\ntwo");
       assert.equal(where(cell.id).orphaned, false);
       assert.equal(where(cell.id).block_index, 3);
 
@@ -1624,8 +1646,6 @@ describe("notifications through Silicon Ting", () => {
   });
 
   test("a Carbon whose first registration with Ting was refused is registered once they keep using Silicon Write", async () => {
-    // Silicon Write's registration request is keyed per account per 10 minutes: stay inside one such window.
-    while ((Date.now() / 1000) % 600 > 500) await sleep(1_000);
     const account = await signUpCarbon("ting-renamed");
     const signedInBefore = writeApi((await carbonTokens(account)).access_token);
     // The Carbon changes their c:id after signing in to write, so that sign-in's first registration names the old id.
