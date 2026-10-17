@@ -237,8 +237,9 @@ fn a_later_structural_accept_cannot_reuse_offsets_of_text_already_deleted_in_pla
     let mut history = History::new("Alpha target omega tail.");
     let anchor = history.anchor("target");
     let original_id = {
+        let fragment = ydoc::fragment(&history.y);
         let txn = history.y.transact();
-        ydoc::fragment(&history.y).get(&txn, 0).unwrap().id()
+        fragment.get(&txn, 0).unwrap().id()
     };
     history.change(|txn, fragment| {
         let XmlOut::Element(paragraph) = fragment.get(txn, 0).unwrap() else {
@@ -268,11 +269,9 @@ fn a_later_structural_accept_cannot_reuse_offsets_of_text_already_deleted_in_pla
     };
     history.change(|txn, fragment| ydoc::patch(txn, fragment, &before, &after, &mode));
     {
+        let fragment = ydoc::fragment(&history.y);
         let txn = history.y.transact();
-        assert_eq!(
-            ydoc::fragment(&history.y).get(&txn, 0).unwrap().id(),
-            original_id
-        );
+        assert_eq!(fragment.get(&txn, 0).unwrap().id(), original_id);
     }
     assert_eq!(history.current_quote(&anchor), None);
     history.decide("s_heading", true);
