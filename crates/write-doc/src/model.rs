@@ -261,10 +261,16 @@ impl Block {
     /// A paragraph or heading whose text is all a pending suggested insertion: it isn't in the doc
     /// yet, so the Markdown leaves it out.
     pub fn is_suggested_only(&self) -> bool {
+        self.is_all_suggested(SuggestionKind::Insert)
+    }
+
+    /// A paragraph or heading whose text is all pending suggestions of this kind: resolving them
+    /// that way (rejecting insertions, accepting deletions) takes the block away with its text.
+    pub fn is_all_suggested(&self, kind: SuggestionKind) -> bool {
         self.inline_content().is_some_and(|content| {
             !content.is_empty()
                 && content.iter().all(|inline| {
-                    matches!(inline, Inline::Text { marks, .. } if marks.suggestion.as_ref().is_some_and(|s| s.kind == SuggestionKind::Insert))
+                    matches!(inline, Inline::Text { marks, .. } if marks.suggestion.as_ref().is_some_and(|s| s.kind == kind))
                 })
         })
     }
@@ -419,6 +425,7 @@ impl Doc {
     /// left out, and text suggested for deletion stays.
     pub fn without_suggestions(&self) -> Doc {
         let mut doc = self.clone();
+        drop_all_suggested(&mut doc.blocks, SuggestionKind::Insert);
         map_inlines(&mut doc.blocks, &mut |content| {
             let kept = content
                 .drain(..)
@@ -441,6 +448,7 @@ impl Doc {
     /// The doc with every pending suggestion accepted.
     pub fn with_suggestions_accepted(&self) -> Doc {
         let mut doc = self.clone();
+        drop_all_suggested(&mut doc.blocks, SuggestionKind::Delete);
         map_inlines(&mut doc.blocks, &mut |content| {
             let kept = content
                 .drain(..)
@@ -524,6 +532,43 @@ impl Doc {
 }
 
 /// Calls `f` on the inline content of every text block, depth first.
+/// Leaves out the paragraphs and headings whose text is all pending suggestions of `kind`, as
+/// resolving every suggestion that way does (`ydoc::resolve_suggestion`): never the last block of
+/// the doc, a list item, a quote or a cell.
+fn drop_all_suggested(blocks: &mut Vec<Block>, kind: SuggestionKind) {
+    for block in blocks.iter_mut() {
+        match block {
+            Block::BulletList { items } | Block::OrderedList { items, .. } => {
+                for item in items {
+                    drop_all_suggested(&mut item.blocks, kind);
+                }
+            }
+            Block::TaskList { items } => {
+                for item in items {
+                    drop_all_suggested(&mut item.blocks, kind);
+                }
+            }
+            Block::Blockquote { blocks } => drop_all_suggested(blocks, kind),
+            Block::Table { rows } => {
+                for row in rows {
+                    for cell in &mut row.cells {
+                        drop_all_suggested(&mut cell.blocks, kind);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut i = 0;
+    while i < blocks.len() {
+        if blocks.len() > 1 && blocks[i].is_all_suggested(kind) {
+            blocks.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
 pub fn map_inlines(blocks: &mut [Block], f: &mut dyn FnMut(&mut Vec<Inline>)) {
     for block in blocks {
         match block {

@@ -293,7 +293,7 @@ impl Edit {
     }
 }
 
-/// `{ "seq", "markdown" }` after an edit or a whole-doc write.
+/// `{ "seq", "markdown", "conflicts" }` after an edit or a whole-doc write.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EditResult {
@@ -301,6 +301,26 @@ pub struct EditResult {
     pub seq: i64,
     /// The doc as Markdown after the change.
     pub markdown: String,
+    /// The change was made as a suggestion (asked for, or because the caller is a commenter).
+    pub suggested: bool,
+    /// A whole-doc write from an older version (`base_seq`): where it met changes made since and
+    /// both changed the same text.
+    pub conflicts: Vec<MergeConflict>,
+}
+
+/// A passage both a whole-doc write and the changes made since it was read changed differently.
+/// The doc keeps its text, and the written text became a suggestion on it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MergeConflict {
+    /// The passage as it was at the version the write started from (Markdown).
+    pub was: String,
+    /// The passage as the doc has it, which it keeps.
+    pub now: String,
+    /// The passage as the write had it.
+    pub yours: String,
+    /// The suggestion it became (accepting it uses `yours`); none when the doc already read so.
+    pub suggestion: Option<String>,
 }
 
 /// `{ "seq" }`.

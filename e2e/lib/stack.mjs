@@ -198,17 +198,31 @@ export async function carbonCliHome(carbon) {
 
 /** A new Silicon whose custodian is `carbon`, signed in to the Accounts CLI in its own home. */
 export async function createSilicon(carbon, label = "writer") {
-  const carbonHome = carbon.cliHome ?? (carbon.cliHome = await carbonCliHome(carbon));
   const handle = `${label.replace(/[^a-z0-9]/g, "").slice(0, 12)}_${unique()}`;
-  const created = await accounts(carbonHome, ["silicon", "create", "--id", `si:${handle}`, "--json"]);
-  if (created.code !== 0) throw new Error(`creating si:${handle} failed: ${created.stdout}${created.stderr}`);
-  const stk = created.json?.stk ?? created.json?.silicon?.stk;
-  if (!stk) throw new Error(`no STK in ${created.stdout}`);
+  // Through the Carbon's account-site session when there is one: no sign-in code, so the limit on codes
+  // per network (30 per 10 minutes, which parallel suites reach) never applies. The CLI otherwise.
+  let stk = carbon.session ? await createSiliconOnSite(carbon, handle) : null;
+  if (!stk) {
+    const carbonHome = carbon.cliHome ?? (carbon.cliHome = await carbonCliHome(carbon));
+    const created = await accounts(carbonHome, ["silicon", "create", "--id", `si:${handle}`, "--json"]);
+    if (created.code !== 0) throw new Error(`creating si:${handle} failed: ${created.stdout}${created.stderr}`);
+    stk = created.json?.stk ?? created.json?.silicon?.stk;
+    if (!stk) throw new Error(`no STK in ${created.stdout}`);
+  }
   const home = freshDir("write-e2e-silicon-");
   const login = await accounts(home, ["login", "--silicon", `si:${handle}`, "--stk-stdin", "--json"], { stdin: `${stk}\n` });
   if (login.code !== 0) throw new Error(`signing si:${handle} in failed: ${login.stdout}${login.stderr}`);
   const me = await accounts(home, ["whoami", "--json"]);
   return { kind: "silicon", id: `si:${handle}`, uuid: me.json?.uuid, stk, home };
+}
+
+/** POST /v1/me/silicons as the Carbon, through the account site: the new Silicon's STK, or null. */
+async function createSiliconOnSite(carbon, handle) {
+  const jar = new Jar();
+  jar.cookies.set("sa_session", carbon.session);
+  const name = `${handle[0].toUpperCase()}${handle.slice(1).replace(/_/g, " ")}`;
+  const answer = await siteCall(jar, carbon.ip, "POST", "/v1/me/silicons", { id: `si:${handle}`, display_name: name, timezone: "Asia/Kolkata" });
+  return answer.status === 201 && typeof answer.body?.stk === "string" ? answer.body.stk : null;
 }
 
 /** A short-lived token for `write`, minted by a signed-in Silicon. */

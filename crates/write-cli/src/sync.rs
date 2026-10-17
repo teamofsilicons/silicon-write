@@ -901,7 +901,8 @@ pub async fn push(ctx: &Ctx, dir: Option<PathBuf>, suggest: bool) -> CliResult<(
                 if merged {
                     write_local(&root, path, &result.markdown)?;
                 }
-                report.pushed.push(json!({ "path": path, "doc": entry.doc, "seq": result.seq, "merged": merged && !suggest, "suggested": suggest }));
+                let suggested = suggest || result.suggested;
+                report.pushed.push(json!({ "path": path, "doc": entry.doc, "seq": result.seq, "merged": merged && !suggested, "suggested": suggested, "conflicts": result.conflicts }));
                 state.files.insert(path.clone(), FileEntry { seq: result.seq, markdown: result.markdown, ..entry });
             }
             Err(e) => report.failed.push(json!({ "path": path, "doc": entry.doc, "error": CliError::from(e).to_json()["error"] })),
@@ -1018,7 +1019,10 @@ pub async fn push(ctx: &Ctx, dir: Option<PathBuf>, suggest: bool) -> CliResult<(
             r.unchanged
         );
         for p in &r.pushed {
-            let note = if p["suggested"].as_bool() == Some(true) {
+            let conflicts = p["conflicts"].as_array().map(Vec::len).unwrap_or(0);
+            let note = if conflicts > 0 {
+                "  (changed since you pulled it, differently from you, in places: the doc kept its text there and yours are suggestions; `write suggestions` lists them)"
+            } else if p["suggested"].as_bool() == Some(true) {
                 "  (sent as a suggestion; the file shows the doc as it reads until it is accepted)"
             } else if p["merged"].as_bool() == Some(true) {
                 "  (merged with others' changes; file refreshed)"

@@ -84,6 +84,10 @@ applied, merged with everything that happened since:
     write cat "Launch plan" --json > doc.json     # {"seq":42,"markdown":"…","title":"…"}
     write put "Launch plan" new.md --base-seq 42
 
+If someone changed the same text differently since you read it, nothing is overwritten: the doc
+keeps their text there, your version of that passage becomes your suggestion on it, and `put`
+lists each one (`conflicts` in `--json`) with the commands to accept or reject it.
+
 Create docs:
 
     write new --title "Weekly notes" --folder Plans --file notes.md
@@ -109,7 +113,8 @@ made safe for file names, and duplicate titles get ` (2)`, ` (3)`. `.write/state
 which file is which doc and the `seq` it was pulled at.
 
 - `push` sends each changed file with the seq it was pulled at, so others' changes made since
-  are kept; the file is then refreshed with the merged result.
+  are kept; the file is then refreshed with the merged result. Where someone changed the same
+  text differently, the doc keeps theirs and yours becomes a suggestion (`write suggestions`).
 - A new `.md` file becomes a new doc in the matching folder (missing folders are created).
 - Renaming or moving a file (without changing it) renames or moves its doc.
 - Deleting a file never deletes the doc; `push` only reports it. Use `write rm` for that.

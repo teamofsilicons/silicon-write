@@ -406,49 +406,13 @@ pub async fn edit_expecting<T>(
 ) -> ApiResult<(T, i64)> {
     let room = state.rooms.get(state, doc_id).await?;
     let mut inner = room.inner.lock().await;
-    if inner.poisoned {
-        return Err(ApiError::unavailable("This doc is being reloaded.").hint("Try again in a moment."));
-    }
-    if inner.deleted {
-        return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
-    }
-    if expect_seq.is_some_and(|seq| seq != inner.seq) {
-        return Err(ApiError::conflict("The doc changed meanwhile."));
-    }
-    let client = loop {
-        let candidate = ids::new_client_id();
-        if !inner.clients.contains_key(&candidate) {
-            break candidate;
-        }
-    };
-    let copy = ydoc::new_ydoc(client);
-    let base_state = match base_seq {
-        Some(seq) if seq < inner.seq => {
-            let updates: Vec<Vec<u8>> = sqlx::query_scalar("select update from doc_updates where doc_id = $1 and seq <= $2 order by seq")
-                .bind(doc_id)
-                .bind(seq)
-                .fetch_all(&state.db)
-                .await?;
-            let base = write_doc::history::replay(updates.iter().map(|u| u.as_slice()))?;
-            base.transact().encode_state_as_update_v1(&StateVector::default())
-        }
-        _ => inner.full_state(),
-    };
-    copy.transact_mut().apply_update(Update::decode_v1(&base_state).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
-    let before = copy.transact().state_vector();
-    let before_snapshot = copy.transact().snapshot();
-    let result = f(&copy)?;
-    let changed = copy.transact().encode_diff_v1(&before);
-    // Deletions alone don't move the state vector, so compare whole snapshots.
-    let has_changes = copy.transact().snapshot() != before_snapshot;
-    if !has_changes {
+    inner.editable(expect_seq)?;
+    let copy = inner.copy(state, doc_id, base_seq, &[]).await?;
+    let result = f(&copy.doc)?;
+    if !copy.changed() {
         return Ok((result, inner.seq));
     }
-    inner.claim_client(state, doc_id, client, author).await?;
-    {
-        let update = Update::decode_v1(&changed).map_err(ApiError::internal)?;
-        inner.ydoc.transact_mut().apply_update(update).map_err(ApiError::internal)?;
-    }
+    inner.take(state, doc_id, author, &copy).await?;
     inner.commit(state, doc_id, author, origin, None).await?;
     inner.broadcast_authors(state).await;
     let seq = inner.seq;
@@ -458,6 +422,164 @@ pub async fn edit_expecting<T>(
         tracing::warn!(doc = %doc_id, error = %e.message, "indexing failed");
     }
     Ok((result, seq))
+}
+
+/// What became of a whole new version written with [`write_version`].
+pub struct Written {
+    pub seq: i64,
+    /// Where it met changes made since and couldn't merge cleanly, each with the id of the
+    /// suggestion it became (none when the doc already read that way).
+    pub conflicts: Vec<(write_doc::merge::Conflict, Option<String>)>,
+}
+
+/// A whole new version of the doc (`new`, as read from Markdown) written as `author` from the doc as
+/// it was at `base_seq` (`PUT …/markdown`), merged with everything changed since
+/// ([`write_doc::merge`], UNDERSTANDING.md "Never overwritten"): the clean part as one change (a
+/// suggestion when `mode` says so), then each conflict as `author`'s suggestion on the doc as it
+/// is, all under the room's lock so nothing comes in between. `check` sees the doc before and after
+/// each change and can refuse it (a commenter may only add suggestions).
+pub async fn write_version(
+    state: &AppState,
+    doc_id: &str,
+    author: &str,
+    base_seq: Option<i64>,
+    new: &write_doc::Doc,
+    mode: &ydoc::EditMode,
+    check: impl Fn(&write_doc::Doc, &write_doc::Doc) -> ApiResult<()>,
+) -> ApiResult<Written> {
+    use write_doc::merge;
+    let normal = |doc: &write_doc::Doc| write_doc::from_markdown(&write_doc::to_markdown(doc));
+    let room = state.rooms.get(state, doc_id).await?;
+    let mut inner = room.inner.lock().await;
+    inner.editable(None)?;
+    // The doc as it is, when it changed since the version the new one was written from.
+    let theirs = base_seq.filter(|seq| *seq < inner.seq).map(|_| normal(&inner.read()));
+
+    let copy = inner.copy(state, doc_id, base_seq, &[]).await?;
+    let before = ydoc::read_doc(&copy.doc);
+    let base = normal(&before);
+    let plan = match &theirs {
+        Some(theirs) => merge::plan(&base, theirs, new),
+        None => merge::Plan { direct: new.clone(), conflicts: vec![] },
+    };
+    ydoc::with_txn(&copy.doc, |txn, frag| ydoc::patch(txn, frag, &base, &plan.direct, mode));
+    check(&before, &ydoc::read_doc(&copy.doc))?;
+    let mut changed = false;
+    if copy.changed() {
+        inner.take(state, doc_id, author, &copy).await?;
+        inner.commit(state, doc_id, author, if mode.suggest.is_some() { Origin::Suggestion } else { Origin::Edit }, None).await?;
+        changed = true;
+    }
+
+    // Each conflict becomes a suggestion, made on its own copy of the doc as it is now.
+    let mut conflicts = vec![];
+    if let (Some(theirs), false) = (&theirs, plan.conflicts.is_empty()) {
+        let now = normal(&inner.read());
+        let mut copies: Vec<Copy> = vec![];
+        for conflict in plan.conflicts {
+            let taken: Vec<u64> = copies.iter().map(|c| c.client).collect();
+            let copy = inner.copy(state, doc_id, None, &taken).await?;
+            let current = ydoc::read_doc(&copy.doc);
+            let id = ids::new_id("s");
+            let target = merge::place(theirs, &now, &conflict);
+            let suggest = ydoc::EditMode { suggest: Some((id.clone(), author.to_owned())) };
+            ydoc::with_txn(&copy.doc, |txn, frag| ydoc::patch(txn, frag, &now, &target, &suggest));
+            check(&current, &ydoc::read_doc(&copy.doc))?;
+            let made = copy.changed();
+            if made {
+                copies.push(copy);
+            }
+            conflicts.push((conflict, made.then_some(id)));
+        }
+        for copy in &copies {
+            inner.take(state, doc_id, author, copy).await?;
+        }
+        if !copies.is_empty() {
+            inner.commit(state, doc_id, author, Origin::Suggestion, None).await?;
+            changed = true;
+        }
+    }
+    let seq = inner.seq;
+    if changed {
+        inner.broadcast_authors(state).await;
+    }
+    drop(inner);
+    if changed && let Err(e) = index(state, &room).await {
+        tracing::warn!(doc = %doc_id, error = %e.message, "indexing failed");
+    }
+    Ok(Written { seq, conflicts })
+}
+
+/// A copy of the doc a change is made on, before what it changed is merged into the live doc.
+struct Copy {
+    /// The copy's own client id, which becomes the author's.
+    client: u64,
+    doc: yrs::Doc,
+    before: StateVector,
+    snapshot: yrs::Snapshot,
+}
+
+impl Copy {
+    /// Deletions alone don't move the state vector, so this compares whole snapshots.
+    fn changed(&self) -> bool {
+        self.doc.transact().snapshot() != self.snapshot
+    }
+}
+
+impl RoomState {
+    /// Refuses changes to a doc being reloaded or in the trash, or (with `expect_seq`) one that
+    /// changed meanwhile.
+    fn editable(&self, expect_seq: Option<i64>) -> ApiResult<()> {
+        if self.poisoned {
+            return Err(ApiError::unavailable("This doc is being reloaded.").hint("Try again in a moment."));
+        }
+        if self.deleted {
+            return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
+        }
+        if expect_seq.is_some_and(|seq| seq != self.seq) {
+            return Err(ApiError::conflict("The doc changed meanwhile."));
+        }
+        Ok(())
+    }
+
+    /// A copy of the doc as it is (or as it was at `base_seq`), with a client id no one has used
+    /// here (nor one in `taken`).
+    async fn copy(&self, state: &AppState, doc_id: &str, base_seq: Option<i64>, taken: &[u64]) -> ApiResult<Copy> {
+        let client = loop {
+            let candidate = ids::new_client_id();
+            if !self.clients.contains_key(&candidate) && !taken.contains(&candidate) {
+                break candidate;
+            }
+        };
+        let doc = ydoc::new_ydoc(client);
+        let base_state = match base_seq {
+            Some(seq) if seq < self.seq => {
+                let updates: Vec<Vec<u8>> = sqlx::query_scalar("select update from doc_updates where doc_id = $1 and seq <= $2 order by seq")
+                    .bind(doc_id)
+                    .bind(seq)
+                    .fetch_all(&state.db)
+                    .await?;
+                let base = write_doc::history::replay(updates.iter().map(|u| u.as_slice()))?;
+                base.transact().encode_state_as_update_v1(&StateVector::default())
+            }
+            _ => self.full_state(),
+        };
+        doc.transact_mut().apply_update(Update::decode_v1(&base_state).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
+        let (before, snapshot) = {
+            let txn = doc.transact();
+            (txn.state_vector(), txn.snapshot())
+        };
+        Ok(Copy { client, doc, before, snapshot })
+    }
+
+    /// Merges what a copy changed into the live doc, as `author`'s (call [`RoomState::commit`] after).
+    async fn take(&mut self, state: &AppState, doc_id: &str, author: &str, copy: &Copy) -> ApiResult<()> {
+        self.claim_client(state, doc_id, copy.client, author).await?;
+        let changed = copy.doc.transact().encode_diff_v1(&copy.before);
+        let update = Update::decode_v1(&changed).map_err(ApiError::internal)?;
+        self.ydoc.transact_mut().apply_update(update).map_err(ApiError::internal)?;
+        Ok(())
+    }
 }
 
 /// Reads the live doc.

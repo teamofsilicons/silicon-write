@@ -118,12 +118,11 @@ pub fn apply_edits(markdown: &str, edits: &[Edit]) -> ApiResult<String> {
 }
 
 pub async fn post_edits(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<EditsBody>) -> ApiResult<Json<Value>> {
-    let min = if body.suggest { Role::Commenter } else { Role::Editor };
-    let (_, role) = access::require_doc(&state, Some(&caller), &id, min).await?;
+    let (_, role) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
     if body.edits.is_empty() {
         return Err(ApiError::invalid("There are no edits."));
     }
-    // Commenters can only suggest.
+    // Commenters can only suggest: what they change becomes a suggestion.
     let suggest = body.suggest || role == Role::Commenter;
     let mode = suggest_mode(&caller, suggest);
     let origin = if suggest { Origin::Suggestion } else { Origin::Edit };
@@ -146,7 +145,7 @@ pub async fn post_edits(State(state): State<AppState>, Auth(caller): Auth, Path(
         Ok(write_doc::to_markdown(&result))
     })
     .await?;
-    Ok(Json(json!({ "seq": seq, "markdown": markdown })))
+    Ok(Json(json!({ "seq": seq, "markdown": markdown, "suggested": suggest })))
 }
 
 #[derive(Deserialize)]
@@ -161,30 +160,34 @@ pub async fn put_markdown(State(state): State<AppState>, Auth(caller): Auth, Pat
     if body.markdown.len() > MAX_MARKDOWN {
         return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "That's more than 5 MB of Markdown."));
     }
-    let min = if body.suggest { Role::Commenter } else { Role::Editor };
-    let (doc_row, role) = access::require_doc(&state, Some(&caller), &id, min).await?;
+    let (doc_row, role) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
     if let Some(base) = body.base_seq
         && (base < 0 || base > doc_row.seq) {
             return Err(ApiError::invalid(format!("base_seq {base} isn't a version of this doc (it's at {}).", doc_row.seq)));
         }
+    // Commenters can only suggest: what they change becomes a suggestion.
     let suggest = body.suggest || role == Role::Commenter;
     let mode = suggest_mode(&caller, suggest);
-    let origin = if suggest { Origin::Suggestion } else { Origin::Edit };
     let new = write_doc::from_markdown(&body.markdown);
     let commenter = role == Role::Commenter;
     let author = caller.uuid.clone();
-    let ((), seq) = rooms::edit(&state, &id, &caller.uuid, origin, body.base_seq, |y| {
-        let current = ydoc::read_doc(y);
-        let base = write_doc::from_markdown(&write_doc::to_markdown(&current));
-        ydoc::with_txn(y, |txn, frag| ydoc::patch(txn, frag, &base, &new, &mode));
-        if commenter && !rooms::suggestion_only(&current, &ydoc::read_doc(y), &author) {
+    let written = rooms::write_version(&state, &id, &caller.uuid, body.base_seq, &new, &mode, |before, after| {
+        if commenter && !rooms::suggestion_only(before, after, &author) {
             return Err(commenter_refusal());
         }
         Ok(())
     })
     .await?;
     let (doc, seq_now) = rooms::read(&state, &id).await?;
-    Ok(Json(json!({ "seq": seq.max(seq_now), "markdown": write_doc::to_markdown(&doc) })))
+    // Where the new version met changes made since and both changed the same text: the doc keeps
+    // its text, and the new text is a suggestion on it.
+    let passage = |blocks: &[write_doc::Block]| write_doc::to_markdown(&write_doc::Doc { blocks: blocks.to_vec() });
+    let conflicts: Vec<Value> = written
+        .conflicts
+        .iter()
+        .map(|(c, suggestion)| json!({ "was": passage(&c.base), "now": passage(&c.theirs), "yours": passage(&c.yours), "suggestion": suggestion }))
+        .collect();
+    Ok(Json(json!({ "seq": written.seq.max(seq_now), "markdown": write_doc::to_markdown(&doc), "suggested": suggest, "conflicts": conflicts })))
 }
 
 // ------------------------------------------------------------------------------------------

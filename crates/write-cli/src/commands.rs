@@ -775,6 +775,8 @@ pub async fn edit(
         }
         err
     })?;
+    // A commenter's changes become suggestions even without --suggest.
+    let suggest = suggest || result.suggested;
     let value =
         json!({ "doc": id, "seq": result.seq, "markdown": result.markdown, "suggest": suggest });
     ctx.emit(&value, || {
@@ -796,10 +798,28 @@ pub async fn put(
         .client
         .put_markdown(&id, &markdown, base_seq, suggest)
         .await?;
+    // A commenter's changes become suggestions even without --suggest.
+    let suggest = suggest || result.suggested;
     let merged = result.markdown != markdown;
-    let value = json!({ "doc": id, "seq": result.seq, "markdown": result.markdown, "merged": merged, "suggest": suggest });
+    let value = json!({ "doc": id, "seq": result.seq, "markdown": result.markdown, "merged": merged, "suggest": suggest, "conflicts": result.conflicts });
     ctx.emit(&value, || {
-        if suggest {
+        if !result.conflicts.is_empty() {
+            let mut out = format!(
+                "Wrote {id} (seq {}). {} changed since you read it, differently from you: the doc keeps its text there, and yours is a suggestion on it.",
+                result.seq,
+                match result.conflicts.len() {
+                    1 => "1 passage".to_owned(),
+                    n => format!("{n} passages"),
+                }
+            );
+            for c in &result.conflicts {
+                out.push_str(&format!("\n\nNow:   {}\nYours: {}", c.now.trim_end(), c.yours.trim_end()));
+                if let Some(s) = &c.suggestion {
+                    out.push_str(&format!("\n`write accept {id} {s}` uses yours; `write reject {id} {s}` keeps it as it is."));
+                }
+            }
+            out
+        } else if suggest {
             format!("Suggested your changes to {id} (seq {}). They show once accepted; `write cat {id} --critic` shows them now.", result.seq)
         } else if merged && base_seq.is_some() {
             format!("Wrote {id} (seq {}). Changes made since then were merged in; read the result with `write cat`.", result.seq)

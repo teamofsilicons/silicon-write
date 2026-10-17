@@ -76,12 +76,17 @@ file is the technical reference.
   `> [!comment t_… by c:saket on "quoted text"] body` (replies follow as `> ↳ si:x: reply`).
 - `GET /v1/docs/{id}/prosemirror?seq=<n>` **public** → `{ "seq", "doc": <ProseMirror JSON> }` (read-only rendering).
 - `POST /v1/docs/{id}/edits` `{ "edits": [{ "old": "exact text", "new": "replacement", "all"?: false }], "suggest"?: false }`
-  → `{ "seq", "markdown" }`. Each `old` is exact text from the current Markdown and must appear once (or `all: true`).
-  Applied together; the change merges with whatever anyone else is doing. `suggest: true` makes it a suggestion.
-- `PUT /v1/docs/{id}/markdown` `{ "markdown", "base_seq"?, "suggest"? }` → `{ "seq", "markdown" }`. Writes a whole new
-  version. With `base_seq` (the `seq` the Markdown was read at), only what changed since then is applied, merged with
-  everything that happened after. The answer is the doc as it reads now, so with `suggest` it doesn't show the
-  suggestion (read it with `suggestions=critic`).
+  → `{ "seq", "markdown", "suggested" }`. Each `old` is exact text from the current Markdown and must appear once (or
+  `all: true`). Applied together; the change merges with whatever anyone else is doing. `suggest: true` makes it a
+  suggestion; a commenter's change always is one (`suggested` says which it was).
+- `PUT /v1/docs/{id}/markdown` `{ "markdown", "base_seq"?, "suggest"? }` → `{ "seq", "markdown", "suggested", "conflicts" }`.
+  Writes a whole new version (as a suggestion with `suggest`, and always for a commenter). With `base_seq` (the `seq` the Markdown was read at), only what changed since then is applied,
+  merged with everything that happened after: what only one side changed is merged, and a change both sides made the
+  same way is made once. Where both changed the same text differently, the doc keeps its text and the written text
+  becomes the writer's suggestion on it; each such passage is in `conflicts` as `{ "was", "now", "yours",
+  "suggestion" }` (Markdown at `base_seq`, as the doc keeps it, as written; the suggestion's id, which accepting
+  applies). The answer is the doc as it reads now, so it doesn't show suggestions (read them with
+  `suggestions=critic`).
 - Search, backlinks and links reflect a change made through the API as soon as the call answers; typing in the editor
   is indexed within about two seconds.
 - `GET /v1/docs/{id}/export?format=md|txt|docx|odt|rtf|html|pdf&seq=<n>` **public** → the file (`Content-Disposition: attachment`).
