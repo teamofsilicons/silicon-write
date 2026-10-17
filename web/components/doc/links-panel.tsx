@@ -10,7 +10,13 @@ import type { Doc } from "@/lib/write/types";
 import styles from "./doc.module.css";
 
 export function LinksPanel({ doc, onClose }: { doc: Doc; onClose: () => void }) {
-  const { data, isLoading } = useQuery({ queryKey: ["backlinks", doc.id], queryFn: () => api.get<{ docs: Doc[] }>(`/v1/docs/${seg(doc.id)}/backlinks`) });
+  const { data, isLoading } = useQuery({
+    queryKey: ["backlinks", doc.id],
+    queryFn: () => api.get<{ docs: Doc[] }>(`/v1/docs/${seg(doc.id)}/backlinks`),
+    // Links typed in another doc reach the index asynchronously. Keep this open panel current.
+    refetchOnMount: "always",
+    refetchInterval: 2_000,
+  });
   const docs = data?.docs ?? [];
   return (
     <aside className={styles.panel} aria-label="Linked from">
