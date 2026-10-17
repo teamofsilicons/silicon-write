@@ -1,0 +1,8 @@
+/target
+/.dev
+node_modules
+.next*
+/web/test-results
+/web/screens
+.env.local
+*.log
