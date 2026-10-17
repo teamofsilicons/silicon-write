@@ -1,13 +1,15 @@
 //! Checks the shared XML before accepting it. The semantic model intentionally ignores unknown
 //! data; that must not let a live writer store content the editor cannot open or attribute.
 
+mod migrations;
+
 use std::collections::HashMap;
 
 use write_doc::model::names::*;
 use write_doc::ydoc;
 use yrs::types::text::YChange;
 use yrs::{
-    Any, BranchID, ID, Out, ReadTxn, Snapshot, StateVector, Text, Transact, Xml, XmlFragment,
+    Any, BranchID, ID, Map, Out, ReadTxn, Snapshot, StateVector, Text, Transact, Xml, XmlFragment,
     XmlOut,
 };
 
@@ -16,7 +18,13 @@ use crate::error::{ApiError, ApiResult};
 pub(super) fn validate(doc: &yrs::Doc) -> ApiResult<()> {
     let fragment = ydoc::fragment(doc);
     let txn = doc.transact();
-    if txn.root_refs().any(|(name, _)| name != ydoc::FRAGMENT) || !children(&txn, &fragment, "doc")
+    if txn.root_refs().any(|(name, _)| {
+        if name == ydoc::FRAGMENT {
+            txn.get_map(name).is_some_and(|map| map.len(&txn) != 0)
+        } else {
+            !migrations::valid(&txn, name)
+        }
+    }) || !children(&txn, &fragment, "doc")
     {
         return Err(ApiError::invalid(
             "That change contains content the editor can't read.",
