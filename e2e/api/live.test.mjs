@@ -76,15 +76,41 @@ async function until(what, check, timeoutMs = 8000) {
 // Accounts and docs
 // ------------------------------------------------------------------------------------------
 
+// These suites share the development Accounts service. A rate-limit refusal happens before
+// the requested lookup/sign-in, so wait for its stated window instead of turning it into a
+// product assertion failure. Other failures are never retried.
+async function accountStep(step) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await step(); } catch (error) {
+      const message = String(error?.message ?? error);
+      if (!/\b429\b/.test(message) || !/rate_limited/.test(message) || attempt >= 5) throw error;
+      const seconds = Number(message.match(/retry_after_seconds"?\s*:\s*(\d+)/)?.[1] ?? 30) + 1;
+      console.warn(`live.test: Accounts sign-in limited; waiting ${seconds} s`);
+      await sleep(seconds * 1000);
+    }
+  }
+}
+
+async function lookupStep(step) {
+  for (let attempt = 0; ; attempt++) {
+    const response = await step();
+    const message = String(response.body?.error?.message ?? "");
+    if (response.status !== 503 || response.body?.error?.code !== "unavailable" || !/Too many account lookups/.test(message) || attempt >= 5) return response;
+    const seconds = Number(message.match(/Wait (\d+) seconds/)?.[1] ?? 30) + 1;
+    console.warn(`live.test: Accounts lookup limited; waiting ${seconds} s`);
+    await sleep(seconds * 1000);
+  }
+}
+
 async function carbon(label) {
-  const account = await signUpCarbon(label);
-  const tokens = await carbonTokens(account);
+  const account = await accountStep(() => signUpCarbon(label));
+  const tokens = await accountStep(() => carbonTokens(account));
   return Object.assign(account, { token: tokens.access_token, api: writeApi(tokens.access_token) });
 }
 
 async function silicon(custodian, label) {
-  const account = await createSilicon(custodian, label);
-  const tokens = await siliconTokens(account);
+  const account = await accountStep(() => createSilicon(custodian, label));
+  const tokens = await accountStep(() => siliconTokens(account));
   return Object.assign(account, { token: tokens.access_token, api: writeApi(tokens.access_token) });
 }
 
@@ -103,13 +129,13 @@ async function newFolder(owner, name = `Live folder ${unique()}`, parentId) {
 }
 
 async function share(owner, docId, to, role) {
-  const r = await owner.api.post(`/v1/docs/${docId}/sharing`, { to: to.id, role });
+  const r = await lookupStep(() => owner.api.post(`/v1/docs/${docId}/sharing`, { to: to.id, role }));
   assert.equal(r.status, 201, `sharing with ${to.id}: ${JSON.stringify(r.body)}`);
   return r.body;
 }
 
 async function shareFolder(owner, folderId, to, role) {
-  const r = await owner.api.post(`/v1/folders/${folderId}/sharing`, { to: to.id, role });
+  const r = await lookupStep(() => owner.api.post(`/v1/folders/${folderId}/sharing`, { to: to.id, role }));
   assert.equal(r.status, 201, `sharing a folder with ${to.id}: ${JSON.stringify(r.body)}`);
   return r.body;
 }
@@ -2788,4 +2814,31 @@ describe("events", () => {
     assert.ok(thread.status === 200 || thread.status === 201, JSON.stringify(thread.body));
     await k.waitEvent("threads");
   });
+});
+
+test("an offline change's deleted text stays private during live broadcasts, while its visible edits reach readers", { timeout: TEST_TIMEOUT }, async () => {
+  const owner = await carbon("liveowner");
+  const viewer = await carbon("liveviewer");
+  const doc = await newDoc(owner, "Visible text");
+  await share(owner, doc.id, viewer, "viewer");
+  const sender = quiet(await connect(owner, doc.id));
+  const editor = quiet(await connect(owner, doc.id));
+  const reader = quiet(await connect(viewer, doc.id));
+  const scratch = scratchFrom(sender);
+  scratch.gc = false;
+  const secret = `offline-private-${unique()}`;
+  const seq = await docSeq(owner, doc.id);
+  const update = updateOf(scratch, frag => {
+    const text = fragText(frag, 0);
+    text.insert(0, secret);
+    text.delete(0, secret.length);
+    text.insert(text.length, " and shared");
+  });
+  assert.ok(Buffer.from(update).includes(Buffer.from(secret)), "the offline update holds its deleted history");
+  sendUpdate(sender, update);
+  await storedAfter(owner, doc.id, seq);
+  await converged([editor, reader], client => blockTexts(client)[0] === "Visible text and shared");
+  assert.equal(receivedText(reader, secret), false, "a reader must never receive the deleted text");
+  assert.equal(receivedText(editor, secret), true, "editors keep access to the stored history");
+  scratch.destroy();
 });
