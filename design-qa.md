@@ -41,3 +41,9 @@ The browser pass exposed two defects, both repaired: composer coordinates could 
 - Deployment unit tests: 12 passed.
 
 Existing browser-suite selectors were adapted to the new menus, collapsed formatting, and header sync state. The standalone Playwright suite was not rerun; browser interaction checks used the requested Chrome session.
+
+## Production verification
+
+Released revision `45dd91f55460103d1a9011abe3adc0391bc52c54` to Vercel and the production API. The existing Chrome sign-in opened the new library. A private synthetic preview document was created, renamed, edited, and reloaded. Comment creation, reply, resolve, and reopen passed. Two Chrome tabs exchanged a text insertion and quote formatting in both directions. After a fresh reload, the text and comments persisted and the section comment still targeted its quoted paragraph.
+
+Live evidence: `.dev/design-reference/12-write-live.png`; deployment details: `deploy/design-release-20261017.json`. No existing user documents were changed. A live-ticket request briefly failed during the service restart; subsequent connections and reloads succeeded. The preview document remains private and was left open in the user's browser.

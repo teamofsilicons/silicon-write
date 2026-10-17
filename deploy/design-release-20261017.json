@@ -1,0 +1,111 @@
+{
+  "recorded_at": "2026-10-17T16:02:01.085685+00:00",
+  "revision": "45dd91f55460103d1a9011abe3adc0391bc52c54",
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment_id": "dpl_HHQDMjVwYq2n5bHMNmVg1bssWtxW",
+    "deployment_url": "https://silicon-write-7iiwzusu6-saketdev12-5675s-projects.vercel.app",
+    "state": "READY",
+    "public_https": true
+  },
+  "api": {
+    "recorded_at": "2026-10-17T16:00:22.730676+00:00",
+    "approved_revision": "45dd91f55460103d1a9011abe3adc0391bc52c54",
+    "aws_account": "234951665042",
+    "region": "us-east-2",
+    "instance_id": "i-0797508582b5e8d9e",
+    "install_ssm_command": "ae80ab5f-8129-4483-a722-a2e615adb26a",
+    "verification": {
+      "installed_revision": "45dd91f55460103d1a9011abe3adc0391bc52c54",
+      "archive_sha256": "81f342456b3a1f269f63c73a7a72576fdefba47ab2c82fe2ebcfe52e11395cb5",
+      "binary_sha256": "8ed29639e0f42faaa3f7a2eca3ae2c01d44979b8e02566623016f09cd43110cf",
+      "previous": "/opt/silicon-write/releases/9fd5907322fa2ee4757cf6a79d647868a917510c",
+      "local_readiness": true,
+      "services": {
+        "silicon-write": "active",
+        "silicon-write-caddy": "active",
+        "silicon-write-backup.timer": "active"
+      },
+      "before_counts": {
+        "docs": 5,
+        "assets": 4,
+        "migrations": 3
+      },
+      "after_counts": {
+        "docs": 5,
+        "assets": 4,
+        "migrations": 3
+      },
+      "predeploy_backup": "predeploy-20261017T155940Z",
+      "backup_files": {
+        "database.dump": "f87c8bd740e3a517aaa8aa3357e87bf0344b8fe824519d126c5429fb991134a4",
+        "files.tar.gz": "1789ad400d17b037c58591a3ea2cd0b413d5ca99c784b6f2ec1ceccf0e6cc784"
+      },
+      "predeploy_backup_receipt_download_verified": true
+    },
+    "public_https": {
+      "url": "https://api.write.teamofsilicons.com/readyz",
+      "status": 200,
+      "body": "ready",
+      "tls_verified": true,
+      "dns": "system resolver"
+    },
+    "source_bundle": {
+      "revision": "45dd91f55460103d1a9011abe3adc0391bc52c54",
+      "path": "/Users/codanium/Documents/silicon/silicon-write/.dev/production/silicon-write-source-45dd91f.bundle",
+      "sha256": "425e2b5edd5f46d4ab061b7d6fa7f07e399495fffa03583bf20d6c8361a4f714",
+      "bytes": 2524698,
+      "complete_history": true,
+      "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-45dd91f.bundle",
+      "download_sha256_verified": true,
+      "download_bundle_verified": true,
+      "s3_version_id": "ZRW7J6Y_pZS43TMTrlVKeeSvGEMNHe97",
+      "server_side_encryption": "AES256"
+    },
+    "secrets_included": false,
+    "restart_diagnostics": {
+      "ssm_command": "5143fe5c-c966-4a39-8a29-d19dde96b429",
+      "result": "One live-ticket request received502 during the API restart at15:59:43UTC. New API listened at15:59:43.736 and Caddy restarted at15:59:45. No later API error or WebSocket rejection appeared in the checked interval.",
+      "additional_service_restart": false
+    }
+  },
+  "browser_verification": {
+    "browser": "existing signed-in Chrome profile",
+    "document_url": "https://write.teamofsilicons.com/d/d_Nhj2QGLLEnjGSmeo6DuP",
+    "private": true,
+    "existing_documents_changed": false,
+    "checks": [
+      "existing Chrome sign-in opens production library",
+      "create private document and rename title",
+      "type text and verify after reload",
+      "post section comment and reply",
+      "resolve and reopen comment thread",
+      "two Chrome tabs exchange edits in both directions",
+      "quote formatting keeps section comment attached after reload"
+    ],
+    "passed": true,
+    "screenshot": ".dev/design-reference/12-write-live.png"
+  },
+  "validation": {
+    "web_unit_tests": 55,
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_build": true,
+    "rust_workspace_tests_passed": true,
+    "api_clippy": true,
+    "focused_api_tests": 3,
+    "deployment_tests": 12,
+    "responsive_viewports": [
+      [
+        390,
+        844
+      ],
+      [
+        390,
+        500
+      ]
+    ],
+    "browser_suite": "Manual CUA in requested Chrome session; standalone Playwright suite not rerun"
+  },
+  "secrets_included": false
+}
