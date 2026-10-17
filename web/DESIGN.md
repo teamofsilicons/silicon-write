@@ -1,4 +1,4 @@
-# The Silicon design system
+# The Silicon design system (as Silicon Write uses it)
 
 > **2026-10-12: the Writings look, light only, no telemetry.** The site now looks like Silicon Writings, the Silicon
 > Apps store and Silicon Accounts: warm paper `#FFFDF9`, ink `#1E1E1C`, Hedvig Letters Serif for titles (page titles in
