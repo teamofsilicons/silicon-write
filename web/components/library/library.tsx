@@ -111,8 +111,9 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const [dialog, setDialog] = useState<Dialogs>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const folder = data?.folder ?? null;
-  const canAdd = view === "mine" && (!folder || atLeast(folder.role, "editor"));
-  const heading = folder ? { title: folder.name, description: folder.owner.uuid !== me ? `${folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : TITLES[view];
+  const inTrash = Boolean(folder?.deleted_at);
+  const canAdd = view === "mine" && !inTrash && (!folder || atLeast(folder.role, "editor"));
+  const heading = folder ? { title: folder.name, description: inTrash ? "This folder is in the trash. Restore it from Trash to add or change its contents." : folder.owner.uuid !== me ? `${folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : TITLES[view];
 
   const newDoc = async () => {
     try {
@@ -187,7 +188,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                 </Button>
               ) : null}
             </div>
-          ) : folder ? (
+          ) : folder && !inTrash ? (
             <Button variant="ghost" size="md" onClick={() => setDialog({ kind: "share", type: "folders", id: folder.id, title: folder.name })}>
               <Users size={16} aria-hidden="true" /> People
             </Button>
@@ -200,7 +201,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
       {empty ? (
         <EmptyState
           title={view === "trash" ? "The trash is empty" : view === "shared" ? "Nothing shared with you yet" : folder ? "This folder is empty" : "No docs yet"}
-          description={view === "trash" ? "Deleted docs and folders come here first." : view === "shared" ? "When someone shares a doc or folder with you, it shows here." : "Make a doc, or open a Word, Markdown, text or PDF file."}
+          description={inTrash ? "Restore this folder from Trash before adding anything to it." : view === "trash" ? "Deleted docs and folders come here first." : view === "shared" ? "When someone shares a doc or folder with you, it shows here." : "Make a doc, or open a Word, Markdown, text or PDF file."}
           action={canAdd ? <Button variant="primary" size="md" onClick={newDoc}>New doc</Button> : undefined}
           icon={<FileText size={22} aria-hidden="true" />}
         />
