@@ -2937,3 +2937,46 @@ test("a new live writer's author map reaches observers before their first change
   });
   assert.ok(authors >= 0 && change > authors, `author map frame ${authors} must precede change frame ${change}`);
 });
+
+test("each API edit announces its author before the exact edit, whole version or conflict reaches observers", { timeout: TEST_TIMEOUT }, async () => {
+  const owner = await carbon("apiowner");
+  const writer = await carbon("apiwriter");
+  const doc = await newDoc(owner, "Original passage");
+  await share(owner, doc.id, writer, "editor");
+  const observer = quiet(await connect(owner, doc.id));
+  const mutations = [
+    () => writer.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Original passage", new: "First API passage" }] }),
+    () => writer.api.put(`/v1/docs/${doc.id}/markdown`, { markdown: "Second API passage" }),
+    () => writer.api.put(`/v1/docs/${doc.id}/markdown`, { markdown: "Conflicting API proposal", base_seq: 1 }),
+  ];
+  for (const mutate of mutations) {
+    const known = new Set(Object.keys(observer.event("authors")?.clients ?? {}));
+    const start = observer.frames.length;
+    const seq = await docSeq(owner, doc.id);
+    const response = await mutate();
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    await storedAfter(owner, doc.id, seq);
+    await until("the API update to arrive", () => observer.frames.slice(start).some(frame => {
+      const decoder = decoding.createDecoder(frame);
+      return decoding.readVarUint(decoder) === MESSAGE_SYNC && decoding.readVarUint(decoder) === 2;
+    }));
+    const announced = new Map();
+    let attributed = 0;
+    for (const frame of observer.frames.slice(start)) {
+      const decoder = decoding.createDecoder(frame);
+      const type = decoding.readVarUint(decoder);
+      if (type === MESSAGE_EVENT) {
+        const event = JSON.parse(new TextDecoder().decode(decoding.readVarUint8Array(decoder)));
+        if (event.type === "authors") for (const [client, account] of Object.entries(event.clients)) announced.set(client, account);
+      } else if (type === MESSAGE_SYNC && decoding.readVarUint(decoder) === 2) {
+        for (const item of Y.decodeUpdate(decoding.readVarUint8Array(decoder)).structs) {
+          const client = String(item.id.client);
+          if (known.has(client)) continue;
+          assert.equal(announced.get(client)?.uuid, writer.uuid, `API client ${client} was announced before its update`);
+          attributed++;
+        }
+      }
+    }
+    assert.ok(attributed > 0, "the accepted API change carries the new writer client");
+  }
+});

@@ -530,8 +530,9 @@ pub async fn edit_expecting<T>(
         return Ok((result, inner.seq));
     }
     inner.take(state, doc_id, author, &copy).await?;
-    inner.commit(state, doc_id, author, origin, None).await?;
+    // The browser attributes an update as it arrives, so publish its new client id first.
     inner.broadcast_authors(state).await;
+    inner.commit(state, doc_id, author, origin, None).await?;
     // A brand-new doc has no one in it to see its creator arrive.
     if !creating && !matches!(origin, Origin::Create) {
         inner.visit(state, author, &copy).await;
@@ -595,6 +596,7 @@ pub async fn write_version(
     let mut last: Option<Copy> = None;
     if copy.changed() {
         inner.take(state, doc_id, author, &copy).await?;
+        inner.broadcast_authors(state).await;
         inner
             .commit(
                 state,
@@ -639,6 +641,7 @@ pub async fn write_version(
             inner.take(state, doc_id, author, copy).await?;
         }
         if !copies.is_empty() {
+            inner.broadcast_authors(state).await;
             inner
                 .commit(state, doc_id, author, Origin::Suggestion, None)
                 .await?;
@@ -648,7 +651,6 @@ pub async fn write_version(
     let seq = inner.seq;
     let changed = last.is_some();
     if let Some(copy) = &last {
-        inner.broadcast_authors(state).await;
         inner.visit(state, author, copy).await;
     }
     drop(inner);
