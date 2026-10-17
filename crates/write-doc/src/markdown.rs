@@ -48,7 +48,7 @@ pub fn to_markdown_with(doc: &Doc, options: &WriteOptions) -> String {
         let current_options = WriteOptions { suggestions: SuggestionView::Current, annotations: options.annotations.clone() };
         let before = to_markdown_with(doc, &current_options);
         let after = to_markdown_with(&doc.with_suggestions_accepted(), &current_options);
-        let diff = similar::TextDiff::configure().timeout(std::time::Duration::from_millis(500)).diff_chars(&before, &after);
+        let diff = similar::TextDiff::configure().timeout(std::time::Duration::from_millis(500)).diff_words(&before, &after);
         let mut out = String::new();
         let mut active = similar::ChangeTag::Equal;
         for change in diff.iter_all_changes() {

@@ -5,7 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { TableKit } from "@tiptap/extension-table";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { SuggestionDelete, SuggestionInsert, SuggestionNodes, suggestionPlugin, suggestionsIn } from "../components/editor/suggestions";
+import { SuggestionDelete, SuggestionInsert, SuggestionNodes, suggestionPlugin, suggestionsIn, suggestionDecorations } from "../components/editor/suggestions";
 
 const Picture = Node.create({ name: "inlineImage", inline: true, group: "inline", atom: true, addAttributes: () => ({ src: { default: "picture.png" } }) });
 const schema = getSchema([StarterKit, TableKit, Picture, SuggestionDelete, SuggestionInsert, SuggestionNodes]);
@@ -84,4 +84,14 @@ test("an author can edit and remove their own inserted block without creating du
   assert.equal(removed.doc.childCount, 1);
   assert.equal(removed.doc.textContent, "After");
   assert.equal(pending(removed.doc).length, 0);
+});
+
+test("structural proposals decorate custom node views and clear after a decision", () => {
+  const picture = schema.nodes.inlineImage.create({ suggestion: { kind: "insert", id: "s_picture", author: "author" } });
+  const doc = schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, picture));
+  const decorations = suggestionDecorations(doc).find();
+  assert.equal(decorations.length, 1);
+  assert.deepEqual([decorations[0].from, decorations[0].to], [1, 2]);
+  const accepted = schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, schema.nodes.inlineImage.create()));
+  assert.equal(suggestionDecorations(accepted).find().length, 0);
 });

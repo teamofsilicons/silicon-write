@@ -995,7 +995,10 @@ describe("Suggestions", TIMEOUT, () => {
     const { owner, doc, silicon } = await setup("One.\n\nTwo.\n\nThree.\n", { silicon: true });
     ok(await putMarkdown(silicon, doc.id, { markdown: "One.\n\nThree.\n", suggest: true }));
     assert.equal(await current(owner, doc.id), "One.\n\nTwo.\n\nThree.\n");
-    assert.equal(await critic(owner, doc.id), "One.\n\n{--Two.--}\n\nThree.\n");
+    const proposed = await critic(owner, doc.id);
+    assert.match(proposed, /\{--Two\./);
+    assert.equal(rejectCritic(proposed), "One.\n\nTwo.\n\nThree.\n");
+    assert.equal(acceptCritic(proposed), "One.\n\nThree.\n");
     await decideAll(owner, doc.id, "accept-all");
     assert.equal(await current(owner, doc.id), "One.\n\nThree.\n");
     assert.deepEqual((await prosemirror(owner, doc.id)).content.map(pmText), ["One.", "Three."]);

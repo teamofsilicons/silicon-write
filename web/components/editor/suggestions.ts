@@ -11,6 +11,7 @@
 import { Extension, Mark, mergeAttributes } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
@@ -113,9 +114,22 @@ export function structuralSuggestion(oldState: EditorState, newState: EditorStat
   return newState.tr.replaceWith(from, to, [...originals, ...proposed]).setMeta(FIX, true);
 }
 
+/** Node decorations reach custom React and math node views as well as ordinary rendered nodes. */
+export function suggestionDecorations(doc: PMNode): DecorationSet {
+  const decorations: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    const s = node.attrs.suggestion as NodeSuggestion | null;
+    if (s && !node.isText) decorations.push(Decoration.node(pos, pos + node.nodeSize, { "data-suggestion-kind": s.kind, "data-suggestion": s.id, "data-author": s.author }));
+  });
+  return DecorationSet.create(doc, decorations);
+}
+
 /** The shared schema retains node proposals in live editors and version/read-only views. */
 export const SuggestionNodes = Extension.create({
   name: "suggestionNodes",
+  addProseMirrorPlugins() {
+    return [new Plugin({ props: { decorations: state => suggestionDecorations(state.doc) } })];
+  },
   addGlobalAttributes() {
     return [{ types: nodeTypes, attributes: {
       suggestion: {

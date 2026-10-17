@@ -25,6 +25,11 @@ fn proposed(before: &str, after: &str) -> yrs::Doc {
 fn every_structural_change_is_pending_and_can_be_decided_both_ways() {
     let cases = [
         (
+            "paragraph removal",
+            "One.\n\nTwo.\n\nThree.\n",
+            "One.\n\nThree.\n",
+        ),
+        (
             "code text",
             "```js\nlet a = 1;\n```\n",
             "```js\nlet b = 2;\n```\n",
