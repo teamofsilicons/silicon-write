@@ -51,7 +51,7 @@
   .modes { display: none; }
   .modeMenu { display: flex; }
   .title { max-width: 40vw; }
-  .back span:not(.wordmark) { display: none; }
+  .back span { display: none; }
   .back:has(.wordmark) { flex: none; }
   /* Renaming gets the space occupied by the other actions until it finishes. */
   .topBar:has(.title[data-editing]) .topRight { display: none; }

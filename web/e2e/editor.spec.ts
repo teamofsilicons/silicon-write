@@ -1712,7 +1712,7 @@ test.describe("suggestions and roles", () => {
     await publicPage.goto(new URL(`/d/${doc.id}`, owner.page.url()).href);
     const home = publicPage.getByRole("link", { name: "Silicon Write home", exact: true });
     await expect(home).toBeVisible();
-    await expect(home.getByText("Silicon Write", { exact: true })).toBeVisible();
+    await expect(home.locator("svg")).toBeVisible();
     await shot(publicPage, "phone-public-doc");
     await publicContext.close();
     await friend.context.close();
@@ -1956,12 +1956,19 @@ test.describe("PDFs", () => {
     await expect(threadCards(page)).toContainText("Page 2");
     await expect(threadCards(page)).toContainText("Check this figure.");
     const area = page.getByRole("button", { name: "Comment on this area" });
-    await expect(area).toBeInViewport();
+    await expect(area).toBeInViewport({ ratio: 1 });
+    // It stays in view after the smooth scroll settles, rather than just passing through.
+    await page.waitForTimeout(400);
+    await expect(area).toBeInViewport({ ratio: 1 });
     // The area sits on page 2, where the comment put it.
     const pageTwo = (await page.getByRole("img", { name: "Page 2", exact: true }).boundingBox())!;
     const box = (await area.boundingBox())!;
     expect(box.x - pageTwo.x).toBeCloseTo(pageTwo.width * 0.1, -1);
     expect(box.y - pageTwo.y).toBeCloseTo(pageTwo.height * 0.1, -1);
+    // Polling replies does not snap the reader back after they scroll elsewhere.
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await page.waitForTimeout(2200);
+    await expect(area).not.toBeInViewport();
     // Clicking the area opens its thread.
     await area.click();
     await expect(threadCards(page).first()).toHaveAttribute("data-active", "");

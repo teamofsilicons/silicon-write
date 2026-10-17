@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/react";
 import { ArrowLeft, Copy, Download, FileInput, FolderInput, History, Link2, MessageSquare, MoreHorizontal, Search, Trash2, RotateCcw, Users } from "lucide-react";
+import { AppGlyph } from "@/components/foundation/brand/app-mark";
 import { Button } from "@/components/silicon-ui/button/button";
 import { AvatarGroup } from "@/components/silicon-ui/avatar-group/avatar-group";
 import { InlineEdit } from "@/components/silicon-ui/inline-edit/inline-edit";
@@ -172,6 +173,7 @@ export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, 
           </Link>
         ) : (
           <Link href="/" className={styles.back} aria-label="Silicon Write home">
+            <AppGlyph size={16} />
             <span className={styles.wordmark}>Silicon Write</span>
           </Link>
         )}

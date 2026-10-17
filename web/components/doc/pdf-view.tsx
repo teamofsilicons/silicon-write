@@ -35,7 +35,7 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
   const [drawing, setDrawing] = useState(false);
   const [draft, setDraft] = useState<{ page: number; start: { x: number; y: number }; rect?: Rect } | null>(null);
   const [converting, setConverting] = useState(false);
-  const pageRefs = useRef(new Map<number, HTMLDivElement>());
+  const areaRefs = useRef(new Map<string, HTMLButtonElement>());
   const scrolledTarget = useRef<string | null>(null);
 
   useEffect(() => {
@@ -91,12 +91,12 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
       return;
     }
     if (!targetReady || scrolledTarget.current === target || !activePage) return;
-    const page = pageRefs.current.get(activePage);
-    if (page) {
-      page.scrollIntoView({ behavior: "smooth", block: "center" });
+    const area = activeThread ? areaRefs.current.get(activeThread) : undefined;
+    if (area) {
+      area.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
       scrolledTarget.current = target;
     }
-  }, [target, targetReady, activePage]);
+  }, [target, targetReady, activePage, activeThread]);
 
   const areas = threads.filter(t => t.anchor.kind === "pdf" && t.anchor.rect);
 
@@ -123,9 +123,6 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
         {pages.map(page => (
           <div
             key={page.number}
-            ref={el => {
-              if (el) pageRefs.current.set(page.number, el);
-            }}
             className={styles.pdfPage}
             data-drawing={drawing ? "" : undefined}
             style={{ aspectRatio: `${page.width} / ${page.height}` }}
@@ -159,6 +156,10 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
               .map(t => (
                 <button
                   key={t.id}
+                  ref={element => {
+                    if (element) areaRefs.current.set(t.id, element);
+                    else areaRefs.current.delete(t.id);
+                  }}
                   type="button"
                   className={styles.pdfArea}
                   data-active={t.id === activeThread ? "" : undefined}
