@@ -225,6 +225,9 @@ pub async fn claim_email_invites(state: &AppState, caller: &Caller) -> ApiResult
     result
 }
 
+/// A pending email invitation: its id, its doc or folder, its role, and that item's owner.
+type Invitation = (String, Option<String>, Option<String>, String, Option<String>);
+
 async fn claim_once(state: &AppState, caller: &Caller) -> ApiResult<()> {
     // Another request of the same sign-in may have just done it.
     let checked: Option<Option<OffsetDateTime>> = sqlx::query_scalar("select emails_checked_at from accounts where uuid = $1")
@@ -259,7 +262,7 @@ async fn claim_once(state: &AppState, caller: &Caller) -> ApiResult<()> {
     if emails.is_empty() {
         return Ok(());
     }
-    let pending: Vec<(String, Option<String>, Option<String>, String, Option<String>)> = sqlx::query_as(
+    let pending: Vec<Invitation> = sqlx::query_as(
         "select s.id, s.doc_id, s.folder_id, s.role, coalesce(d.owner_uuid, f.owner_uuid)
          from shares s left join docs d on d.id = s.doc_id left join folders f on f.id = s.folder_id
          where s.account_uuid is null and lower(s.email) = any($1)",
