@@ -1,0 +1,279 @@
+{
+  "recorded_at": "2026-10-17T10:09:52.944571+00:00",
+  "app_id": "write",
+  "accounts": {
+    "url": "https://accounts.teamofsilicons.com",
+    "config_version": 3,
+    "allowed_origins": [
+      "https://write.teamofsilicons.com"
+    ],
+    "redirect_uris": [
+      "https://write.teamofsilicons.com/auth/callback"
+    ],
+    "device_flow": true,
+    "public_client": true,
+    "required_fields": [],
+    "optional_fields": [
+      "email"
+    ],
+    "webhook": {
+      "app_id": "write",
+      "created_at": "2026-10-17T09:55:57.332Z",
+      "delivery": "webhook",
+      "event_types": [
+        "account.id_changed",
+        "account.updated",
+        "account.deleted",
+        "membership.signed_out",
+        "membership.access_removed",
+        "silicon.custodian_changed",
+        "ping"
+      ],
+      "id": "abb38899-1aa5-4c9c-8404-57c9f658805d",
+      "status": "active",
+      "updated_at": "2026-10-17T09:55:57.332Z",
+      "updates": null,
+      "url": "https://api.write.teamofsilicons.com/v1/webhooks/accounts"
+    },
+    "email_scope_patch": {
+      "from_config_version": 2,
+      "to_config_version": 3,
+      "all_other_settings_preserved": true
+    }
+  },
+  "ting": {
+    "url": "https://backend.ting.teamofsilicons.com",
+    "notification_types": [
+      {
+        "defaults": {
+          "carbon": true,
+          "silicon": true
+        },
+        "description": "Someone commented on your Silicon Write document.",
+        "type": "write.comment.created"
+      },
+      {
+        "defaults": {
+          "carbon": true,
+          "silicon": true
+        },
+        "description": "Someone replied to a Silicon Write comment thread you participate in.",
+        "type": "write.comment.replied"
+      },
+      {
+        "defaults": {
+          "carbon": true,
+          "silicon": true
+        },
+        "description": "Someone shared a Silicon Write document or folder with you.",
+        "type": "write.doc.shared"
+      },
+      {
+        "defaults": {
+          "carbon": true,
+          "silicon": true
+        },
+        "description": "Someone mentioned you in a Silicon Write comment.",
+        "type": "write.mention.received"
+      },
+      {
+        "defaults": {
+          "carbon": true,
+          "silicon": true
+        },
+        "description": "Someone suggested a change to your Silicon Write document.",
+        "type": "write.suggestion.created"
+      },
+      {
+        "defaults": {
+          "carbon": true,
+          "silicon": true
+        },
+        "description": "A Silicon Write comment thread you participate in was resolved.",
+        "type": "write.thread.resolved"
+      }
+    ],
+    "send_proof": {
+      "kind": "app_verification",
+      "scope": "tings.send",
+      "issuance_verified": true
+    },
+    "recipient_proof": {
+      "kind": "user_verification",
+      "scope": "subscriptions.register",
+      "contract_verified": true
+    },
+    "separate_scope_allowlist_required": false,
+    "notification_delivery_tested": false,
+    "configuration_session_signed_out": true
+  },
+  "cli": {
+    "app_id": "write",
+    "version": "0.1.0",
+    "source_commit": "c862216bd846ab78ef10ad90c7dd86ea48749db8",
+    "packages": [
+      {
+        "id": "33e07010-1ec8-44e9-a096-3c822bc3e649",
+        "target": "linux-aarch64",
+        "sha256": "25073ad129ba6e5e1521e5b7bd8dfa861b374dc2265899d776bb978f3b3c46eb",
+        "size": 4115525,
+        "created_at": "2026-10-17T10:00:56.961463923+00:00",
+        "runner_checks": [
+          {
+            "command": "--help",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "accounts --json",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "login status --json",
+            "exit_code": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "250b9767-843d-461a-a45e-3545a3118a67",
+        "target": "linux-armv7hf",
+        "sha256": "a79c8260c1c074a159ec121d6395e408a194cb59fdb68c305fd288843b605796",
+        "size": 3636913,
+        "created_at": "2026-10-17T10:04:06.321922956+00:00",
+        "runner_checks": [
+          {
+            "command": "--help",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "accounts --json",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "login status --json",
+            "exit_code": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "6403a4c9-6a4b-4666-8fe7-598de78c7b0a",
+        "target": "linux-i686",
+        "sha256": "1f793fea6913ff197340189f22bc705c991db946335232cb4811ac693ead7b30",
+        "size": 4127602,
+        "created_at": "2026-10-17T10:03:58.952680006+00:00",
+        "runner_checks": [
+          {
+            "command": "--help",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "accounts --json",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "login status --json",
+            "exit_code": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "id": "ddcf727f-8796-4714-8e91-9e757359f2ea",
+        "target": "linux-x86_64",
+        "sha256": "2879755c42efc3511d1c43c5fdc752a5b87025fe8d4018d8107b4625545e73ba",
+        "size": 4426198,
+        "created_at": "2026-10-17T09:59:03.454372177+00:00",
+        "runner_checks": [
+          {
+            "command": "--help",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "accounts --json",
+            "exit_code": 0,
+            "passed": true
+          },
+          {
+            "command": "login status --json",
+            "exit_code": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "published": true,
+    "production_release_id": "4138ff02-2fd0-4834-88b2-f9c527549d68",
+    "production_promoted_from": "b5ef0577-39a5-4726-9079-900cdcc955a4",
+    "signing_key_id": "apps-2026-10",
+    "build": "cargo zigbuild --locked --release -p write-cli --bin write, using Rust musl targets and Zig 0.15.2",
+    "catalog_runner_checks_passed": 12,
+    "unsupported_public_runner_platforms": [
+      "macos",
+      "windows"
+    ],
+    "public_download_verification": [
+      {
+        "target": "linux-x86_64",
+        "package_id": "ddcf727f-8796-4714-8e91-9e757359f2ea",
+        "sha256": "2879755c42efc3511d1c43c5fdc752a5b87025fe8d4018d8107b4625545e73ba",
+        "size": 4426198,
+        "release_id": "4138ff02-2fd0-4834-88b2-f9c527549d68",
+        "signing_key_id": "apps-2026-10",
+        "resolve_status": 200,
+        "download_status": 200,
+        "download_sha256_verified": true
+      },
+      {
+        "target": "linux-aarch64",
+        "package_id": "33e07010-1ec8-44e9-a096-3c822bc3e649",
+        "sha256": "25073ad129ba6e5e1521e5b7bd8dfa861b374dc2265899d776bb978f3b3c46eb",
+        "size": 4115525,
+        "release_id": "4138ff02-2fd0-4834-88b2-f9c527549d68",
+        "signing_key_id": "apps-2026-10",
+        "resolve_status": 200,
+        "download_status": 200,
+        "download_sha256_verified": true
+      },
+      {
+        "target": "linux-i686",
+        "package_id": "6403a4c9-6a4b-4666-8fe7-598de78c7b0a",
+        "sha256": "1f793fea6913ff197340189f22bc705c991db946335232cb4811ac693ead7b30",
+        "size": 4127602,
+        "release_id": "4138ff02-2fd0-4834-88b2-f9c527549d68",
+        "signing_key_id": "apps-2026-10",
+        "resolve_status": 200,
+        "download_status": 200,
+        "download_sha256_verified": true
+      },
+      {
+        "target": "linux-armv7hf",
+        "package_id": "250b9767-843d-461a-a45e-3545a3118a67",
+        "sha256": "a79c8260c1c074a159ec121d6395e408a194cb59fdb68c305fd288843b605796",
+        "size": 3636913,
+        "release_id": "4138ff02-2fd0-4834-88b2-f9c527549d68",
+        "signing_key_id": "apps-2026-10",
+        "resolve_status": 200,
+        "download_status": 200,
+        "download_sha256_verified": true
+      }
+    ]
+  },
+  "mail": {
+    "postmark_server_name": "Team of Silicons",
+    "server_token_valid": true,
+    "delivery_type": "Live",
+    "sender": "write@teamofsilicons.com",
+    "sender_authorization": "not_confirmed; provider domain verification requires an account token or signed-in provider session",
+    "mail_sent": false
+  },
+  "evidence_directory": "~/.silicon-release/accounts-apps/write/",
+  "secrets_included": false
+}
