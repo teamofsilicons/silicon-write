@@ -560,6 +560,22 @@ fn keep_only_local_images(doc: &mut Doc, local: &[(String, String)]) {
                     let label = alt.clone().filter(|a| !a.trim().is_empty()).unwrap_or_else(|| "Image".to_owned());
                     *block = Block::paragraph(vec![Inline::marked(label, Marks { link: Some(src.clone()), ..Marks::default() })]);
                 }
+                Block::Paragraph { content } | Block::Heading { content, .. } => {
+                    for inline in content {
+                        match inline {
+                            Inline::Image { src, alt, .. } if !local.iter().any(|(s, _)| s == src) => {
+                                let label = alt.clone().filter(|a| !a.trim().is_empty()).unwrap_or_else(|| "Image".to_owned());
+                                *inline = Inline::marked(label, Marks { link: Some(src.clone()), ..Marks::default() });
+                            }
+                            Inline::Footnote { content } => {
+                                let mut note = write_doc::from_markdown(content);
+                                walk(&mut note.blocks, local);
+                                *content = write_doc::to_markdown(&note).trim().to_owned();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 Block::BulletList { items } | Block::OrderedList { items, .. } => items.iter_mut().for_each(|i| walk(&mut i.blocks, local)),
                 Block::TaskList { items } => items.iter_mut().for_each(|i| walk(&mut i.blocks, local)),
                 Block::Blockquote { blocks } => walk(blocks, local),
@@ -589,14 +605,15 @@ async fn local_images(state: &AppState, doc: &Doc, dir: &Path) -> Vec<(String, S
             continue;
         }
         let Some(id) = crate::content::asset_id_from_src(state, &src) else { continue };
-        let row: Option<(String, String)> = sqlx::query_as("select path, filename from assets where id = $1")
+        let row: Option<(String, String)> = sqlx::query_as("select path, content_type from assets where id = $1")
             .bind(&id)
             .fetch_optional(&state.db)
             .await
             .ok()
             .flatten();
-        if let Some((path, filename)) = row {
-            let ext = Path::new(&filename).extension().and_then(|e| e.to_str()).unwrap_or("png");
+        if let Some((path, content_type)) = row {
+            // Upload names can be misleading, and converted Word drawings still have their old name.
+            let ext = image_extension(&content_type);
             let local = dir.join(format!("{id}.{ext}"));
             if tokio::fs::copy(state.config.data_dir.join(&path), &local).await.is_ok() {
                 out.push((src.clone(), local.to_string_lossy().into_owned()));

@@ -135,3 +135,30 @@ fn word_reader_does_not_confuse_text_with_its_colour_delimiters() {
     let md = to_markdown(&read);
     assert_eq!(md, "A <span style=\"color: #FF0000\">close</span> call and <span style=\"color: #0000FF\">other words</span>.\n");
 }
+
+#[test]
+fn mixed_pictures_and_link_titles_survive_format_conversion() {
+    let html = br#"<p>Before <a href="https://example.test/page" title="Open the page"><img src="https://example.test/picture.png" alt="A picture" title="Picture title"></a> after.</p>"#;
+    let json = pandoc(&["-f", "html", "-t", "json"], html);
+    let mut doc = from_pandoc(&serde_json::from_slice(&json).unwrap());
+    assert_eq!(doc.blocks.len(), 1, "a picture within text stays within the paragraph");
+    assert_eq!(images(&doc), ["https://example.test/picture.png"]);
+    replace_images(&mut doc, &|src| (src == "https://example.test/picture.png").then(|| "/assets/a_example".to_owned()));
+    let (tree, _) = to_pandoc(&doc, &PandocOut::default());
+    let output = String::from_utf8(pandoc(&["-f", "json", "-t", "html"], &serde_json::to_vec(&tree).unwrap())).unwrap();
+    for expected in ["Before", "after.", "src=\"/assets/a_example\"", "href=\"https://example.test/page\"", "title=\"Open the page\"", "title=\"Picture title\""] {
+        assert!(output.contains(expected), "{expected:?} missing from {output}");
+    }
+}
+
+#[test]
+fn alignments_scripts_and_link_titles_survive_pandoc() {
+    let html = br#"<p>Water H<sub>2</sub>O, x<sup>2</sup>, and <a href="https://example.test" title="Example title">link</a>.</p><table><thead><tr><th style="text-align:right">Right</th><th style="text-align:center">Center</th></tr></thead><tbody><tr><td style="text-align:right">12</td><td style="text-align:center">34</td></tr></tbody></table>"#;
+    let json = pandoc(&["-f", "html", "-t", "json"], html);
+    let doc = from_pandoc(&serde_json::from_slice(&json).unwrap());
+    let (tree, _) = to_pandoc(&doc, &PandocOut::default());
+    let output = String::from_utf8(pandoc(&["-f", "json", "-t", "html"], &serde_json::to_vec(&tree).unwrap())).unwrap();
+    for expected in ["<sub>2</sub>", "<sup>2</sup>", "title=\"Example title\"", "text-align: right", "text-align: center"] {
+        assert!(output.contains(expected), "{expected:?} missing from {output}");
+    }
+}

@@ -67,7 +67,8 @@ fn heading_id(content: &[Inline], taken: &mut HashSet<String>) -> String {
         match inline {
             Inline::Text { text: t, .. } => text.push_str(t),
             Inline::InlineMath { latex } => text.push_str(latex),
-            Inline::DocLink { title } => text.push_str(title),
+            Inline::DocLink { title, alias } => text.push_str(alias.as_deref().unwrap_or(title)),
+            Inline::Image { alt, .. } => text.push_str(alt.as_deref().unwrap_or("")),
             Inline::HardBreak => text.push(' '),
             Inline::Footnote { .. } => {}
         }
@@ -204,7 +205,7 @@ impl PWriter<'_> {
                 .map(|row| {
                     json!([no_attr(), row.cells.iter().map(|cell| json!([
                         no_attr(),
-                        {"t": "AlignDefault"},
+                        {"t": match cell.align.as_deref() { Some("left") => "AlignLeft", Some("right") => "AlignRight", Some("center") => "AlignCenter", _ => "AlignDefault" }},
                         cell.rowspan,
                         cell.colspan,
                         self.blocks(&cell.blocks)
@@ -237,7 +238,15 @@ impl PWriter<'_> {
                     let note = crate::markdown::from_markdown(content);
                     out.push(json!({"t": "Note", "c": self.blocks(&note.blocks)}));
                 }
-                Inline::DocLink { title } => out.push(json!({"t": "Str", "c": format!("[[{title}]]")})),
+                Inline::DocLink { title, alias } => out.push(json!({"t": "Str", "c": alias.as_ref().map(|a| format!("[[{title}|{a}]]")).unwrap_or_else(|| format!("[[{title}]]"))})),
+                Inline::Image { src, alt, title, link, link_title } => {
+                    let src = self.out.image_src.map(|f| f(src)).unwrap_or_else(|| src.clone());
+                    let image = json!({"t": "Image", "c": [no_attr(), str_inlines(alt.as_deref().unwrap_or("")), [src, title.as_deref().unwrap_or("")]]});
+                    out.push(match link {
+                        Some(href) => json!({"t": "Link", "c": [no_attr(), [image], [href, link_title.as_deref().unwrap_or("")]]}),
+                        None => image,
+                    });
+                }
             }
         }
         out
@@ -266,6 +275,12 @@ fn wrap_marks(marks: &Marks, mut inner: Vec<Value>) -> Vec<Value> {
     if marks.underline {
         inner = wrap("Underline", inner);
     }
+    if marks.subscript {
+        inner = wrap("Subscript", inner);
+    }
+    if marks.superscript {
+        inner = wrap("Superscript", inner);
+    }
     if let Some(color) = &marks.highlight {
         let style = format!("background-color: {}", color.as_deref().unwrap_or("#fff3a3"));
         inner = vec![json!({"t": "Span", "c": [attr(&["mark"], &[("style", &style)]), inner]})];
@@ -275,7 +290,7 @@ fn wrap_marks(marks: &Marks, mut inner: Vec<Value>) -> Vec<Value> {
         inner = vec![json!({"t": "Span", "c": [attr(&[], &[("style", &style)]), inner]})];
     }
     if let Some(href) = &marks.link {
-        inner = vec![json!({"t": "Link", "c": [no_attr(), inner, [href, ""]]})];
+        inner = vec![json!({"t": "Link", "c": [no_attr(), inner, [href, marks.link_title.as_deref().unwrap_or("")]]})];
     }
     inner
 }
@@ -853,16 +868,28 @@ fn read_bullets(items: &[Value]) -> Block {
 
 fn read_table(a: &[Value]) -> Vec<Block> {
     let mut rows = vec![];
+    let align = |v: &Value| match t(v) {
+        "AlignLeft" => Some("left".to_owned()),
+        "AlignRight" => Some("right".to_owned()),
+        "AlignCenter" => Some("center".to_owned()),
+        _ => None,
+    };
+    let colspecs = arr(a.get(2).unwrap_or(&Value::Null));
     let read_rows = |rows_value: &Value, header: bool, rows: &mut Vec<TableRow>| {
         for row in arr(rows_value) {
+            let mut column = 0usize;
             let cells = arr(arr(row).get(1).unwrap_or(&Value::Null))
                 .iter()
                 .map(|cell| {
                     let cell = arr(cell);
+                    let colspan = cell.get(3).and_then(Value::as_u64).unwrap_or(1).max(1) as u32;
+                    let inherited = colspecs.get(column).and_then(|c| arr(c).first()).and_then(&align);
+                    column += colspan as usize;
                     TableCell {
+                        align: cell.get(1).and_then(&align).or(inherited),
                         header,
                         rowspan: cell.get(2).and_then(Value::as_u64).unwrap_or(1).max(1) as u32,
-                        colspan: cell.get(3).and_then(Value::as_u64).unwrap_or(1).max(1) as u32,
+                        colspan,
                         blocks: read_blocks(arr(cell.get(4).unwrap_or(&Value::Null))),
                     }
                 })
@@ -904,42 +931,18 @@ fn paragraph_blocks(inlines: &[Value]) -> Vec<Block> {
             }];
         }
     }
-    let mut out = vec![];
-    let mut current: Vec<Value> = vec![];
-    let flush = |current: &mut Vec<Value>, out: &mut Vec<Block>| {
-        let content = normalize_inlines(read_inlines(current, &Marks::default()));
-        let has_text = content
-            .iter()
-            .any(|i| !matches!(i, Inline::Text { text, .. } if text.trim().is_empty()));
-        if has_text {
-            out.push(Block::paragraph(trim(content)));
-        }
-        current.clear();
-    };
-    for inline in inlines {
-        if t(inline) == "Image" {
-            flush(&mut current, &mut out);
-            let a = arr(c(inline));
-            let alt = plain(arr(&a[1]));
-            let target = arr(&a[2]);
-            out.push(Block::Image {
-                src: target.first().and_then(Value::as_str).unwrap_or("").to_owned(),
-                alt: (!alt.is_empty()).then_some(alt),
-                title: target
-                    .get(1)
-                    .and_then(Value::as_str)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_owned),
-            });
-        } else {
-            current.push(inline.clone());
-        }
+    // Keep mixed text and pictures in one paragraph; a standalone picture remains a block.
+    if meaningful.len() == 1 && t(meaningful[0]) == "Image" {
+        let a = arr(c(meaningful[0]));
+        let alt = plain(arr(&a[1]));
+        let target = arr(&a[2]);
+        return vec![Block::Image {
+            src: target.first().and_then(Value::as_str).unwrap_or("").to_owned(),
+            alt: (!alt.is_empty()).then_some(alt),
+            title: target.get(1).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned),
+        }];
     }
-    flush(&mut current, &mut out);
-    if out.is_empty() {
-        out.push(Block::empty_paragraph());
-    }
-    out
+    vec![Block::paragraph(trim(normalize_inlines(read_inlines(inlines, &Marks::default()))))]
 }
 
 fn a_type(v: &Value) -> &str {
@@ -1011,7 +1014,9 @@ fn read_inlines(inlines: &[Value], marks: &Marks) -> Vec<Inline> {
             "Strong" => out.extend(read_inlines(arr(content), &with(&|m| m.bold = true))),
             "Underline" => out.extend(read_inlines(arr(content), &with(&|m| m.underline = true))),
             "Strikeout" => out.extend(read_inlines(arr(content), &with(&|m| m.strike = true))),
-            "Superscript" | "Subscript" | "SmallCaps" => out.extend(read_inlines(arr(content), marks)),
+            "Superscript" => out.extend(read_inlines(arr(content), &with(&|m| m.superscript = true))),
+            "Subscript" => out.extend(read_inlines(arr(content), &with(&|m| m.subscript = true))),
+            "SmallCaps" => out.extend(read_inlines(arr(content), marks)),
             "Quoted" => {
                 let a = arr(content);
                 let (open, close) = if t(&a[0]) == "SingleQuote" { ("‘", "’") } else { ("“", "”") };
@@ -1047,12 +1052,25 @@ fn read_inlines(inlines: &[Value], marks: &Marks) -> Vec<Inline> {
             }
             "Link" => {
                 let a = arr(content);
-                let href = arr(&a[2]).first().and_then(Value::as_str).unwrap_or("").to_owned();
-                out.extend(read_inlines(arr(&a[1]), &with(&|m| m.link = Some(href.clone()))));
+                let target = arr(&a[2]);
+                let href = target.first().and_then(Value::as_str).unwrap_or("").to_owned();
+                let title = target.get(1).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned);
+                out.extend(read_inlines(arr(&a[1]), &with(&|m| {
+                    m.link = Some(href.clone());
+                    m.link_title = title.clone();
+                })));
             }
             "Image" => {
                 let a = arr(content);
-                out.push(Inline::marked(plain(arr(&a[1])), marks.clone()));
+                let target = arr(&a[2]);
+                let alt = plain(arr(&a[1]));
+                out.push(Inline::Image {
+                    src: target.first().and_then(Value::as_str).unwrap_or("").to_owned(),
+                    alt: (!alt.is_empty()).then_some(alt),
+                    title: target.get(1).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned),
+                    link: marks.link.clone(),
+                    link_title: marks.link_title.clone(),
+                });
             }
             "Note" => {
                 let blocks = read_blocks(arr(content));
@@ -1097,6 +1115,15 @@ pub fn images(doc: &Doc) -> Vec<String> {
         for block in blocks {
             match block {
                 Block::Image { src, .. } => out.push(src.clone()),
+                Block::Paragraph { content } | Block::Heading { content, .. } => {
+                    for inline in content {
+                        match inline {
+                            Inline::Image { src, .. } => out.push(src.clone()),
+                            Inline::Footnote { content } => out.extend(images(&crate::markdown::from_markdown(content))),
+                            _ => {}
+                        }
+                    }
+                }
                 Block::BulletList { items } | Block::OrderedList { items, .. } => {
                     for i in items {
                         walk(&i.blocks, out)
@@ -1132,6 +1159,21 @@ pub fn replace_images(doc: &mut Doc, map: &dyn Fn(&str) -> Option<String>) {
                 Block::Image { src, .. } => {
                     if let Some(new) = map(src) {
                         *src = new;
+                    }
+                }
+                Block::Paragraph { content } | Block::Heading { content, .. } => {
+                    for inline in content {
+                        match inline {
+                            Inline::Image { src, .. } => {
+                                if let Some(new) = map(src) { *src = new; }
+                            }
+                            Inline::Footnote { content } => {
+                                let mut note = crate::markdown::from_markdown(content);
+                                replace_images(&mut note, map);
+                                *content = crate::markdown::to_markdown(&note).trim().to_owned();
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 Block::BulletList { items } | Block::OrderedList { items, .. } => {
