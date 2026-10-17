@@ -32,6 +32,7 @@ import styles from "./doc.module.css";
 
 const FORMATS: { format: string; label: string }[] = [
   { format: "docx", label: "Word (.docx)" },
+  { format: "doc", label: "Word 97–2003 (.doc)" },
   { format: "pdf", label: "PDF (.pdf)" },
   { format: "md", label: "Markdown (.md)" },
   { format: "odt", label: "OpenDocument (.odt)" },

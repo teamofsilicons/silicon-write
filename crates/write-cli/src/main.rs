@@ -174,7 +174,7 @@ Examples:
         #[arg(long, value_name = "DOC", conflicts_with_all = ["folder", "title"])]
         into: Option<String>,
     },
-    /// Download a doc as md, txt, docx, odt, rtf, html or pdf (any version)
+    /// Download a doc as md, txt, docx, doc, odt, rtf, html or pdf (any version)
     #[command(after_help = "\
 Examples:
   write export \"Launch plan\" --format docx
@@ -183,7 +183,7 @@ Examples:
     Export {
         /// Doc id, link or exact title
         doc: String,
-        /// md, txt, docx, odt, rtf, html or pdf
+        /// md, txt, docx, doc, odt, rtf, html or pdf
         #[arg(long, short = 'f')]
         format: String,
         /// Export this version instead of the latest

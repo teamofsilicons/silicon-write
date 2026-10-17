@@ -10,7 +10,7 @@
 //! - Images inside files come out as files the caller uploads, and so do pictures carried inside
 //!   a web page or a Markdown file as `data:` addresses.
 //! - Downloads: Markdown natively; plain text and web pages through Pandoc; Word through Pandoc
-//!   with a filter that keeps colours; OpenDocument, rich text and PDF from that Word file by
+//!   with a filter that keeps colours; legacy Word, OpenDocument, rich text and PDF from that Word file by
 //!   LibreOffice.
 //! - A PDF opens as it is. Its text is read with pdftotext.
 //!
@@ -454,7 +454,7 @@ pub async fn export(state: &AppState, doc: &Doc, title: &str, format: &str) -> A
             let out = run(&pandoc_bin, &args, dir.path(), Some(&json)).await?;
             Ok(Exported { bytes: out, content_type: "text/html; charset=utf-8", extension: "html" })
         }
-        "docx" | "odt" | "rtf" | "pdf" => {
+        "docx" | "doc" | "odt" | "rtf" | "pdf" => {
             let filter = dir.path().join("colours.lua");
             tokio::fs::write(&filter, pandoc::DOCX_FILTER).await.map_err(ApiError::internal)?;
             let mut args = vec!["-f", "json", "-t", "docx", "--lua-filter", "colours.lua", "-o", "doc.docx"];
@@ -473,13 +473,14 @@ pub async fn export(state: &AppState, doc: &Doc, title: &str, format: &str) -> A
             run(&state.config.soffice, &["--headless", "--norestore", "--convert-to", &format, "--outdir", ".", "doc.docx"], dir.path(), None).await?;
             let bytes = tokio::fs::read(dir.path().join(format!("doc.{format}"))).await.map_err(ApiError::internal)?;
             let (bytes, content_type, extension) = match format.as_str() {
+                "doc" => (bytes, "application/msword", "doc"),
                 "odt" => (bytes, "application/vnd.oasis.opendocument.text", "odt"),
                 "rtf" => (mark_heading_rows(bytes, &doc), "application/rtf", "rtf"),
                 _ => (bytes, "application/pdf", "pdf"),
             };
             Ok(Exported { bytes, content_type, extension })
         }
-        other => Err(ApiError::invalid(format!("Unknown format `{other}`.")).hint("Use md, txt, docx, odt, rtf, html or pdf.")),
+        other => Err(ApiError::invalid(format!("Unknown format `{other}`.")).hint("Use md, txt, docx, doc, odt, rtf, html or pdf.")),
     }
 }
 

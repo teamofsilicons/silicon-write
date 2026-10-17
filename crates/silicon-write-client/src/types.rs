@@ -340,6 +340,8 @@ pub enum ExportFormat {
     Txt,
     /// Word.
     Docx,
+    /// Word 97-2003.
+    Doc,
     /// OpenDocument.
     Odt,
     /// Rich text.
@@ -352,10 +354,11 @@ pub enum ExportFormat {
 
 impl ExportFormat {
     /// Every format.
-    pub const ALL: [ExportFormat; 7] = [
+    pub const ALL: [ExportFormat; 8] = [
         Self::Md,
         Self::Txt,
         Self::Docx,
+        Self::Doc,
         Self::Odt,
         Self::Rtf,
         Self::Html,
@@ -368,6 +371,7 @@ impl ExportFormat {
             Self::Md => "md",
             Self::Txt => "txt",
             Self::Docx => "docx",
+            Self::Doc => "doc",
             Self::Odt => "odt",
             Self::Rtf => "rtf",
             Self::Html => "html",
@@ -394,7 +398,7 @@ impl FromStr for ExportFormat {
                     || (s == "htm" && *f == Self::Html)
             })
             .ok_or_else(|| {
-                format!("`{s}` is not a download format; use md, txt, docx, odt, rtf, html or pdf")
+                format!("`{s}` is not a download format; use md, txt, docx, doc, odt, rtf, html or pdf")
             })
     }
 }
@@ -1123,6 +1127,7 @@ mod tests {
     #[test]
     fn formats_parse() {
         assert_eq!("DOCX".parse::<ExportFormat>().unwrap(), ExportFormat::Docx);
+        assert_eq!(".DOC".parse::<ExportFormat>().unwrap(), ExportFormat::Doc);
         assert_eq!(
             ".markdown".parse::<ExportFormat>().unwrap(),
             ExportFormat::Md

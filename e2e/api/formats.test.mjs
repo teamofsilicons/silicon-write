@@ -674,6 +674,24 @@ async function richDoc(api, title = "Report Title") {
   return newDoc(api, RICH_MD, title);
 }
 
+test("legacy Word downloads are real .doc files and reopen with their formatting", SLOW, async () => {
+  const me = await carbon("dl-legacy-word");
+  const original = `# Legacy Word\n\nA **bold** paragraph.\n\n${STYLED_LINE}\n`;
+  const doc = await newDoc(me.api, original, "Legacy Word");
+  const file = await download(me.api, doc.id, "DOC");
+  assert.equal(typeOf(file), "application/msword");
+  assert.equal(dispositionOf(file).ascii, "Legacy Word.doc");
+  assert.equal(file.body.subarray(0, 8).toString("hex"), "d0cf11e0a1b11ae1");
+  const reopened = await opened(me.api, { bytes: file.body, name: "Legacy Word.doc" });
+  const markdown = await markdownOf(me.api, reopened.id);
+  assert.match(markdown, /^# Legacy Word\n/);
+  assert.ok(markdown.includes("**bold**"));
+  assert.match(markdown, /<span style="color: #ff0000">red words<\/span>/i);
+  assert.match(markdown, /<mark style="background-color: #(ffff00|FFFF00)">yellow highlight<\/mark>/);
+  assert.ok(markdown.includes("<u>underlined words</u>"));
+  assert.ok(markdown.includes("~~struck words~~"));
+});
+
 test("downloading as Markdown gives the doc's Markdown (the default format)", async () => {
   const me = await carbon("dl-md");
   const doc = await richDoc(me.api);
@@ -825,7 +843,7 @@ test("download formats are named case-insensitively, and an unknown one is refus
     const r = await me.api.raw("GET", `/v1/docs/${doc.id}/export?format=${format}`);
     assert.equal(r.status, 422, `format=${format}: ${show(r)}`);
     assert.equal(errorOf(r)?.code, "invalid");
-    assert.match(errorOf(r)?.hint ?? "", /md, txt, docx, odt, rtf, html or pdf/);
+    assert.match(errorOf(r)?.hint ?? "", /md, txt, docx, doc, odt, rtf, html or pdf/);
   }
 });
 

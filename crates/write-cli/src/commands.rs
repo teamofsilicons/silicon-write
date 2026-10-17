@@ -395,7 +395,7 @@ pub async fn export(
     output: Option<PathBuf>,
 ) -> CliResult<()> {
     let format: ExportFormat = format.parse().map_err(|e: String| {
-        CliError::invalid(e, "Pick one of md, txt, docx, odt, rtf, html, pdf.")
+        CliError::invalid(e, "Pick one of md, txt, docx, doc, odt, rtf, html, pdf.")
     })?;
     let id = resolve::doc_id(ctx, doc, false).await?;
     let download = ctx.client.export(&id, format, seq).await?;

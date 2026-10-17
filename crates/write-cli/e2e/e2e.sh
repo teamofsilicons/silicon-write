@@ -405,7 +405,7 @@ check "import .html" $C1 --json import "$WORK/page.html" --title "From HTML"
 HTMLDOC=$(jqv .id)
 check "import .md into a folder" $C1 --json import "$WORK/plan.md" --folder Plans --title "Imported plan"
 check "import --into (next version)" $C1 --json import "$WORK/plan.md" --into "$HTMLDOC"
-for fmt in md txt html docx odt rtf pdf; do
+for fmt in md txt html docx doc odt rtf pdf; do
   check "export $fmt" $C1 --json export "$DOC" --format $fmt -o "$WORK/out.$fmt"
   [ -s "$WORK/out.$fmt" ] && pass "out.$fmt is not empty" || fail "out.$fmt is not empty"
 done
