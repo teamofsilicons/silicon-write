@@ -153,6 +153,17 @@ pub async fn by_public_id(state: &AppState, id: &str) -> ApiResult<Account> {
     if !is_public_id(&id) {
         return Err(ApiError::invalid(format!("“{id}” isn't a c:id or an si:id.")).hint("Carbons are c:<handle> and Silicons si:<handle>."));
     }
+    // From the cache while it's fresh: Silicon Accounts limits how often an app may look accounts up.
+    let cached: Option<Row> = sqlx::query_as(
+        "select uuid, kind, public_id, display_name, pfp_url, refreshed_at, ting_enrolled_at, emails_checked_at from accounts
+         where lower(public_id) = $1 and refreshed_at > now() - interval '1 hour' order by refreshed_at desc limit 1",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some(row) = cached {
+        return Ok(Account::from(&row));
+    }
     let summary = state.app().lookup_by_id(&id).await.map_err(|e| match e.status() {
         Some(404) => ApiError::not_found(&format!("The account {id}")).hint("Check the c: or si: id."),
         Some(status) if (400..500).contains(&status) => ApiError::invalid(format!("Silicon Accounts didn't accept “{id}”: {e}")),
