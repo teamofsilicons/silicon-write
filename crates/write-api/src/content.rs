@@ -206,13 +206,18 @@ fn safe_filename(title: &str) -> String {
     if cleaned.is_empty() { "Untitled".into() } else { cleaned.chars().take(120).collect() }
 }
 
-fn attachment(bytes: Vec<u8>, content_type: &str, filename: &str) -> Response {
-    let ascii: String = filename.chars().map(|c| if c.is_ascii() && c != '"' { c } else { '_' }).collect();
+/// A Content-Disposition (`attachment` to save the file, `inline` to show it) naming the file the
+/// way every client reads it (RFC 6266): a plain ASCII name, and the real one in UTF-8.
+fn disposition(kind: &str, filename: &str) -> Option<HeaderValue> {
+    let ascii: String = filename.chars().map(|c| if c.is_ascii() && !c.is_ascii_control() && c != '"' && c != '\\' { c } else { '_' }).collect();
     let encoded: String = filename.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
-    let disposition = format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}");
+    HeaderValue::from_str(&format!("{kind}; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")).ok()
+}
+
+fn attachment(bytes: Vec<u8>, content_type: &str, filename: &str) -> Response {
     let mut response = Response::new(Body::from(bytes));
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    if let Ok(value) = HeaderValue::from_str(&disposition) {
+    if let Some(value) = disposition("attachment", filename) {
         response.headers_mut().insert(header::CONTENT_DISPOSITION, value);
     }
     response
@@ -221,15 +226,21 @@ fn attachment(bytes: Vec<u8>, content_type: &str, filename: &str) -> Response {
 pub async fn export(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>, Query(q): Query<ExportQuery>) -> ApiResult<Response> {
     let min = if q.seq.is_some() { Role::Editor } else { Role::Viewer };
     let (doc_row, _) = access::require_doc(&state, caller.as_ref(), &id, min).await?;
-    let format = q.format.unwrap_or_else(|| "md".into());
+    if let Some(seq) = q.seq
+        && (seq < 0 || seq > doc_row.seq)
+    {
+        return Err(ApiError::not_found(&format!("Version {seq}")).hint(format!("This doc's versions go from 0 to {}.", doc_row.seq)));
+    }
+    // Format names are case-insensitive (`PDF` is `pdf`).
+    let format = q.format.as_deref().unwrap_or("md").to_ascii_lowercase();
     let title = doc_row.display_title();
     let doc = if doc_row.kind == "pdf" {
         // A PDF shown as it is: the file itself, or its text in any other format.
-        let (bytes, _, _) = original_file(&state, &doc_row).await?;
         if format == "pdf" {
+            let (bytes, _, _) = original_file(&state, &doc_row).await?;
             return Ok(attachment(bytes, "application/pdf", &format!("{}.pdf", safe_filename(&title))));
         }
-        convert::pdf_text(&state, &bytes).await?
+        pdf_doc(&state, &doc_row).await?
     } else {
         match q.seq {
             Some(seq) => crate::versions::doc_at(&state, &id, seq).await?,
@@ -247,20 +258,37 @@ struct Upload {
     fields: std::collections::HashMap<String, String>,
 }
 
+fn too_large() -> ApiError {
+    ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "Files can be at most 50 MB.")
+}
+
+/// A multipart upload that couldn't be read: too large (the request is cut off at the body limit),
+/// or not a well-formed form.
+fn unreadable(error: axum::extract::multipart::MultipartError) -> ApiError {
+    if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        return too_large();
+    }
+    ApiError::invalid(format!("The upload couldn't be read: {}", error.body_text()))
+}
+
 async fn read_upload(mut multipart: Multipart) -> ApiResult<Upload> {
     let mut file: Option<(String, Vec<u8>)> = None;
     let mut fields = std::collections::HashMap::new();
-    while let Some(field) = multipart.next_field().await.map_err(|e| ApiError::invalid(format!("The upload couldn't be read: {e}")))? {
+    while let Some(mut field) = multipart.next_field().await.map_err(unreadable)? {
         let name = field.name().unwrap_or("").to_owned();
         if name == "file" {
             let filename = field.file_name().unwrap_or("upload").to_owned();
-            let data = field.bytes().await.map_err(|e| ApiError::invalid(format!("The upload couldn't be read: {e}")))?;
-            if data.len() > MAX_UPLOAD {
-                return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "Files can be at most 50 MB."));
+            // Read as it arrives, and refuse it as soon as it is more than the limit.
+            let mut data = Vec::new();
+            while let Some(chunk) = field.chunk().await.map_err(unreadable)? {
+                if data.len() + chunk.len() > MAX_UPLOAD {
+                    return Err(too_large());
+                }
+                data.extend_from_slice(&chunk);
             }
-            file = Some((filename, data.to_vec()));
+            file = Some((filename, data));
         } else {
-            let value = field.text().await.unwrap_or_default();
+            let value = field.text().await.map_err(unreadable)?;
             fields.insert(name, value);
         }
     }
@@ -399,9 +427,7 @@ pub async fn import_new(State(state): State<AppState>, Auth(caller): Auth, multi
 /// Opening a file on top of a doc makes it the doc's next version.
 pub async fn import_into(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, multipart: Multipart) -> ApiResult<Json<Value>> {
     let (doc_row, _) = access::require_doc(&state, Some(&caller), &id, Role::Editor).await?;
-    if doc_row.kind == "pdf" {
-        return Err(ApiError::conflict("This is a PDF shown as it is.").hint("Turn it into a doc first."));
-    }
+    refuse_pdf(&doc_row)?;
     let upload = read_upload(multipart).await?;
     let Opened::Doc { mut doc, images } = convert::open(&state, &upload.filename, &upload.bytes).await? else {
         return Err(ApiError::invalid("A PDF can't be opened on top of a doc.").hint("Open it as a new doc instead."));
@@ -409,6 +435,8 @@ pub async fn import_into(State(state): State<AppState>, Auth(caller): Auth, Path
     adopt_images(&state, &id, &doc_row.owner_uuid, &mut doc, images).await?;
     let ((), seq) = rooms::edit(&state, &id, &caller.uuid, Origin::Import, None, |y| {
         let current = ydoc::read_doc(y);
+        // A colour the doc already has stays written its way (a file writes `#ff0000` as Word does, `#FF0000`).
+        write_doc::pandoc::respell_colours(&mut doc, &current);
         ydoc::with_txn(y, |txn, frag| ydoc::patch(txn, frag, &current, &doc, &EditMode::default()));
         Ok(())
     })
@@ -417,8 +445,24 @@ pub async fn import_into(State(state): State<AppState>, Auth(caller): Auth, Path
     Ok(Json(json!({ "seq": seq })))
 }
 
+/// A PDF shown as it is has no text of its own to change: it is turned into a doc first.
+pub fn refuse_pdf(doc: &DocRow) -> ApiResult<()> {
+    if doc.kind == "pdf" {
+        return Err(ApiError::conflict("This is a PDF shown as it is, and its text can't be changed.")
+            .hint("Turn it into a doc first (POST /v1/docs/{id}/convert, or `write convert`); the PDF stays as its original."));
+    }
+    Ok(())
+}
+
+/// The text of a PDF shown as it is, as a doc: what turning it into a doc would make of it,
+/// without turning it.
+pub async fn pdf_doc(state: &AppState, doc: &DocRow) -> ApiResult<write_doc::Doc> {
+    let (bytes, _, _) = original_file(state, doc).await?;
+    convert::pdf_text(state, &bytes).await
+}
+
 /// The file a PDF doc was opened from: its bytes, content type and file name.
-async fn original_file(state: &AppState, doc: &DocRow) -> ApiResult<(Vec<u8>, String, String)> {
+pub(crate) async fn original_file(state: &AppState, doc: &DocRow) -> ApiResult<(Vec<u8>, String, String)> {
     let asset = doc.original_asset.clone().ok_or_else(|| ApiError::not_found("An original file for this doc"))?;
     let (path, content_type, filename): (String, String, String) =
         sqlx::query_as("select path, content_type, filename from assets where id = $1").bind(&asset).fetch_one(&state.db).await?;
@@ -431,8 +475,8 @@ pub async fn original(State(state): State<AppState>, MaybeAuth(caller): MaybeAut
     let (bytes, content_type, filename) = original_file(&state, &doc).await?;
     let mut response = Response::new(Body::from(bytes));
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("application/pdf")));
-    let name = format!("inline; filename=\"{}\"", filename.replace('"', "_"));
-    if let Ok(value) = HeaderValue::from_str(&name) {
+    // Shown in the browser, under the name it was opened with.
+    if let Some(value) = disposition("inline", &filename) {
         response.headers_mut().insert(header::CONTENT_DISPOSITION, value);
     }
     Ok(response)
@@ -444,8 +488,7 @@ pub async fn convert_pdf(State(state): State<AppState>, Auth(caller): Auth, Path
     if doc_row.kind != "pdf" {
         return Err(ApiError::conflict("This is already a doc."));
     }
-    let (bytes, _, _) = original_file(&state, &doc_row).await?;
-    let doc = convert::pdf_text(&state, &bytes).await?;
+    let doc = pdf_doc(&state, &doc_row).await?;
     sqlx::query("update docs set kind = 'doc' where id = $1").bind(&id).execute(&state.db).await?;
     rooms::edit(&state, &id, &caller.uuid, Origin::Import, None, |y| {
         let current = ydoc::read_doc(y);

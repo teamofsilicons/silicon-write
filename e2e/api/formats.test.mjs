@@ -52,7 +52,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function carbon(label = "fmt") {
   const account = await signUpCarbon(label);
   const tokens = await carbonTokens(account);
-  return Object.assign(account, { api: writeApi(tokens.access_token) });
+  return Object.assign(account, { api: writeApi(tokens.access_token), token: tokens.access_token });
 }
 
 /** A new Silicon (custodian `custodian`) signed in to Write. Waits out the Accounts CLI's code limit. */
@@ -61,7 +61,7 @@ async function silicon(custodian, label = "writer") {
     try {
       const account = await createSilicon(custodian, label);
       const tokens = await siliconTokens(account);
-      return Object.assign(account, { api: writeApi(tokens.access_token) });
+      return Object.assign(account, { api: writeApi(tokens.access_token), token: tokens.access_token });
     } catch (error) {
       const wait = Number(String(error.message).match(/"retry_after_seconds":\s*(\d+)/)?.[1]);
       if (!wait || attempt >= 3) throw error;
@@ -222,14 +222,20 @@ function uploadedImages(markdown) {
   return out;
 }
 
-/** Fetches an uploaded image both from the service and from the web origin the doc points at. */
-async function assertServedImage(api, image, expected = DOT) {
+/**
+ * Fetches an image from the web origin docs point at, as `who` (an account with a token) or without signing in. Images
+ * follow their doc's access: the web forwards the caller's token (or session) to the service, which checks it.
+ */
+const fromWeb = (url, who) => fetch(url, who ? { headers: { authorization: `Bearer ${who.token}` } } : {});
+
+/** Fetches an uploaded image, as `who`, both from the service and from the web origin the doc points at. */
+async function assertServedImage(who, image, expected = DOT) {
   assert.match(image.id ?? "", /^a_[A-Za-z0-9]+$/, `the doc points at an uploaded image on ${WEB}/assets/, not at ${image.url.slice(0, 120)}`);
-  const direct = await api.raw("GET", `/v1/assets/${image.id}`);
+  const direct = await who.api.raw("GET", `/v1/assets/${image.id}`);
   assert.equal(direct.status, 200, `GET /v1/assets/${image.id}: ${show(direct)}`);
   assert.equal(typeOf(direct), "image/png");
   if (expected) assert.ok(Buffer.from(direct.body).equals(expected), "the uploaded image is the picture from the file, byte for byte");
-  const web = await fetch(image.url);
+  const web = await fromWeb(image.url, who);
   assert.equal(web.status, 200, `the web editor serves ${image.url}`);
   assert.equal((web.headers.get("content-type") ?? "").split(";")[0], "image/png");
   assert.ok(Buffer.from(await web.arrayBuffer()).equals(Buffer.from(direct.body)), "the web origin serves the same bytes");
@@ -435,9 +441,9 @@ test("an OpenDocument (.odt) file opens with its structure", SLOW, async () => {
   const doc = await opened(me.api, "rich.odt");
   const md = await markdownOf(me.api, doc.id);
   assertHeadings(md, ".odt");
-  // LibreOffice's .odt keeps no inline-code style, checkbox characters or code block, so those aren't asked for.
-  assertInlineFormatting(md, ".odt", { code: false });
-  for (const block of [BULLETS, STEPS, TABLE, QUOTE]) assert.ok(md.includes(block), `.odt: ${JSON.stringify(block)}\n---\n${md}`);
+  // Reading through Word preserves the code style and checklist that Pandoc's ODT reader loses.
+  assertInlineFormatting(md, ".odt");
+  for (const block of [BULLETS, STEPS, CHECKLIST, TABLE, QUOTE]) assert.ok(md.includes(block), `.odt: ${JSON.stringify(block)}\n---\n${md}`);
   assertMaths(md, ".odt");
   assert.ok(md.includes('print("hello")'), ".odt: the code text");
   assertFootnote(md, ".odt");
@@ -551,7 +557,7 @@ for (const [name, sameBytes] of [
     const images = uploadedImages(md);
     assert.equal(images.length, 1, `one picture\n---\n${md}`);
     // LibreOffice may write the picture again on the way (.doc, .rtf), so only Word/OpenDocument promise the same bytes.
-    await assertServedImage(me.api, images[0], sameBytes ? DOT : null);
+    await assertServedImage(me, images[0], sameBytes ? DOT : null);
   });
 }
 
@@ -565,7 +571,7 @@ test("pictures in a Word table cell, and Word drawings browsers can't show, beco
     const cell = images.find(i => i.alt === "Dot in a cell");
     assert.ok(cell, `the cell's picture keeps its description\n---\n${md}`);
     assert.match(md, /<td>\s*!\[Dot in a cell\]|\| !\[Dot in a cell\]/, "it is still inside the table");
-    await assertServedImage(me.api, cell, DOT);
+    await assertServedImage(me, cell, DOT);
   });
   await t.test("a Word drawing (EMF) is shown as a PNG", async () => {
     const drawing = images.find(i => i.alt === "A drawing");
@@ -583,7 +589,7 @@ test("a picture embedded in a web page (data: URI) becomes an uploaded image", a
   const md = await markdownOf(me.api, (await opened(me.api, "embedded-image.html")).id);
   const images = uploadedImages(md);
   assert.equal(images.length, 1, `one picture\n---\n${md.slice(0, 400)}`);
-  await assertServedImage(me.api, images[0], DOT);
+  await assertServedImage(me, images[0], DOT);
 });
 
 test("downloads of a doc opened from a web page keep the page's picture", SLOW, async () => {
@@ -602,7 +608,7 @@ test("a picture in a file opened on top of a doc becomes that doc's uploaded ima
   assert.equal(r.status, 200, show(r));
   const images = uploadedImages(await markdownOf(me.api, doc.id));
   assert.equal(images.length, 1);
-  await assertServedImage(me.api, images[0], DOT);
+  await assertServedImage(me, images[0], DOT);
 });
 
 // ==========================================================================================
@@ -1483,7 +1489,7 @@ test("image uploads take PNG, JPEG, GIF, WebP and SVG, and serve them so they ca
       assert.ok(Buffer.from(served.body).equals(bytes), "the same bytes");
       assert.match(served.headers.get("content-security-policy") ?? "", /sandbox/);
       assert.equal(served.headers.get("x-content-type-options"), "nosniff");
-      const web = await fetch(r.body.url);
+      const web = await fromWeb(r.body.url, me);
       assert.equal(web.status, 200, `the web origin serves ${r.body.url}`);
       assert.equal((web.headers.get("content-type") ?? "").split(";")[0], type);
       assert.equal(web.headers.get("x-content-type-options"), "nosniff");
@@ -1501,7 +1507,7 @@ test("the web origin docs point at serves uploaded images with the service's san
     assert.equal(r.status, 201, show(r));
     const service = (await me.api.raw("GET", `/v1/assets/${r.body.id}`)).headers.get("content-security-policy");
     assert.equal(service, "default-src 'none'; style-src 'unsafe-inline'; sandbox");
-    const web = await fetch(r.body.url);
+    const web = await fromWeb(r.body.url, me);
     assert.equal(web.status, 200);
     assert.equal(web.headers.get("content-security-policy"), service, `${name} at ${r.body.url} keeps the service's policy`);
   }
@@ -1572,11 +1578,35 @@ test("an image that doesn't exist is not found, on the service and on the web or
   assert.equal((await fetch(`${WEB}/assets/not-an-asset-id`)).status, 404);
 });
 
+test("an image is shown to whoever can open its doc, on the service and on the web origin", async t => {
+  const owner = await carbon("asset-access-owner");
+  const stranger = await carbon("asset-access-stranger");
+  const doc = await newDoc(owner.api, "# Picture\n");
+  const up = await owner.api.raw("POST", `/v1/docs/${doc.id}/assets`, form(DOT, "dot.png", {}, "image/png"));
+  assert.equal(up.status, 201, show(up));
+  const put = await owner.api.put(`/v1/docs/${doc.id}/markdown`, { markdown: `# Picture\n\n![A red dot](${up.body.url})\n` });
+  assert.equal(put.status, 200, show(put));
+  const status = async who => [(await (who ? who.api : anonymous).raw("GET", `/v1/assets/${up.body.id}`)).status, (await fromWeb(up.body.url, who)).status];
+
+  await t.test("the owner sees it", async () => assert.deepEqual(await status(owner), [200, 200]));
+  await t.test("someone the doc isn't shared with doesn't", async () => assert.deepEqual(await status(stranger), [404, 404]));
+  await t.test("nor does anyone without signing in", async () => assert.deepEqual(await status(null), [404, 404]));
+  await t.test("once the doc is public, anyone with its link does", async () => {
+    await makePublic(owner, doc.id, "view");
+    assert.deepEqual(await status(null), [200, 200]);
+    assert.deepEqual(await status(stranger), [200, 200]);
+  });
+  await t.test("and once it is private again, they don't", async () => {
+    await makePublic(owner, doc.id, "none");
+    assert.deepEqual(await status(null), [404, 404]);
+  });
+});
+
 test("deleting a doc permanently deletes its images and its PDF original", async () => {
   const me = await carbon("asset-purge");
   const doc = await opened(me.api, "embedded-image.docx");
   const [image] = uploadedImages(await markdownOf(me.api, doc.id));
-  await assertServedImage(me.api, image, DOT);
+  await assertServedImage(me, image, DOT);
   const pdf = await opened(me.api, "rich.pdf");
   assert.equal((await me.api.raw("GET", `/v1/docs/${pdf.id}/original`)).status, 200);
 
@@ -1589,7 +1619,7 @@ test("deleting a doc permanently deletes its images and its PDF original", async
     assert.equal(purge.status, 204, show(purge));
   }
   assert.equal((await me.api.raw("GET", `/v1/assets/${image.id}`)).status, 404, "the image is gone");
-  assert.equal((await fetch(image.url)).status, 404, "on the web origin too");
+  assert.equal((await fromWeb(image.url, me)).status, 404, "on the web origin too");
   assert.equal((await me.api.raw("GET", `/v1/docs/${pdf.id}/original`)).status, 404, "the PDF is gone");
 });
 
@@ -1605,7 +1635,7 @@ test("a copy keeps its pictures when the doc it was copied from is deleted perma
   assert.equal((await me.api.del(`/v1/docs/${doc.id}/permanently?confirm=${doc.id}`)).status, 204);
   // Only the deleted doc is gone: the copy is another doc and must still show its picture.
   const [still] = uploadedImages(await markdownOf(me.api, copy.body.id));
-  const served = await fetch(still.url);
+  const served = await fromWeb(still.url, me);
   assert.equal(served.status, 200, `the copy's picture ${still.url} still loads`);
   const docx = unzip((await download(me.api, copy.body.id, "docx")).body);
   assert.ok([...docx.keys()].some(k => k.startsWith("word/media/")), "and the copy still downloads with it");
