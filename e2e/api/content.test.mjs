@@ -1461,6 +1461,15 @@ describe("Markdown round trip", TIMEOUT, () => {
 // ProseMirror
 // ------------------------------------------------------------------------------------------------
 
+test("writing back Markdown with inline comment annotations is refused without changing the doc", async () => {
+  const owner = await aCarbon("owner");
+  const doc = await newDoc(owner, "Private commentary must stay in threads.\n");
+  const before = await read(owner, doc.id);
+  const markdown = `${before.markdown}\n> [!comment t_example by ${owner.id} on "commentary"] This comment is private.\n`;
+  failsWith(await putMarkdown(owner, doc.id, { markdown }), 422, "invalid");
+  assert.deepEqual(await read(owner, doc.id), before);
+});
+
 describe("ProseMirror rendering (GET /v1/docs/{id}/prosemirror)", TIMEOUT, () => {
   test("renders the rich doc in the editor's schema", async () => {
     const owner = await aCarbon("owner");
@@ -1573,10 +1582,10 @@ describe("Authorship and attribution", TIMEOUT, () => {
     assert.deepEqual(authorIds(await authorship(silicon, doc.id)), authorIds(blocks));
   });
 
-  test("authorship is for editors: commenters and viewers get 403", async () => {
-    const { doc, commenter, viewer } = await setup("Text.\n", { commenter: true, viewer: true });
-    failsWith(await commenter.api.get(`/v1/docs/${doc.id}/authorship`), 403, "forbidden");
-    failsWith(await viewer.api.get(`/v1/docs/${doc.id}/authorship`), 403, "forbidden");
+  test("authorship is visible to signed-in commenters and viewers", async () => {
+    const { owner, doc, commenter, viewer } = await setup("Text.\n", { commenter: true, viewer: true });
+    assert.deepEqual(authorIds(await authorship(commenter, doc.id)), [[owner.id]]);
+    assert.deepEqual(authorIds(await authorship(viewer, doc.id)), [[owner.id]]);
   });
 
   test("a Silicon's edits are attributed to the Silicon in the history, by section", async () => {

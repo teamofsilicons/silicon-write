@@ -46,7 +46,7 @@ pub async fn get_markdown(State(state): State<AppState>, MaybeAuth(caller): Mayb
         return Err(ApiError::forbidden("Only people who can comment see comments and suggestions."));
     }
     let annotations = if inline_comments { crate::comments::annotations(&state, &id).await? } else { vec![] };
-    let (doc, seq) = rooms::read(&state, &id).await?;
+    let (doc, seq) = if doc_row.kind == "pdf" { (pdf_doc(&state, &doc_row).await?, doc_row.seq) } else { rooms::read(&state, &id).await? };
     let options = WriteOptions { suggestions: if critic { SuggestionView::Critic } else { SuggestionView::Current }, annotations };
     Ok(Json(json!({ "seq": seq, "markdown": write_doc::to_markdown_with(&doc, &options), "title": doc_row.display_title() })))
 }
@@ -58,7 +58,10 @@ pub struct SeqQuery {
 
 pub async fn get_prosemirror(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>, Query(q): Query<SeqQuery>) -> ApiResult<Json<Value>> {
     let min = if q.seq.is_some() { Role::Editor } else { Role::Viewer };
-    let (_, role) = access::require_doc(&state, caller.as_ref(), &id, min).await?;
+    let (row, role) = access::require_doc(&state, caller.as_ref(), &id, min).await?;
+    if q.seq.is_some_and(|seq| seq < 0 || seq > row.seq) {
+        return Err(ApiError::not_found("That version does not exist."));
+    }
     let (doc, seq) = match q.seq {
         Some(seq) => (crate::versions::doc_at(&state, &id, seq).await?, seq),
         None => rooms::read(&state, &id).await?,
@@ -98,12 +101,13 @@ fn suggest_mode(caller: &Caller, suggest: bool) -> EditMode {
 
 /// Applies exact replacements to Markdown. Each `old` must be there exactly once (or `all`).
 pub fn apply_edits(markdown: &str, edits: &[Edit]) -> ApiResult<String> {
-    let mut text = markdown.to_owned();
+    let mut replacements = vec![];
     for (i, edit) in edits.iter().enumerate() {
         if edit.old.is_empty() {
             return Err(ApiError::invalid(format!("Edit {}: `old` is empty.", i + 1)).hint("Give the exact text to replace."));
         }
-        let count = text.matches(&edit.old).count();
+        let matches: Vec<usize> = markdown.match_indices(&edit.old).map(|(at, _)| at).collect();
+        let count = matches.len();
         if count == 0 {
             return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "no_match", format!("Edit {}: the text to replace isn't in the doc.", i + 1))
                 .hint("Read the doc's Markdown again (it may have changed) and copy the text exactly, including formatting characters."));
@@ -112,13 +116,34 @@ pub fn apply_edits(markdown: &str, edits: &[Edit]) -> ApiResult<String> {
             return Err(ApiError::new(StatusCode::CONFLICT, "not_unique", format!("Edit {}: the text to replace appears {count} times.", i + 1))
                 .hint("Include more of the surrounding text so it appears once, or set `all` to replace every one."));
         }
-        text = if edit.all { text.replace(&edit.old, &edit.new) } else { text.replacen(&edit.old, &edit.new, 1) };
+        for at in matches {
+            replacements.push((at, at + edit.old.len(), edit.new.as_str()));
+        }
+    }
+    replacements.sort_by_key(|r| r.0);
+    if replacements.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+        return Err(ApiError::invalid("The edits overlap.").hint("Each edit must replace a separate passage from the Markdown you read."));
+    }
+    let mut text = String::new();
+    let mut at = 0;
+    for (start, end, new) in replacements {
+        text.push_str(&markdown[at..start]);
+        text.push_str(new);
+        at = end;
+        if text.len() > MAX_MARKDOWN {
+            return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "That's more than 5 MB of Markdown."));
+        }
+    }
+    text.push_str(&markdown[at..]);
+    if text.len() > MAX_MARKDOWN {
+        return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "That's more than 5 MB of Markdown."));
     }
     Ok(text)
 }
 
 pub async fn post_edits(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<EditsBody>) -> ApiResult<Json<Value>> {
-    let (_, role) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
+    let (doc_row, role) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
+    refuse_pdf(&doc_row)?;
     if body.edits.is_empty() {
         return Err(ApiError::invalid("There are no edits."));
     }
@@ -157,10 +182,15 @@ pub struct PutBody {
 }
 
 pub async fn put_markdown(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<PutBody>) -> ApiResult<Json<Value>> {
+    if body.markdown.lines().any(|line| line.trim_start().starts_with("> [!comment ")) {
+        return Err(ApiError::invalid("This Markdown includes comment annotations.")
+            .hint("Read the doc's Markdown without comments=inline before writing it back. Comments are edited through threads."));
+    }
     if body.markdown.len() > MAX_MARKDOWN {
         return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "That's more than 5 MB of Markdown."));
     }
     let (doc_row, role) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
+    refuse_pdf(&doc_row)?;
     if let Some(base) = body.base_seq
         && (base < 0 || base > doc_row.seq) {
             return Err(ApiError::invalid(format!("base_seq {base} isn't a version of this doc (it's at {}).", doc_row.seq)));

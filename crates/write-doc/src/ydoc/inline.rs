@@ -180,8 +180,8 @@ pub(super) fn patch(txn: &mut TransactionMut, el: &XmlElementRef, target: &[Inli
                     0
                 }
             };
-            for u in unit..unit + count {
-                if let Some(n) = kept_as[u] {
+            for &kept in &kept_as[unit..unit + count] {
+                if let Some(n) = kept {
                     after = n + 1;
                 }
             }
@@ -247,8 +247,8 @@ pub(super) fn patch(txn: &mut TransactionMut, el: &XmlElementRef, target: &[Inli
                     0
                 }
             };
-            for u in unit..unit + count {
-                if let Some(n) = kept_as[u] {
+            for &kept in &kept_as[unit..unit + count] {
+                if let Some(n) = kept {
                     anchor = stretch_of[item_of_new[n]];
                 }
             }

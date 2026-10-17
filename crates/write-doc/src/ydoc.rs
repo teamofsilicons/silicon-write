@@ -1604,10 +1604,8 @@ pub fn authorship(ydoc: &YDoc) -> Vec<Vec<(u64, usize)>> {
                 }
             }
         }
-        if runs.is_empty() {
-            if let yrs::branch::BranchID::Nested(id) = XmlOut::Element(block).id() {
-                runs.push((id.client.get(), 1));
-            }
+        if runs.is_empty() && let yrs::branch::BranchID::Nested(id) = XmlOut::Element(block).id() {
+            runs.push((id.client.get(), 1));
         }
         out.push(runs);
     }
