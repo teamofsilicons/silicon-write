@@ -162,7 +162,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const copyFolder = (doc: Doc) => folder && atLeast(folder.role, "editor") ? folder.id : doc.owner.uuid === me ? doc.folder_id : null;
   const folders = data?.folders ?? [];
   const docs = data?.docs ?? [];
-  const empty = !isLoading && !folders.length && !docs.length;
+  const empty = !isLoading && !error && !folders.length && !docs.length;
 
   return (
     <Page>
@@ -219,7 +219,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                 </Button>
                 <HoldToConfirm tone="danger" label="Hold to delete forever" onConfirm={() => void act("It couldn't be deleted", () => api.delete(`/v1/folders/${seg(f.id)}/permanently`, { query: { confirm: f.id } }), "Deleted for good")} />
               </span>
-            ) : (
+            ) : !inTrash ? (
               <DropdownMenuRoot>
                 <DropdownMenuTrigger asChild>
                   <button type="button" className={styles.more} aria-label={`More for ${f.name}`}><MoreHorizontal size={18} /></button>
@@ -236,7 +236,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                   ) : null}
                 </DropdownMenuContent>
               </DropdownMenuRoot>
-            )}
+            ) : null}
           </li>
         ))}
         {docs.map(d => (
@@ -255,7 +255,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                 </Button>
                 <HoldToConfirm tone="danger" label="Hold to delete forever" onConfirm={() => void act("It couldn't be deleted", () => api.delete(`/v1/docs/${seg(d.id)}/permanently`, { query: { confirm: d.id } }), "Deleted for good")} />
               </span>
-            ) : (
+            ) : !inTrash ? (
               <DropdownMenuRoot>
                 <DropdownMenuTrigger asChild>
                   <button type="button" className={styles.more} aria-label={`More for ${d.title}`}><MoreHorizontal size={18} /></button>
@@ -273,7 +273,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                   ) : null}
                 </DropdownMenuContent>
               </DropdownMenuRoot>
-            )}
+            ) : null}
           </li>
         ))}
       </ul>
