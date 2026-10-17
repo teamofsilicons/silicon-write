@@ -12,7 +12,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test --project=e2e",
     "screens": "playwright test --project=screens",
-    "postinstall": "node -e \"require('fs').copyFileSync(require.resolve('pdfjs-dist/build/pdf.worker.min.mjs'), 'public/pdf.worker.min.mjs')\""
+    "postinstall": "node -e \"require('fs').copyFileSync(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs'), 'public/pdf.worker.min.mjs')\""
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.21",

@@ -363,7 +363,9 @@ async function watchFlashes(page: Page): Promise<() => Promise<Flashes>> {
         if (!seen.labels.includes(text)) seen.labels.push(text);
       }
       if (document.querySelector(".remote-change")) seen.flashed = true;
-      const text = root.textContent ?? "";
+      const content = root.cloneNode(true) as HTMLElement;
+      content.querySelectorAll(".collaboration-carets__caret, .collaboration-carets__label, .remote-change-label, .authorship-gutter, .ProseMirror-widget").forEach(el => el.remove());
+      const text = content.textContent ?? "";
       if (seen.texts[seen.texts.length - 1] !== text) seen.texts.push(text);
     }).observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
   });
@@ -1091,7 +1093,7 @@ test.describe("together", () => {
     const before = frames.length;
     const edited = await api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Draft paragraph.", new: "Draft paragraph, reviewed and tightened by the Silicon." }] });
     expect(edited.status).toBe(200);
-    await expect(editorOf(page)).toContainText("Draft paragraph, reviewed and tightened by the Silicon.");
+    await expect.poll(() => docText(page)).toContain("Draft paragraph, reviewed and tightened by the Silicon.");
     await page.waitForTimeout(300);
     await shot(page, "silicon-flash");
     const seen = await flashes();
@@ -1104,7 +1106,7 @@ test.describe("together", () => {
     expect.soft(seen.labels, `the highlight's name label (frames after the edit: ${arrived})`).toContain(me.display_name || me.id);
     // A second change by the same Silicon (its author now known to the page) is highlighted too.
     await api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "Closing line.", new: "Closing line, also by the Silicon." }] });
-    await expect(editorOf(page)).toContainText("Closing line, also by the Silicon.");
+    await expect.poll(() => docText(page)).toContain("Closing line, also by the Silicon.");
     await page.waitForTimeout(300);
     const again = await flashes();
     expect.soft(again.labels, `the second change's name label (frames: ${frames.slice(before).join(" | ")})`).toContain(me.display_name || me.id);
@@ -1146,14 +1148,14 @@ test.describe("together", () => {
       // Its typing reaches the page and the service as one change.
       const flashes = await watchFlashes(page);
       text.insert(text.length, " Typed live by the Silicon.");
-      await expect(editorOf(page)).toContainText("Silicon's paragraph. Typed live by the Silicon.");
+      await expect.poll(() => docText(page)).toContain("Silicon's paragraph. Typed live by the Silicon.");
       await expectMarkdown(page, doc.id, "Carbon's paragraph.\n\nSilicon's paragraph. Typed live by the Silicon.\n");
       await page.waitForTimeout(300);
       const first = await flashes();
       expect.soft(first.labels, "the name label on the Silicon's first live change").toContain(name);
       // A later change, once the page knows whose connection it is.
       text.insert(text.length, " And a second sentence.");
-      await expect(editorOf(page)).toContainText("Typed live by the Silicon. And a second sentence.");
+      await expect.poll(() => docText(page)).toContain("Typed live by the Silicon. And a second sentence.");
       await page.waitForTimeout(300);
       await shot(page, "silicon-live-typing");
       const second = await flashes();
@@ -1527,7 +1529,7 @@ test.describe("suggestions and roles", () => {
     await openDoc(page, doc.id);
     const editor = editorOf(page);
     await modeButton(page, "Suggesting").click();
-    await expect(toolbarOf(page)).toContainText("Suggesting: what you type and delete becomes a suggestion.");
+    await expect(toolbarOf(page)).toContainText("Suggesting: your changes are proposed for review.");
     await caretAfter(page, "ready");
     await page.keyboard.type(" today");
     const inserted = editor.locator("ins.suggest-insert");
@@ -1604,7 +1606,7 @@ test.describe("suggestions and roles", () => {
     await context.close();
   });
 
-  test("a commenter comments by selecting and can only suggest; Enter is refused with a reason", async ({ browser }) => {
+  test("a commenter comments and proposes text, formatting and paragraph splits for review", async ({ browser }) => {
     const owner = await signedIn(browser, "carbon");
     const friend = await signedIn(browser, "friend");
     const doc = await newDoc(owner.page, `Commenter ${tag()}`, "The commenter reads this line.");
@@ -1625,7 +1627,7 @@ test.describe("suggestions and roles", () => {
     expect((await threadsOf(owner.page, doc.id)).map(t => [t.quote, t.created_by.uuid])).toEqual([["reads this line", friend.account.uuid]]);
 
     await modeButton(page, "Suggesting").click();
-    await expect(toolbarOf(page)).toContainText("Suggesting: what you type and delete becomes a suggestion for the editors.");
+    await expect(toolbarOf(page)).toContainText("Suggesting: your changes are proposed for review.");
     await caretAfter(page, "reads");
     await page.keyboard.type(" closely");
     const inserted = editorOf(page).locator("ins.suggest-insert");
@@ -1635,31 +1637,38 @@ test.describe("suggestions and roles", () => {
     await expectMarkdown(owner.page, doc.id, "The commenter reads this line.\n");
     await expect.poll(async () => (await markdownOf(owner.page, doc.id, "?suggestions=critic")).replace(/\+\+\}\{\+\+/g, "")).toBe("The commenter reads{++ closely++} this line.\n");
     expect.soft(await markdownOf(owner.page, doc.id, "?suggestions=critic"), "the suggestion in CriticMarkup").toBe("The commenter reads{++ closely++} this line.\n");
-    // Splitting the paragraph can't be a suggestion.
-    await caretAfter(page, "commenter");
-    await page.keyboard.press("Enter");
-    await expect(page.getByText("Not a suggestion")).toBeVisible();
-    await expect(editorOf(page).locator("p")).toHaveCount(1);
+    await expect(toolbarOf(page).getByRole("button", { name: "Bold", exact: true })).toBeVisible();
     await shot(page, "commenter-suggesting");
-    await expectMarkdown(owner.page, doc.id, "The commenter reads this line.\n");
-    // A commenter can't accept or reject.
+    // A commenter can propose changes but cannot decide them.
     await expect(suggestionsList(page)).toBeVisible();
     await expect(suggestionsList(page).getByRole("button", { name: /^(Accept|Reject)/ })).toHaveCount(0);
-    // The owner rejects it, one card at a time, and the text never changes.
     await openDoc(owner.page, doc.id);
     const list = suggestionsList(owner.page);
-    await expect(list).toBeVisible();
     await expect(list).toContainText(friend.account.display_name || friend.account.id);
-    const reject = list.getByRole("button", { name: "Reject", exact: true });
-    for (let i = 0; i < 5 && (await reject.count()) > 0; i++) {
-      const before = await reject.count();
-      await reject.first().click();
-      await expect(reject).toHaveCount(before - 1);
-    }
+    await list.getByRole("button", { name: /^Reject(?: all)?$/ }).first().click();
     await expectMarkdown(owner.page, doc.id, "The commenter reads this line.\n", "?suggestions=critic");
     await expect(editorOf(page).locator("ins.suggest-insert")).toHaveCount(0);
     await expect.poll(() => docText(page)).toBe("The commenter reads this line.");
-    // The commenter's comment was on "reads this line": with the suggestion gone, its text is that again.
+    await expect.poll(async () => (await threadsOf(owner.page, doc.id)).map(t => t.current_quote)).toEqual(["reads this line"]);
+
+    // Formatting is reviewable too, without changing the accepted document.
+    await select(page, "commenter");
+    await toolbarOf(page).getByRole("button", { name: "Bold", exact: true }).click();
+    await expect(list).toBeVisible();
+    await expectMarkdown(owner.page, doc.id, "The commenter reads this line.\n");
+    await list.getByRole("button", { name: /^Reject(?: all)?$/ }).first().click();
+    await expect(list).toBeHidden();
+    await expect(editorOf(page).locator("strong")).toHaveCount(0);
+
+    // Enter proposes a paragraph split; the owner can accept the structural change.
+    await caretAfter(page, "commenter");
+    await page.keyboard.press("Enter");
+    await expect(list).toBeVisible();
+    await expectMarkdown(owner.page, doc.id, "The commenter reads this line.\n");
+    await expect(suggestionsList(page).getByRole("button", { name: /^(Accept|Reject)/ })).toHaveCount(0);
+    await list.getByRole("button", { name: /^Accept(?: all)?$/ }).first().click();
+    await expectMarkdown(owner.page, doc.id, "The commenter\n\nreads this line.\n");
+    await expect(editorOf(page).locator("p")).toHaveCount(2);
     await expect.poll(async () => (await threadsOf(owner.page, doc.id)).map(t => t.current_quote)).toEqual(["reads this line"]);
     await friend.context.close();
     await owner.context.close();
@@ -1817,7 +1826,7 @@ test.describe("versions", () => {
     await detail.getByRole("button", { name: friend.account.id, exact: true }).click();
     await expect(page.getByText(`Undid ${friend.account.id}'s changes since this version`)).toBeVisible();
     await expect.poll(() => markdownOf(page, doc.id)).toBe(brought.replace("Middle paragraph, rewritten by the friend.", "Middle paragraph."));
-    await expect(editorOf(page)).toContainText("Middle paragraph.");
+    await expect.poll(() => docText(page)).toContain("Middle paragraph.");
     await shot(page, "versions-undo-account");
     // Going back never deletes anything: every version is still there.
     expect((await versionsOf(page, doc.id)).length).toBeGreaterThanOrEqual(5);
@@ -1829,26 +1838,6 @@ test.describe("versions", () => {
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* PDFs                                                                                                              */
 /* ---------------------------------------------------------------------------------------------------------------- */
-
-/**
- * pdf.js 6 (the web's PDF view) calls Map.prototype.getOrInsertComputed, which browsers only recently gained (Chromium
- * 141, the browser this suite runs, lacks it; see the first PDF test). The other PDF tests add it to the page and to the
- * PDF worker so they can check everything after the pages render.
- */
-const UPSERT_SHIM = `(() => {
-  for (const C of [Map, WeakMap]) {
-    if (!C.prototype.getOrInsertComputed) Object.defineProperty(C.prototype, "getOrInsertComputed", { configurable: true, writable: true, value(key, make) { if (!this.has(key)) this.set(key, make(key)); return this.get(key); } });
-    if (!C.prototype.getOrInsert) Object.defineProperty(C.prototype, "getOrInsert", { configurable: true, writable: true, value(key, value) { if (!this.has(key)) this.set(key, value); return this.get(key); } });
-  }
-})();`;
-
-async function withUpsertShim(page: Page) {
-  await page.addInitScript(UPSERT_SHIM);
-  await page.route("**/pdf.worker.min.mjs", async route => {
-    const response = await route.fetch();
-    await route.fulfill({ response, body: `${UPSERT_SHIM}\n${await response.text()}` });
-  });
-}
 
 test.describe("PDFs", () => {
   async function importPdf(page: Page, title: string): Promise<Doc> {
@@ -1876,7 +1865,6 @@ test.describe("PDFs", () => {
 
   test("a PDF shows its pages and takes a comment on an area drawn over a page", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
-    await withUpsertShim(page);
     const doc = await importPdf(page, `PDF ${tag()}`);
     await page.goto(`/d/${doc.id}`);
     await expect(page.getByText("PDF, shown as it is · 2 pages")).toBeVisible({ timeout: 30_000 });
@@ -1914,7 +1902,6 @@ test.describe("PDFs", () => {
 
   test("a comment on a PDF area shows on its page and in the comments", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
-    await withUpsertShim(page);
     const doc = await importPdf(page, `PDF threads ${tag()}`);
     await ok(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "pdf", rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.1, page: 2 } }, body: "Check this figure." });
     await page.goto(`/d/${doc.id}`);

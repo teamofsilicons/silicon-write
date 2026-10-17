@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * The formatting bar, for people who can write. In suggesting mode only what can be a suggestion stays (and comment).
+ * The formatting bar, for people who can write or propose changes for review.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
 import {
   Bold, CheckSquare, ChevronDown, Code, Highlighter, Image as ImageIcon, Italic, Link as LinkIcon, List, ListOrdered, MessageSquarePlus, Minus, Palette, Plus, Quote, Redo2, Sigma,
@@ -57,7 +57,27 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
   const [href, setHref] = useState("");
   const chain = () => editor.chain().focus();
   const styleLabel = state.heading ? `Heading ${state.heading}` : state.quote ? "Quote" : state.codeBlock ? "Code" : "Text";
-  const format = canEdit && !suggesting;
+  const format = canEdit || suggesting;
+
+  // Formatting menus return the keyboard to the passage being edited. Radix otherwise returns
+  // it to the toolbar trigger, where the next space opens the menu instead of entering text.
+  const returnToDoc = (event: Event) => {
+    event.preventDefault();
+    const active = document.activeElement;
+    if (!active || active === document.body || active.closest('[role="toolbar"], [data-radix-popper-content-wrapper]')) editor.commands.focus();
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!format || !editor.view.hasFocus() || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setHref(editor.getAttributes("link").href ?? "");
+      setLinkOpen(true);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editor, format]);
 
   return (
     <div className={styles.toolbar} role="toolbar" aria-label="Formatting">
@@ -78,7 +98,7 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
                 {styleLabel} <ChevronDown size={14} aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent align="start" onCloseAutoFocus={returnToDoc}>
               <DropdownMenuItem onSelect={() => chain().setParagraph().run()}>Text</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => chain().toggleHeading({ level: 1 }).run()}>Heading 1</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => chain().toggleHeading({ level: 2 }).run()}>Heading 2</DropdownMenuItem>
@@ -112,7 +132,7 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
                   </button>
                 </PopoverTrigger>
               </Tooltip>
-              <PopoverContent className={styles.palette}>
+              <PopoverContent className={styles.palette} onCloseAutoFocus={returnToDoc}>
                 {TEXT_COLOURS.map(colour => (
                   <button key={colour} type="button" className={styles.swatch} style={{ background: colour }} aria-label={`Colour ${colour}`} onClick={() => chain().setColor(colour).run()} />
                 ))}
@@ -129,7 +149,7 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
                   </button>
                 </PopoverTrigger>
               </Tooltip>
-              <PopoverContent className={styles.palette}>
+              <PopoverContent className={styles.palette} onCloseAutoFocus={returnToDoc}>
                 {HIGHLIGHTS.map(colour => (
                   <button key={colour} type="button" className={styles.swatch} style={{ background: colour }} aria-label={`Highlight ${colour}`} onClick={() => chain().setHighlight({ color: colour }).run()} />
                 ))}
@@ -152,7 +172,7 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
                   </button>
                 </PopoverTrigger>
               </Tooltip>
-              <PopoverContent className={styles.linkPopover}>
+              <PopoverContent className={styles.linkPopover} onCloseAutoFocus={returnToDoc}>
                 <form
                   onSubmit={e => {
                     e.preventDefault();
@@ -199,7 +219,7 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
                 <Plus size={15} aria-hidden="true" /> Insert
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent align="start" onCloseAutoFocus={returnToDoc}>
               <DropdownMenuItem icon={<TableIcon size={16} />} onSelect={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>Table</DropdownMenuItem>
               <DropdownMenuItem icon={<ImageIcon size={16} />} onSelect={onImage}>Image</DropdownMenuItem>
               <DropdownMenuItem icon={<Minus size={16} />} onSelect={() => chain().setHorizontalRule().run()}>Divider</DropdownMenuItem>
@@ -216,7 +236,7 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
                   <TableIcon size={15} aria-hidden="true" /> Table
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" onCloseAutoFocus={returnToDoc}>
                 <DropdownMenuItem icon={<Rows3 size={16} />} onSelect={() => chain().addRowAfter().run()}>Add a row below</DropdownMenuItem>
                 <DropdownMenuItem icon={<Rows3 size={16} />} onSelect={() => chain().addRowBefore().run()}>Add a row above</DropdownMenuItem>
                 <DropdownMenuItem icon={<Columns3 size={16} />} onSelect={() => chain().addColumnAfter().run()}>Add a column right</DropdownMenuItem>
@@ -231,9 +251,8 @@ export function Toolbar({ editor, canEdit, suggesting, onComment, onImage }: { e
             </DropdownMenuRoot>
           ) : null}
         </>
-      ) : (
-        <p className={styles.suggestNote}>{canEdit ? "Suggesting: what you type and delete becomes a suggestion." : "Suggesting: what you type and delete becomes a suggestion for the editors."}</p>
-      )}
+      ) : null}
+      {suggesting ? <p className={styles.suggestNote}>Suggesting: your changes are proposed for review.</p> : null}
       {onComment ? (
         <div className={styles.toolEnd}>
           <Tool label="Comment" shortcut={`${mod}⌥M`} onClick={onComment}>

@@ -6,6 +6,7 @@
  * A PDF shown as it is opens in the PDF view instead. Signed-out readers of a public doc see it read only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -62,7 +63,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const [lostAccess, setLostAccess] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
-  const threadsQuery = useThreads(docId, "open", canComment && doc.kind === "doc");
+  const threadsQuery = useThreads(docId, "open", canComment, doc.kind === "pdf" ? 2_000 : false);
   const threads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data]);
 
   // The live connection (docs only; a PDF has no live text).
@@ -117,7 +118,10 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const changed = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => client.invalidateQueries({ queryKey: keys.suggestions(docId) }), 600);
+      timer = setTimeout(() => {
+        client.invalidateQueries({ queryKey: keys.suggestions(docId) });
+        client.invalidateQueries({ queryKey: ["threads", docId] });
+      }, 600);
     };
     editor.on("update", changed);
     return () => {
@@ -176,7 +180,8 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       }
       if (mod && event.altKey && (event.key.toLowerCase() === "m" || event.code === "KeyM") && canComment) {
         event.preventDefault();
-        startComment();
+        // Mount and focus the composer before the next typed character can reach the doc.
+        flushSync(() => startComment());
       }
     };
     window.addEventListener("keydown", onKey);
@@ -185,12 +190,12 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
 
   /** A comment on an area of an image. */
   const startImageAreaComment = useCallback(
-    (imagePos: number, rect: { x: number; y: number; w: number; h: number }, at: { top: number; left: number }) => {
+    (imagePos: number, rect: { x: number; y: number; w: number; h: number } | undefined, at: { top: number; left: number }) => {
       if (!editor || !canComment) return;
       const a = anchorFor(editor, imagePos, imagePos);
       if (!a) return;
       const node = editor.state.doc.nodeAt(imagePos);
-      setPending({ anchor: { kind: "image", start: a.start, rect, quote: node?.attrs.alt || "Image" }, top: at.top, left: at.left });
+      setPending({ anchor: { kind: "image", start: a.start, ...(rect ? { rect } : {}), quote: node?.attrs.alt || "Image" }, top: at.top, left: at.left });
     },
     [editor, canComment],
   );
@@ -286,25 +291,25 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               />
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
-              {editor && canComment ? (
-                <SelectionComment
-                  editor={editor}
-                  docId={docId}
-                  account={account}
-                  autoOpen={mode === "viewing"}
-                  pending={pending}
-                  onPending={setPending}
-                  onStart={range => startComment({ range })}
-                  onCreated={thread => {
-                    client.invalidateQueries({ queryKey: ["threads", docId] });
-                    setActiveThread(thread.id);
-                  }}
-                />
-              ) : null}
             </div>
           ) : (
             <div className={styles.loading}>{liveError ? <p className={styles.error}>{liveError}</p> : <p>Opening…</p>}</div>
           )}
+          {canComment && (editor || doc.kind === "pdf") ? (
+            <SelectionComment
+              editor={editor}
+              docId={docId}
+              account={account}
+              autoOpen={mode === "viewing"}
+              pending={pending}
+              onPending={setPending}
+              onStart={range => startComment({ range })}
+              onCreated={thread => {
+                client.invalidateQueries({ queryKey: ["threads", docId] });
+                setActiveThread(thread.id);
+              }}
+            />
+          ) : null}
         </main>
         {panel === "comments" && canComment ? (
           <CommentsPanel docId={docId} doc={doc} account={account!} threads={threads} activeThread={activeThread} onActivate={openThread} editor={editor} canEdit={canEdit} onClose={() => setPanel(null)} />

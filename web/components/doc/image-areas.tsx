@@ -27,7 +27,7 @@ export function ImageAreas({ editor, threads, activeThread, canComment, onActiva
   activeThread: string | null;
   canComment: boolean;
   onActivate: (id: string) => void;
-  onCommentArea: (imagePos: number, rect: Rect, at: { top: number; left: number }) => void;
+  onCommentArea: (imagePos: number, rect: Rect | undefined, at: { top: number; left: number }) => void;
 }) {
   const [, redraw] = useState(0);
   const [drawing, setDrawing] = useState<{ pos: number; start?: { x: number; y: number }; rect?: Rect } | null>(null);
@@ -76,10 +76,10 @@ export function ImageAreas({ editor, threads, activeThread, canComment, onActiva
         />
       ))}
       {canComment && selectedBox && !drawing ? (
-        <div className={styles.imageBar} style={{ position: "fixed", left: selectedBox.left + 8, top: Math.max(76, selectedBox.top + 8) }}>
+        <div className={styles.imageBar} style={{ position: "fixed", left: selectedBox.left + 8, top: Math.max(76, selectedBox.top - 40) }}>
           <Button variant="secondary" size="sm" onClick={() => {
             const coords = { top: selectedBox.bottom, left: selectedBox.left };
-            onCommentArea(selected!, { x: 0, y: 0, w: 1, h: 1 }, coords);
+            onCommentArea(selected!, undefined, coords);
           }}>
             <MessageSquarePlus size={15} aria-hidden="true" /> Comment on image
           </Button>

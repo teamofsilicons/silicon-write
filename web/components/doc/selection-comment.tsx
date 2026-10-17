@@ -5,7 +5,7 @@
  * text opens the comment box right there, with nothing in between. Editors get a small Comment button next to their
  * selection (or ⌘⌥M). Mentions offer the doc's people and are written as @c:id / @si:id.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/silicon-ui/button/button";
@@ -59,7 +59,7 @@ export function useMentionPeople(docId: string, enabled: boolean) {
 export function SelectionComment({
   editor, docId, account, autoOpen, pending, onPending, onStart, onCreated,
 }: {
-  editor: Editor;
+  editor: Editor | null;
   docId: string;
   account: Account | null;
   autoOpen: boolean;
@@ -78,6 +78,7 @@ export function SelectionComment({
   // Watch the selection (the page's own, so it works in reading mode too, where the editor isn't editable): readers
   // get the comment box straight away; editors a button.
   useEffect(() => {
+    if (!editor) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const check = () => {
       if (timer) clearTimeout(timer);
@@ -105,8 +106,8 @@ export function SelectionComment({
     };
   }, [editor, autoOpen, onStart, pending, value.text]);
 
-  useEffect(() => {
-    if (pending) setTimeout(() => input.current?.focus(), 30);
+  useLayoutEffect(() => {
+    if (pending) input.current?.focus();
   }, [pending]);
 
   // Escape closes the box.
@@ -116,7 +117,7 @@ export function SelectionComment({
       if (event.key === "Escape") {
         onPending(null);
         setValue({ text: "", mentions: [] });
-        editor.commands.focus();
+        editor?.commands.focus();
       }
     };
     window.addEventListener("keydown", onKey);

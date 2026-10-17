@@ -43,11 +43,12 @@ export function useSharing(kind: "docs" | "folders", id: string, enabled = true)
   return useQuery({ queryKey: keys.sharing(kind, id), queryFn: () => api.get<Sharing>(`/v1/${kind}/${seg(id)}/sharing`), enabled });
 }
 
-export function useThreads(id: string, status: "open" | "resolved" | "all", enabled = true) {
+export function useThreads(id: string, status: "open" | "resolved" | "all", enabled = true, refetchInterval: number | false = false) {
   return useQuery({
     queryKey: keys.threads(id, status),
     queryFn: () => api.get<{ threads: Thread[] }>(`/v1/docs/${seg(id)}/threads`, { query: { status } }),
     enabled,
+    refetchInterval,
   });
 }
 

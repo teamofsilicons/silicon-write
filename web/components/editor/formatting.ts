@@ -49,6 +49,9 @@ function safeLink(value: unknown): string | null {
 
 export const InlineImage = Image.extend({
   name: "inlineImage",
+  // The block Image extension owns setImage (the toolbar/file chooser). Reusing that
+  // command here silently turns a standalone image into an inline atom.
+  addCommands() { return {}; },
   addAttributes() {
     return {
       ...this.parent?.(),

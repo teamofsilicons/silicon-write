@@ -41,7 +41,7 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
     let cancelled = false;
     (async () => {
       try {
-        const pdfjs = await import("pdfjs-dist");
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
         pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
         const response = await fetch(`/api/v1/docs/${seg(doc.id)}/original`, { credentials: "same-origin" });
         if (!response.ok) throw new Error("The PDF couldn't be loaded.");
@@ -80,6 +80,12 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
       setConverting(false);
     }
   };
+
+  useEffect(() => {
+    const thread = threads.find(t => t.id === activeThread);
+    const number = thread?.anchor.rect?.page;
+    if (number) pageRefs.current.get(number)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeThread, threads]);
 
   const areas = threads.filter(t => t.anchor.kind === "pdf" && t.anchor.rect);
 
