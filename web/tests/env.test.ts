@@ -33,7 +33,7 @@ test("a complete environment is read and normalised", () => {
 
 test("APP_ID defaults to lib/app.config.ts and ACCOUNTS_API_URL to ACCOUNTS_URL", () => {
   const env = read({ APP_ID: undefined, ACCOUNTS_API_URL: undefined });
-  assert.equal(env.appId, "extend");
+  assert.equal(env.appId, "write");
   assert.equal(env.accountsApiUrl, "http://localhost:9590");
 });
 
@@ -46,7 +46,7 @@ test("every missing setting is named at once, with what to set", () => {
   assert.match(problems[3]!, /^SESSION_SECRET is not set\. .*openssl rand -base64 48$/);
   assert.match(problems[4]!, /^PUBLIC_URL is not set\. .*\{PUBLIC_URL\}\/auth\/callback\.$/);
   const error = (() => { try { read({ PUBLIC_URL: undefined }); } catch (failure) { return failure as EnvError; } })()!;
-  assert.match(error.message, /^Extend cannot start: one setting is missing or wrong\.\n {2}- PUBLIC_URL is not set\./);
+  assert.match(error.message, /^Write cannot start: one setting is missing or wrong\.\n {2}- PUBLIC_URL is not set\./);
 });
 
 test("malformed values are refused with the reason, and secrets are never echoed", () => {

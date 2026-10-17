@@ -23,6 +23,8 @@ use crate::notify;
 use crate::rooms;
 use crate::state::AppState;
 
+mod anchoring;
+
 const MAX_BODY: usize = 20_000;
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
@@ -57,51 +59,76 @@ fn rfc3339(t: &OffsetDateTime) -> String {
 }
 
 /// Where a thread's text is now: the current quote, whether its text is gone, and its top-level block.
-type Place = (Option<String>, bool, Option<usize>, Option<usize>);
-
-/// A thread's anchor positions (start, end), as encoded Yjs relative positions.
-type Positions = (Option<Vec<u8>>, Option<Vec<u8>>);
+type Place = (Option<String>, bool, Option<usize>, Option<usize>, Option<(String, String)>);
 
 /// Where each thread's text is now.
 async fn locate(state: &AppState, doc_id: &str, threads: &[ThreadRow]) -> ApiResult<Vec<Place>> {
-    let pdf: Vec<bool> = threads.iter().map(|t| t.anchor.get("kind").and_then(Value::as_str) == Some("pdf")).collect();
-    let anchors: Vec<Positions> = threads
-        .iter()
-        .map(|t| {
-            let decode = |key: &str| t.anchor.get(key).and_then(Value::as_str).and_then(|s| B64.decode(s).ok());
-            (decode("start"), decode("end"))
-        })
-        .collect();
+    fn ranges(thread: &ThreadRow, cached: bool) -> Option<Vec<anchoring::Range>> {
+        if cached && let Some(value) = thread.anchor.get("resolved_segments") {
+            return serde_json::from_value(value.clone()).ok();
+        }
+        if let Some(value) = thread.anchor.get("segments") {
+            return serde_json::from_value(value.clone()).ok();
+        }
+        Some(vec![anchoring::Range::new(thread.anchor.get("start")?.as_str()?.to_owned(), thread.anchor.get("end")?.as_str()?.to_owned())])
+    }
+    let mut anchors: Vec<Option<Vec<anchoring::Range>>> = threads.iter().map(|t| ranges(t, true)).collect();
+    let (missing, latest) = rooms::with_ydoc(state, doc_id, |y, seq| {
+        let frag = ydoc::fragment(y);
+        let txn = yrs::Transact::transact(y);
+        let map = ydoc::text_map(&txn, &frag);
+        (anchors.iter().zip(threads).map(|(rs,thread)| thread.anchor.get("resolved_seq").and_then(Value::as_i64) != Some(seq) && rs.as_ref().is_some_and(|rs| rs.iter().any(|r| anchoring::resolve(&txn, &map, r).is_none()))).collect::<Vec<_>>(), seq)
+    }).await?;
+    if missing.iter().any(|missing| *missing) {
+        let rows: Vec<(i64, String, String, Vec<u8>)> = sqlx::query_as("select seq, author_uuid, origin, update from doc_updates where doc_id = $1 and seq <= $2 order by seq")
+            .bind(doc_id).bind(latest).fetch_all(&state.db).await?;
+        let restoring = rows.iter().filter(|(_,_,origin,_)| origin == "restore" || origin == "undo").map(|(seq,_,_,_)| *seq).collect();
+        let updates: Vec<write_doc::history::StoredUpdate> = rows.into_iter().map(|(seq,author,_,update)| write_doc::history::StoredUpdate {seq, author, update}).collect();
+        for (i, thread) in threads.iter().enumerate().filter(|(i, _)| missing[*i]) {
+            let Some(mut original) = ranges(thread, false) else { continue; };
+            let seq = match thread.anchor.get("seq").and_then(Value::as_i64) {
+                Some(seq) => seq,
+                None => sqlx::query_scalar::<_, Option<i64>>("select max(seq) from doc_updates where doc_id = $1 and created_at <= $2")
+                    .bind(doc_id).bind(thread.created_at).fetch_one(&state.db).await?.unwrap_or(0),
+            };
+            // Old anchors predate per-text ranges. Split their selection in its original version.
+            if thread.anchor.get("segments").is_none() {
+                let old = write_doc::history::replay(updates.iter().filter(|u| u.seq <= seq).map(|u| u.update.as_slice()))?;
+                let frag = ydoc::fragment(&old);
+                let txn = yrs::Transact::transact(&old);
+                let map = ydoc::text_map(&txn, &frag);
+                if let Some((a,b)) = original.first().and_then(|r| anchoring::resolve(&txn,&map,r)) {
+                    original = anchoring::capture(&txn,&map,a,b);
+                }
+            }
+            let recovered = anchoring::recover(&updates, &restoring, seq, &original)?;
+            sqlx::query("update threads set anchor = jsonb_set(jsonb_set(anchor, '{resolved_segments}', $2), '{resolved_seq}', $3) where id = $1")
+                .bind(&thread.id).bind(json!(recovered)).bind(json!(latest)).execute(&state.db).await?;
+            anchors[i] = Some(recovered);
+        }
+    }
     rooms::with_ydoc(state, doc_id, |y, _| {
         let frag = ydoc::fragment(y);
         let txn = yrs::Transact::transact(y);
         let map = ydoc::text_map(&txn, &frag);
-        anchors
-            .iter()
-            .zip(pdf)
-            .map(|((start, end), is_pdf)| {
-                // A comment on an area of a PDF has no text to follow.
-                if is_pdf {
-                    return (None, false, None, None);
+        threads.iter().zip(&anchors).map(|(thread, ranges)| {
+            if thread.anchor.get("kind").and_then(Value::as_str) == Some("pdf") { return (None, false, None, None, None); }
+            if let Some(ranges) = ranges {
+                let surviving: Vec<(&anchoring::Range, (usize,usize))> = ranges.iter().filter_map(|r| anchoring::resolve(&txn, &map, r).map(|range|(r,range))).collect();
+                if let (Some((first, (start, _))), Some((last, (_, end)))) = (surviving.iter().min_by_key(|(_,r)|r.0), surviving.iter().max_by_key(|(_,r)|r.1)) {
+                    let (start,end) = (*start,*end);
+                    let quote = map.slice(start, end).replace('\u{FFFC}', "");
+                    let orphaned = quote.trim().is_empty();
+                    return (Some(quote), orphaned, map.block_at(start), Some(start), Some((first.start.clone(),last.end.clone())));
                 }
-                let start = start.as_ref().and_then(|s| ydoc::resolve_position(&txn, &map, s));
-                let end = end.as_ref().and_then(|e| ydoc::resolve_position(&txn, &map, e));
-                match (start, end) {
-                    (Some(s), Some(e)) if e > s => {
-                        let quote = map.slice(s, e).replace('\u{FFFC}', "");
-                        let orphaned = quote.trim().is_empty();
-                        (Some(quote), orphaned, map.block_at(s), Some(s))
-                    }
-                    // A range whose start and end met: its text was deleted.
-                    (Some(s), Some(_)) => (None, true, map.block_at(s), Some(s)),
-                    // A point (a whole section, a cell, an image).
-                    (Some(s), None) if end.is_none() => (None, false, map.block_at(s), Some(s)),
-                    _ => (None, true, None, None),
-                }
-            })
-            .collect()
-    })
-    .await
+                let point = ranges.iter().find_map(|r| B64.decode(&r.start).ok().and_then(|p| ydoc::resolve_position(&txn,&map,&p)));
+                return (None, true, point.and_then(|p|map.block_at(p)), point, None);
+            }
+            let start = thread.anchor.get("start").and_then(Value::as_str).and_then(|s| B64.decode(s).ok())
+                .and_then(|s| ydoc::resolve_position(&txn, &map, &s));
+            match start { Some(start) => (None, false, map.block_at(start), Some(start), None), None => (None, true, None, None, None) }
+        }).collect()
+    }).await
 }
 
 async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Vec<Value>> {
@@ -130,7 +157,9 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Ve
     let people = accounts::many(state, &uuids).await?;
     let person = |uuid: &str| people.get(uuid).cloned().unwrap_or_else(|| Account::unknown(uuid));
     let mut out = vec![];
-    for (thread, (current, orphaned, block, offset)) in threads.iter().zip(places) {
+    for (thread, (current, orphaned, block, offset, positioned)) in threads.iter().zip(places) {
+        let mut anchor = thread.anchor.clone();
+        if let Some((start,end)) = positioned { anchor["start"] = json!(start); anchor["end"] = json!(end); }
         let thread_comments: Vec<Value> = comments
             .iter()
             .filter(|c| c.thread_id == thread.id)
@@ -158,7 +187,7 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>) -> ApiResult<Ve
             .collect();
         out.push(json!({
             "id": thread.id,
-            "anchor": thread.anchor,
+            "anchor": anchor,
             "quote": thread.quote,
             "current_quote": current,
             "orphaned": orphaned,
@@ -285,7 +314,7 @@ async fn anchor_by_quote(state: &AppState, doc_id: &str, quote: &str) -> ApiResu
         let frag = ydoc::fragment(y);
         let txn = yrs::Transact::transact(y);
         let map = ydoc::text_map(&txn, &frag);
-        let (hay, ranges) = ydoc::quote_map(&txn, &frag, &map);
+        let (hay, mut ranges) = ydoc::quote_map(&txn, &frag, &map);
         let mut found = vec![];
         if !needle.is_empty() && needle.len() <= hay.len() {
             for i in 0..=(hay.len() - needle.len()) {
@@ -296,6 +325,17 @@ async fn anchor_by_quote(state: &AppState, doc_id: &str, quote: &str) -> ApiResu
                     }
                 }
             }
+        }
+        // A commenter can also anchor to the visible suggested insertion itself. Prefer the
+        // current reading above, so a suggestion inside a sentence never prevents quoting it.
+        if found.is_empty() && !needle.is_empty() && needle.len() <= map.text.len() {
+            for i in 0..=(map.text.len() - needle.len()) {
+                if map.text[i..i + needle.len()] == needle[..] {
+                    found.push(i);
+                    if found.len() > 1 { break; }
+                }
+            }
+            if !found.is_empty() { ranges = (0..map.text.len()).map(|i|(i,i+1)).collect(); }
         }
         match found.as_slice() {
             [] => Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "no_match", "The quoted text isn't in the doc.").hint("Quote the doc's text exactly as it reads (without Markdown formatting characters).")),
@@ -362,6 +402,19 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
         }
         check_rect(&rect)?;
         anchor["rect"] = rect;
+    }
+    if kind == "text" && let Some(end) = anchor.get("end").and_then(Value::as_str) {
+        let range = anchoring::Range::new(start.clone(), end.to_owned());
+        let (seq, segments) = rooms::with_ydoc(&state, &id, |y, seq| {
+            let frag = ydoc::fragment(y);
+            let txn = yrs::Transact::transact(y);
+            let map = ydoc::text_map(&txn, &frag);
+            let segments = anchoring::resolve(&txn, &map, &range).map(|(a,b)| anchoring::capture(&txn,&map,a,b)).unwrap_or_default();
+            (seq, segments)
+        }).await?;
+        if segments.is_empty() { return Err(ApiError::conflict("The selected text changed. Select it again.")); }
+        anchor["seq"] = json!(seq);
+        anchor["segments"] = json!(segments);
     }
     create_thread(&state, &caller, &doc, &id, anchor, quote, text).await
 }
@@ -519,7 +572,8 @@ pub async fn edit(State(state): State<AppState>, Auth(caller): Auth, Path(commen
 }
 
 pub async fn delete(State(state): State<AppState>, Auth(caller): Auth, Path(comment_id): Path<String>) -> ApiResult<StatusCode> {
-    let (comment, thread, _, role) = comment_for(&state, &caller, &comment_id).await?;
+    let (comment, thread, doc, role) = comment_for(&state, &caller, &comment_id).await?;
+    require_active(&doc)?;
     if comment.author_uuid != caller.uuid && role != Role::Owner {
         return Err(ApiError::forbidden("Only the comment's author or the doc's owner can delete it."));
     }

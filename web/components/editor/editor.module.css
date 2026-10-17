@@ -80,6 +80,7 @@
 .prose hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
 
 .prose img { max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 1em auto; }
+.prose img[data-inline-image] { display: inline-block; margin: 0; vertical-align: middle; }
 .prose img:global(.ProseMirror-selectednode) { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .prose table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 1rem; table-layout: fixed; }

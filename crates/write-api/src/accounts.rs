@@ -166,7 +166,7 @@ pub async fn by_public_id(state: &AppState, id: &str) -> ApiResult<Account> {
     }
     let summary = state.app().lookup_by_id(&id).await.map_err(|e| match e.status() {
         Some(404) => ApiError::not_found(&format!("The account {id}")).hint("Check the c: or si: id."),
-        Some(status) if (400..500).contains(&status) => ApiError::invalid(format!("Silicon Accounts didn't accept “{id}”: {e}")),
+        Some(status) if (400..500).contains(&status) && status != 429 => ApiError::invalid(format!("Silicon Accounts didn't accept “{id}”: {e}")),
         _ => ApiError::unavailable(format!("Silicon Accounts didn't answer: {e}")),
     })?;
     refresh(state, &summary.uuid).await

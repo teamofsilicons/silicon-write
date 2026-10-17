@@ -12,6 +12,7 @@ import Highlight from "@tiptap/extension-highlight";
 import { BlockMath, InlineMath } from "@tiptap/extension-mathematics";
 import { DocLink, Footnote, TableOfContents } from "./nodes";
 import { SuggestionDelete, SuggestionInsert } from "./suggestions";
+import { FileFormatting, InlineImage, Subscript, Superscript } from "./formatting";
 
 export function contentExtensions(options: { collaborative: boolean }): AnyExtension[] {
   return [
@@ -25,6 +26,10 @@ export function contentExtensions(options: { collaborative: boolean }): AnyExten
     TaskList,
     TaskItem.configure({ nested: true }),
     Image.configure({ inline: false, allowBase64: false }),
+    InlineImage,
+    FileFormatting,
+    Subscript,
+    Superscript,
     TextStyle,
     Color,
     Highlight.configure({ multicolor: true }),

@@ -124,7 +124,7 @@ function DocLinkView({ node }: NodeViewProps) {
   return (
     <NodeViewWrapper as="span" className={styles.docLink} data-doc-link="">
       <a href="#" onClick={open} contentEditable={false} title={`Open “${title}”`}>
-        {title}
+        {String(node.attrs.alias || title)}
       </a>
     </NodeViewWrapper>
   );
@@ -137,11 +137,14 @@ export const DocLink = Node.create({
   atom: true,
   selectable: true,
   addAttributes() {
-    return { title: { default: "", parseHTML: el => el.getAttribute("data-title") ?? "", renderHTML: a => ({ "data-title": a.title }) } };
+    return {
+      title: { default: "", parseHTML: el => el.getAttribute("data-title") ?? "", renderHTML: a => ({ "data-title": a.title }) },
+      alias: { default: null, parseHTML: el => el.getAttribute("data-alias"), renderHTML: a => a.alias ? { "data-alias": a.alias } : {} },
+    };
   },
   parseHTML: () => [{ tag: "span[data-doc-link]" }],
-  renderHTML: ({ node, HTMLAttributes }) => ["span", mergeAttributes(HTMLAttributes, { "data-doc-link": "" }), `[[${node.attrs.title}]]`],
-  renderText: ({ node }) => `[[${node.attrs.title}]]`,
+  renderHTML: ({ node, HTMLAttributes }) => ["span", mergeAttributes(HTMLAttributes, { "data-doc-link": "" }), String(node.attrs.alias || node.attrs.title)],
+  renderText: ({ node }) => `[[${node.attrs.title}${node.attrs.alias ? `|${node.attrs.alias}` : ""}]]`,
   addNodeView() {
     return ReactNodeViewRenderer(DocLinkView);
   },
@@ -150,9 +153,11 @@ export const DocLink = Node.create({
       new InputRule({
         find: /\[\[([^\][]{1,200})\]\]$/,
         handler: ({ state, range, match }) => {
-          const title = match[1].trim();
+          const [rawTitle, ...aliasParts] = match[1].split("|");
+          const title = rawTitle.trim();
+          const alias = aliasParts.length ? aliasParts.join("|").trim() : null;
           if (!title) return;
-          state.tr.replaceWith(range.from, range.to, this.type.create({ title }));
+          state.tr.replaceWith(range.from, range.to, this.type.create({ title, alias }));
         },
       }),
     ];

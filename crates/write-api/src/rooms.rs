@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message as WsMessage, WebSocket};
+use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, mpsc};
@@ -36,6 +36,15 @@ use crate::state::AppState;
 pub const MSG_EVENT: u8 = 100;
 const CHECKPOINT_EVERY: i64 = 200;
 
+mod validation;
+
+fn access_closed() -> WsMessage {
+    WsMessage::Close(Some(CloseFrame {
+        code: 4403,
+        reason: "You no longer have access to this doc.".into(),
+    }))
+}
+
 #[derive(Default)]
 pub struct Rooms {
     map: Mutex<HashMap<String, Arc<Room>>>,
@@ -50,7 +59,10 @@ pub struct Room {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 pub struct Conn {
@@ -116,7 +128,10 @@ fn encode(message: &Message) -> Vec<u8> {
 }
 
 pub fn event_message(value: &Value) -> Vec<u8> {
-    encode(&Message::Custom(MSG_EVENT, serde_json::to_vec(value).unwrap_or_default()))
+    encode(&Message::Custom(
+        MSG_EVENT,
+        serde_json::to_vec(value).unwrap_or_default(),
+    ))
 }
 
 impl Rooms {
@@ -124,9 +139,14 @@ impl Rooms {
     pub async fn get(&self, state: &AppState, doc_id: &str) -> ApiResult<Arc<Room>> {
         let mut map = self.map.lock().await;
         if let Some(room) = map.get(doc_id) {
-            let poisoned = room.inner.try_lock().map(|inner| inner.poisoned).unwrap_or(false);
+            let poisoned = room
+                .inner
+                .try_lock()
+                .map(|inner| inner.poisoned)
+                .unwrap_or(false);
             if !poisoned {
-                room.touched.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
+                room.touched
+                    .store(now_ms(), std::sync::atomic::Ordering::Relaxed);
                 return Ok(room.clone());
             }
             map.remove(doc_id);
@@ -152,7 +172,9 @@ impl Rooms {
     pub async fn recheck(&self, state: &AppState, doc_id: &str) {
         let room = self.map.lock().await.get(doc_id).cloned();
         let Some(room) = room else { return };
-        let Ok(doc) = crate::access::load_doc(state, doc_id).await else { return };
+        let Ok(doc) = crate::access::load_doc(state, doc_id).await else {
+            return;
+        };
         let mut inner = room.inner.lock().await;
         inner.deleted = doc.deleted_at.is_some();
         let mut closed = vec![];
@@ -167,18 +189,22 @@ impl Rooms {
                 Ok(Some(role)) => {
                     if role != conn.role {
                         conn.role = role;
-                        let _ = conn.tx.send(WsMessage::Binary(event_message(&json!({ "type": "role", "role": role.as_str() })).into()));
+                        let _ = conn.tx.send(WsMessage::Binary(
+                            event_message(&json!({ "type": "role", "role": role.as_str() })).into(),
+                        ));
                     }
                 }
                 _ => {
-                    let _ = conn.tx.send(WsMessage::Binary(event_message(&json!({ "type": "role", "role": null })).into()));
-                    let _ = conn.tx.send(WsMessage::Close(None));
+                    let _ = conn.tx.send(WsMessage::Binary(
+                        event_message(&json!({ "type": "role", "role": null })).into(),
+                    ));
+                    let _ = conn.tx.send(access_closed());
                     closed.push(*id);
                 }
             }
         }
         for id in closed {
-            inner.conns.remove(&id);
+            inner.remove_connection(id);
         }
     }
 
@@ -191,10 +217,9 @@ impl Rooms {
                 inner.end_visits();
                 inner.index_due.is_some_and(|t| t <= Instant::now())
             };
-            if due
-                && let Err(e) = index(state, room).await {
-                    tracing::warn!(doc = %room.doc_id, error = %e.message, "indexing failed");
-                }
+            if due && let Err(e) = index(state, room).await {
+                tracing::warn!(doc = %room.doc_id, error = %e.message, "indexing failed");
+            }
         }
         let mut map = self.map.lock().await;
         let mut idle = vec![];
@@ -204,7 +229,9 @@ impl Rooms {
                 continue;
             }
             if let Ok(inner) = room.inner.try_lock() {
-                let idle_room = inner.conns.is_empty() && inner.index_due.is_none() && inner.last_used.elapsed() > Duration::from_secs(600);
+                let idle_room = inner.conns.is_empty()
+                    && inner.index_due.is_none()
+                    && inner.last_used.elapsed() > Duration::from_secs(600);
                 if idle_room || inner.poisoned {
                     idle.push(id.clone());
                 }
@@ -221,7 +248,10 @@ impl Rooms {
         if let Some(room) = room {
             let inner = room.inner.lock().await;
             for conn in inner.conns.values() {
-                let _ = conn.tx.send(WsMessage::Close(None));
+                let _ = conn.tx.send(WsMessage::Binary(
+                    event_message(&json!({ "type": "role", "role": null })).into(),
+                ));
+                let _ = conn.tx.send(access_closed());
             }
         }
     }
@@ -230,35 +260,45 @@ impl Rooms {
 async fn load(state: &AppState, doc_id: &str) -> ApiResult<Room> {
     let doc = crate::access::load_doc(state, doc_id).await?;
     let ydoc = ydoc::new_ydoc(1);
-    let checkpoint: Option<(i64, Vec<u8>)> = sqlx::query_as("select seq, state from doc_checkpoints where doc_id = $1 order by seq desc limit 1")
-        .bind(doc_id)
-        .fetch_optional(&state.db)
-        .await?;
+    let checkpoint: Option<(i64, Vec<u8>)> = sqlx::query_as(
+        "select seq, state from doc_checkpoints where doc_id = $1 order by seq desc limit 1",
+    )
+    .bind(doc_id)
+    .fetch_optional(&state.db)
+    .await?;
     let from = checkpoint.as_ref().map(|c| c.0).unwrap_or(0);
-    let updates: Vec<(i64, Vec<u8>)> = sqlx::query_as("select seq, update from doc_updates where doc_id = $1 and seq > $2 order by seq")
-        .bind(doc_id)
-        .bind(from)
-        .fetch_all(&state.db)
-        .await?;
+    let updates: Vec<(i64, Vec<u8>)> = sqlx::query_as(
+        "select seq, update from doc_updates where doc_id = $1 and seq > $2 order by seq",
+    )
+    .bind(doc_id)
+    .bind(from)
+    .fetch_all(&state.db)
+    .await?;
     {
         let mut txn = ydoc.transact_mut();
         if let Some((_, bytes)) = &checkpoint {
-            txn.apply_update(Update::decode_v1(bytes).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
+            txn.apply_update(Update::decode_v1(bytes).map_err(ApiError::internal)?)
+                .map_err(ApiError::internal)?;
         }
         for (_, bytes) in &updates {
-            txn.apply_update(Update::decode_v1(bytes).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
+            txn.apply_update(Update::decode_v1(bytes).map_err(ApiError::internal)?)
+                .map_err(ApiError::internal)?;
         }
     }
     let seq = updates.last().map(|u| u.0).unwrap_or(from).max(doc.seq);
-    let clients: Vec<(i64, String)> = sqlx::query_as("select client_id, author_uuid from doc_clients where doc_id = $1")
-        .bind(doc_id)
-        .fetch_all(&state.db)
-        .await?;
+    let clients: Vec<(i64, String)> =
+        sqlx::query_as("select client_id, author_uuid from doc_clients where doc_id = $1")
+            .bind(doc_id)
+            .fetch_all(&state.db)
+            .await?;
     let captured = Arc::new(std::sync::Mutex::new(vec![]));
     let sink = captured.clone();
-    ydoc.observe_update_v1("store", move |_: &yrs::TransactionMut, e: &yrs::UpdateEvent| {
-        sink.lock().unwrap().push(e.update.clone());
-    })
+    ydoc.observe_update_v1(
+        "store",
+        move |_: &yrs::TransactionMut, e: &yrs::UpdateEvent| {
+            sink.lock().unwrap().push(e.update.clone());
+        },
+    )
     .map_err(ApiError::internal)?;
     Ok(Room {
         doc_id: doc_id.to_owned(),
@@ -281,16 +321,35 @@ async fn load(state: &AppState, doc_id: &str) -> ApiResult<Room> {
 }
 
 impl RoomState {
+    fn remove_connection(&mut self, id: u64) {
+        if let Some(conn) = self.conns.remove(&id) {
+            for client in conn.awareness {
+                if let Some((clock, _)) = self.awareness.remove(&client) {
+                    self.send_awareness(client, clock.saturating_add(1), "null");
+                }
+            }
+        }
+    }
+
     pub fn read(&self) -> write_doc::Doc {
         ydoc::read_doc(&self.ydoc)
     }
 
     fn full_state(&self) -> Vec<u8> {
-        self.ydoc.transact().encode_state_as_update_v1(&StateVector::default())
+        self.ydoc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default())
     }
 
     /// Stores what the last transactions changed and sends it to everyone else.
-    async fn commit(&mut self, state: &AppState, doc_id: &str, author: &str, origin: Origin, skip_conn: Option<u64>) -> ApiResult<Vec<i64>> {
+    async fn commit(
+        &mut self,
+        state: &AppState,
+        doc_id: &str,
+        author: &str,
+        origin: Origin,
+        skip_conn: Option<u64>,
+    ) -> ApiResult<Vec<i64>> {
         let seq_before = self.seq;
         match self.store(state, doc_id, author, origin, skip_conn).await {
             Ok(seqs) => Ok(seqs),
@@ -306,7 +365,14 @@ impl RoomState {
         }
     }
 
-    async fn store(&mut self, state: &AppState, doc_id: &str, author: &str, origin: Origin, skip_conn: Option<u64>) -> ApiResult<Vec<i64>> {
+    async fn store(
+        &mut self,
+        state: &AppState,
+        doc_id: &str,
+        author: &str,
+        origin: Origin,
+        skip_conn: Option<u64>,
+    ) -> ApiResult<Vec<i64>> {
         let updates: Vec<Vec<u8>> = std::mem::take(&mut *self.captured.lock().unwrap());
         let mut seqs = vec![];
         if updates.is_empty() {
@@ -325,7 +391,11 @@ impl RoomState {
                 .await?;
             seqs.push(self.seq);
         }
-        sqlx::query("update docs set seq = $2, updated_at = now() where id = $1").bind(doc_id).bind(self.seq).execute(&mut *tx).await?;
+        sqlx::query("update docs set seq = $2, updated_at = now() where id = $1")
+            .bind(doc_id)
+            .bind(self.seq)
+            .execute(&mut *tx)
+            .await?;
         if self.seq - self.last_checkpoint >= CHECKPOINT_EVERY {
             sqlx::query("insert into doc_checkpoints (doc_id, seq, state) values ($1, $2, $3) on conflict do nothing")
                 .bind(doc_id)
@@ -338,9 +408,35 @@ impl RoomState {
         tx.commit().await?;
         for update in &updates {
             let bytes = encode(&Message::Sync(SyncMessage::Update(update.clone())));
+            // An offline editor with GC disabled can send text it already deleted. Its history
+            // belongs in storage, but readers must not receive that text in the live broadcast.
+            let reader_bytes = if self.conns.values().any(|c| c.role < Role::Editor) {
+                let decoded = Update::decode_v1(update).map_err(ApiError::internal)?;
+                let inserted = decoded.insertions(true);
+                if inserted.diff(decoded.delete_set()) != inserted {
+                    let clean = write_doc::history::without_history(&self.full_state())
+                        .map_err(ApiError::internal)?;
+                    let mut before = self.ydoc.transact().state_vector();
+                    for (client, clock) in decoded.state_vector_lower().iter() {
+                        before.set_min(*client, *clock);
+                    }
+                    Some(encode(&Message::Sync(SyncMessage::Update(
+                        clean.transact().encode_state_as_update_v1(&before),
+                    ))))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             for (id, conn) in &self.conns {
                 if Some(*id) != skip_conn {
-                    let _ = conn.tx.send(WsMessage::Binary(bytes.clone().into()));
+                    let payload = if conn.role < Role::Editor {
+                        reader_bytes.as_ref().unwrap_or(&bytes)
+                    } else {
+                        &bytes
+                    };
+                    let _ = conn.tx.send(WsMessage::Binary(payload.clone().into()));
                 }
             }
         }
@@ -349,7 +445,13 @@ impl RoomState {
         Ok(seqs)
     }
 
-    async fn claim_client(&mut self, state: &AppState, doc_id: &str, client: u64, author: &str) -> ApiResult<bool> {
+    async fn claim_client(
+        &mut self,
+        state: &AppState,
+        doc_id: &str,
+        client: u64,
+        author: &str,
+    ) -> ApiResult<bool> {
         match self.clients.get(&client) {
             Some(owner) => Ok(owner == author),
             None => {
@@ -371,9 +473,18 @@ impl RoomState {
         let clients: serde_json::Map<String, Value> = self
             .clients
             .iter()
-            .filter_map(|(c, uuid)| people.get(uuid).map(|a| (c.to_string(), serde_json::to_value(a).unwrap_or(Value::Null))))
+            .filter_map(|(c, uuid)| {
+                people.get(uuid).map(|a| {
+                    (
+                        c.to_string(),
+                        serde_json::to_value(a).unwrap_or(Value::Null),
+                    )
+                })
+            })
             .collect();
-        Ok(event_message(&json!({ "type": "authors", "clients": clients })))
+        Ok(event_message(
+            &json!({ "type": "authors", "clients": clients }),
+        ))
     }
 
     async fn broadcast_authors(&self, state: &AppState) {
@@ -463,21 +574,40 @@ pub async fn write_version(
     let mut inner = room.inner.lock().await;
     inner.editable(None)?;
     // The doc as it is, when it changed since the version the new one was written from.
-    let theirs = base_seq.filter(|seq| *seq < inner.seq).map(|_| normal(&inner.read()));
+    let theirs = base_seq
+        .filter(|seq| *seq < inner.seq)
+        .map(|_| normal(&inner.read()));
 
     let copy = inner.copy(state, doc_id, base_seq, &[]).await?;
     let before = ydoc::read_doc(&copy.doc);
     let base = normal(&before);
     let plan = match &theirs {
         Some(theirs) => merge::plan(&base, theirs, new),
-        None => merge::Plan { direct: new.clone(), conflicts: vec![] },
+        None => merge::Plan {
+            direct: new.clone(),
+            conflicts: vec![],
+        },
     };
-    ydoc::with_txn(&copy.doc, |txn, frag| ydoc::patch(txn, frag, &base, &plan.direct, mode));
+    ydoc::with_txn(&copy.doc, |txn, frag| {
+        ydoc::patch(txn, frag, &base, &plan.direct, mode)
+    });
     check(&before, &ydoc::read_doc(&copy.doc))?;
     let mut last: Option<Copy> = None;
     if copy.changed() {
         inner.take(state, doc_id, author, &copy).await?;
-        inner.commit(state, doc_id, author, if mode.suggest.is_some() { Origin::Suggestion } else { Origin::Edit }, None).await?;
+        inner
+            .commit(
+                state,
+                doc_id,
+                author,
+                if mode.suggest.is_some() {
+                    Origin::Suggestion
+                } else {
+                    Origin::Edit
+                },
+                None,
+            )
+            .await?;
         last = Some(copy);
     }
 
@@ -492,8 +622,12 @@ pub async fn write_version(
             let current = ydoc::read_doc(&copy.doc);
             let id = ids::new_id("s");
             let target = merge::place(theirs, &now, &conflict);
-            let suggest = ydoc::EditMode { suggest: Some((id.clone(), author.to_owned())) };
-            ydoc::with_txn(&copy.doc, |txn, frag| ydoc::patch(txn, frag, &now, &target, &suggest));
+            let suggest = ydoc::EditMode {
+                suggest: Some((id.clone(), author.to_owned())),
+            };
+            ydoc::with_txn(&copy.doc, |txn, frag| {
+                ydoc::patch(txn, frag, &now, &target, &suggest)
+            });
             check(&current, &ydoc::read_doc(&copy.doc))?;
             let made = copy.changed();
             if made {
@@ -505,7 +639,9 @@ pub async fn write_version(
             inner.take(state, doc_id, author, copy).await?;
         }
         if !copies.is_empty() {
-            inner.commit(state, doc_id, author, Origin::Suggestion, None).await?;
+            inner
+                .commit(state, doc_id, author, Origin::Suggestion, None)
+                .await?;
         }
         last = copies.pop().or(last);
     }
@@ -535,7 +671,9 @@ struct Visitor {
 
 /// The caret colour the web editor gives an account (components/editor/editor.tsx, `colourFor`).
 fn colour_for(uuid: &str) -> &'static str {
-    const COLOURS: [&str; 7] = ["#1f5cb1", "#b5531c", "#2f7a4a", "#8a3fa0", "#a0362f", "#2c6f86", "#7a6a1f"];
+    const COLOURS: [&str; 7] = [
+        "#1f5cb1", "#b5531c", "#2f7a4a", "#8a3fa0", "#a0362f", "#2c6f86", "#7a6a1f",
+    ];
     let mut hash: u32 = 0;
     for c in uuid.encode_utf16() {
         hash = hash.wrapping_mul(31).wrapping_add(u32::from(c));
@@ -564,7 +702,9 @@ impl RoomState {
     /// changed meanwhile.
     fn editable(&self, expect_seq: Option<i64>) -> ApiResult<()> {
         if self.poisoned {
-            return Err(ApiError::unavailable("This doc is being reloaded.").hint("Try again in a moment."));
+            return Err(
+                ApiError::unavailable("This doc is being reloaded.").hint("Try again in a moment.")
+            );
         }
         if self.deleted {
             return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
@@ -577,7 +717,13 @@ impl RoomState {
 
     /// A copy of the doc as it is (or as it was at `base_seq`), with a client id no one has used
     /// here (nor one in `taken`).
-    async fn copy(&self, state: &AppState, doc_id: &str, base_seq: Option<i64>, taken: &[u64]) -> ApiResult<Copy> {
+    async fn copy(
+        &self,
+        state: &AppState,
+        doc_id: &str,
+        base_seq: Option<i64>,
+        taken: &[u64],
+    ) -> ApiResult<Copy> {
         let client = loop {
             let candidate = ids::new_client_id();
             if !self.clients.contains_key(&candidate) && !taken.contains(&candidate) {
@@ -587,22 +733,32 @@ impl RoomState {
         let doc = ydoc::new_ydoc(client);
         let base_state = match base_seq {
             Some(seq) if seq < self.seq => {
-                let updates: Vec<Vec<u8>> = sqlx::query_scalar("select update from doc_updates where doc_id = $1 and seq <= $2 order by seq")
-                    .bind(doc_id)
-                    .bind(seq)
-                    .fetch_all(&state.db)
-                    .await?;
+                let updates: Vec<Vec<u8>> = sqlx::query_scalar(
+                    "select update from doc_updates where doc_id = $1 and seq <= $2 order by seq",
+                )
+                .bind(doc_id)
+                .bind(seq)
+                .fetch_all(&state.db)
+                .await?;
                 let base = write_doc::history::replay(updates.iter().map(|u| u.as_slice()))?;
-                base.transact().encode_state_as_update_v1(&StateVector::default())
+                base.transact()
+                    .encode_state_as_update_v1(&StateVector::default())
             }
             _ => self.full_state(),
         };
-        doc.transact_mut().apply_update(Update::decode_v1(&base_state).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
+        doc.transact_mut()
+            .apply_update(Update::decode_v1(&base_state).map_err(ApiError::internal)?)
+            .map_err(ApiError::internal)?;
         let (before, snapshot) = {
             let txn = doc.transact();
             (txn.state_vector(), txn.snapshot())
         };
-        Ok(Copy { client, doc, before, snapshot })
+        Ok(Copy {
+            client,
+            doc,
+            before,
+            snapshot,
+        })
     }
 
     /// After `author` changed the doc through the API (a Silicon at the command line), shows them
@@ -610,30 +766,63 @@ impl RoomState {
     /// "Silicons show up exactly like Carbons do"), with their cursor just after the last thing the
     /// change put in. Not for someone who has the doc open: they are there already.
     async fn visit(&mut self, state: &AppState, author: &str, copy: &Copy) {
-        if self.conns.values().any(|c| c.account.as_ref().is_some_and(|a| a.uuid == author)) {
+        if self
+            .conns
+            .values()
+            .any(|c| c.account.as_ref().is_some_and(|a| a.uuid == author))
+        {
             return;
         }
-        let Ok(account) = accounts::one(state, author).await else { return };
+        let Ok(account) = accounts::one(state, author).await else {
+            return;
+        };
         // The last thing the change inserted, if anything: the cursor goes right after it.
         let changed = copy.doc.transact().encode_diff_v1(&copy.before);
         let last = Update::decode_v1(&changed)
             .ok()
-            .and_then(|update| write_doc::history::inserted_upper(&update).into_iter().find(|(client, _)| *client == copy.client))
-            .map(|(client, end)| (client, end - 1));
-        let taken: HashSet<u64> = self.awareness.keys().copied().chain(self.clients.keys().copied()).collect();
-        let visitor = self.visitors.entry(author.to_owned()).or_insert_with(|| Visitor {
-            client: loop {
-                let candidate = ids::new_client_id();
-                if !taken.contains(&candidate) {
-                    break candidate;
-                }
-            },
-            clock: 0,
-            until: Instant::now(),
-        });
+            .and_then(|update| {
+                write_doc::history::inserted_upper(&update)
+                    .into_iter()
+                    .find(|(client, _)| *client == copy.client)
+            })
+            .map(|(client, end)| (client, end - 1))
+            .or_else(|| {
+                let deleted = copy
+                    .doc
+                    .transact()
+                    .snapshot()
+                    .delete_set
+                    .diff(&copy.snapshot.delete_set);
+                deleted.iter().find_map(|(client, ranges)| {
+                    ranges.iter().next().map(|r| (client.get(), r.start))
+                })
+            });
+        let taken: HashSet<u64> = self
+            .awareness
+            .keys()
+            .copied()
+            .chain(self.clients.keys().copied())
+            .collect();
+        let visitor = self
+            .visitors
+            .entry(author.to_owned())
+            .or_insert_with(|| Visitor {
+                client: loop {
+                    let candidate = ids::new_client_id();
+                    if !taken.contains(&candidate) {
+                        break candidate;
+                    }
+                },
+                clock: 0,
+                until: Instant::now(),
+            });
         visitor.clock += 1;
         visitor.until = Instant::now() + VISIT;
-        let name = if account.display_name.is_empty() { account.id.clone() } else { account.display_name.clone() };
+        let name = if account.display_name.is_empty() {
+            account.id.clone()
+        } else {
+            account.display_name.clone()
+        };
         let mut presence = json!({
             "user": { "uuid": account.uuid, "id": account.id, "name": name, "kind": account.kind, "pfp_url": account.pfp_url, "color": colour_for(&account.uuid) },
         });
@@ -649,7 +838,12 @@ impl RoomState {
     /// Visitors whose time is up leave the doc.
     fn end_visits(&mut self) {
         let now = Instant::now();
-        let ended: Vec<String> = self.visitors.iter().filter(|(_, v)| v.until <= now).map(|(author, _)| author.clone()).collect();
+        let ended: Vec<String> = self
+            .visitors
+            .iter()
+            .filter(|(_, v)| v.until <= now)
+            .map(|(author, _)| author.clone())
+            .collect();
         for author in ended {
             self.end_visit(&author);
         }
@@ -664,7 +858,13 @@ impl RoomState {
 
     fn send_awareness(&self, client: u64, clock: u32, json: &str) {
         let update = AwarenessUpdate {
-            clients: HashMap::from([(yrs::ClientID::new(client), AwarenessUpdateEntry { clock, json: Arc::from(json) })]),
+            clients: HashMap::from([(
+                yrs::ClientID::new(client),
+                AwarenessUpdateEntry {
+                    clock,
+                    json: Arc::from(json),
+                },
+            )]),
         };
         let bytes = encode(&Message::Awareness(update));
         for conn in self.conns.values() {
@@ -673,11 +873,21 @@ impl RoomState {
     }
 
     /// Merges what a copy changed into the live doc, as `author`'s (call [`RoomState::commit`] after).
-    async fn take(&mut self, state: &AppState, doc_id: &str, author: &str, copy: &Copy) -> ApiResult<()> {
-        self.claim_client(state, doc_id, copy.client, author).await?;
+    async fn take(
+        &mut self,
+        state: &AppState,
+        doc_id: &str,
+        author: &str,
+        copy: &Copy,
+    ) -> ApiResult<()> {
+        self.claim_client(state, doc_id, copy.client, author)
+            .await?;
         let changed = copy.doc.transact().encode_diff_v1(&copy.before);
         let update = Update::decode_v1(&changed).map_err(ApiError::internal)?;
-        self.ydoc.transact_mut().apply_update(update).map_err(ApiError::internal)?;
+        self.ydoc
+            .transact_mut()
+            .apply_update(update)
+            .map_err(ApiError::internal)?;
         Ok(())
     }
 }
@@ -690,7 +900,11 @@ pub async fn read(state: &AppState, doc_id: &str) -> ApiResult<(write_doc::Doc, 
 }
 
 /// Runs `f` with the live Yjs doc (read only).
-pub async fn with_ydoc<T>(state: &AppState, doc_id: &str, f: impl FnOnce(&yrs::Doc, i64) -> T) -> ApiResult<T> {
+pub async fn with_ydoc<T>(
+    state: &AppState,
+    doc_id: &str,
+    f: impl FnOnce(&yrs::Doc, i64) -> T,
+) -> ApiResult<T> {
     let room = state.rooms.get(state, doc_id).await?;
     let inner = room.inner.lock().await;
     Ok(f(&inner.ydoc, inner.seq))
@@ -705,10 +919,17 @@ async fn index(state: &AppState, room: &Arc<Room>) -> ApiResult<()> {
     };
     // Postgres text can't hold NUL: it never reaches the index.
     let plain = doc.without_suggestions().plain_text().replace('\0', "");
-    let links: Vec<String> = doc.doc_links().iter().map(|l| l.replace('\0', "").trim().to_lowercase()).collect();
+    let links: Vec<String> = doc
+        .doc_links()
+        .iter()
+        .map(|l| l.replace('\0', "").trim().to_lowercase())
+        .collect();
     // The uploaded images the doc shows: anyone who can open it can see them. Never forgotten, so an
     // older version still shows its images.
-    let images: Vec<String> = write_doc::pandoc::images(&doc).iter().filter_map(|src| crate::content::asset_id_from_src(state, src)).collect();
+    let images: Vec<String> = write_doc::pandoc::images(&doc)
+        .iter()
+        .filter_map(|src| crate::content::asset_id_from_src(state, src))
+        .collect();
     if !images.is_empty() {
         sqlx::query("insert into doc_assets (doc_id, asset_id) select $1, id from assets where id = any($2) on conflict do nothing")
             .bind(&room.doc_id)
@@ -747,7 +968,13 @@ async fn index(state: &AppState, room: &Arc<Room>) -> ApiResult<()> {
 // Connections
 // ------------------------------------------------------------------------------------------
 
-pub async fn serve(state: AppState, doc_id: String, account: Option<Account>, role: Role, socket: WebSocket) {
+pub async fn serve(
+    state: AppState,
+    doc_id: String,
+    account: Option<Account>,
+    role: Role,
+    socket: WebSocket,
+) {
     let room = match state.rooms.get(&state, &doc_id).await {
         Ok(room) => room,
         Err(_) => return,
@@ -763,7 +990,9 @@ pub async fn serve(state: AppState, doc_id: String, account: Option<Account>, ro
         }
         // Hello: start syncing, then who wrote what, then who's here.
         let sv = inner.ydoc.transact().state_vector();
-        let _ = tx.send(WsMessage::Binary(encode(&Message::Sync(SyncMessage::SyncStep1(sv))).into()));
+        let _ = tx.send(WsMessage::Binary(
+            encode(&Message::Sync(SyncMessage::SyncStep1(sv))).into(),
+        ));
         if let Ok(bytes) = inner.authors_event(&state).await {
             let _ = tx.send(WsMessage::Binary(bytes.into()));
         }
@@ -775,12 +1004,30 @@ pub async fn serve(state: AppState, doc_id: String, account: Option<Account>, ro
                 clients: inner
                     .awareness
                     .iter()
-                    .map(|(c, (clock, json))| (yrs::ClientID::new(*c), AwarenessUpdateEntry { clock: *clock, json: Arc::from(json.as_str()) }))
+                    .map(|(c, (clock, json))| {
+                        (
+                            yrs::ClientID::new(*c),
+                            AwarenessUpdateEntry {
+                                clock: *clock,
+                                json: Arc::from(json.as_str()),
+                            },
+                        )
+                    })
                     .collect(),
             };
-            let _ = tx.send(WsMessage::Binary(encode(&Message::Awareness(update)).into()));
+            let _ = tx.send(WsMessage::Binary(
+                encode(&Message::Awareness(update)).into(),
+            ));
         }
-        inner.conns.insert(conn_id, Conn { tx: tx.clone(), account: account.clone(), role, awareness: HashSet::new() });
+        inner.conns.insert(
+            conn_id,
+            Conn {
+                tx: tx.clone(),
+                account: account.clone(),
+                role,
+                awareness: HashSet::new(),
+            },
+        );
         inner.last_used = Instant::now();
     }
 
@@ -798,7 +1045,9 @@ pub async fn serve(state: AppState, doc_id: String, account: Option<Account>, ro
             WsMessage::Binary(bytes) => {
                 if let Err(e) = handle(&state, &room, conn_id, &bytes).await {
                     tracing::warn!(doc = %doc_id, error = %e.message, "live message refused");
-                    let _ = tx.send(WsMessage::Binary(event_message(&json!({ "type": "rejected", "reason": e.message })).into()));
+                    let _ = tx.send(WsMessage::Binary(
+                        event_message(&json!({ "type": "rejected", "reason": e.message })).into(),
+                    ));
                 }
             }
             WsMessage::Close(_) => break,
@@ -809,20 +1058,7 @@ pub async fn serve(state: AppState, doc_id: String, account: Option<Account>, ro
     // Gone: tell the others its cursors left.
     {
         let mut inner = room.inner.lock().await;
-        if let Some(conn) = inner.conns.remove(&conn_id) {
-            let mut removed = HashMap::new();
-            for client in conn.awareness {
-                if let Some((clock, _)) = inner.awareness.remove(&client) {
-                    removed.insert(yrs::ClientID::new(client), AwarenessUpdateEntry { clock: clock + 1, json: Arc::from("null") });
-                }
-            }
-            if !removed.is_empty() {
-                let bytes = encode(&Message::Awareness(AwarenessUpdate { clients: removed }));
-                for other in inner.conns.values() {
-                    let _ = other.tx.send(WsMessage::Binary(bytes.clone().into()));
-                }
-            }
-        }
+        inner.remove_connection(conn_id);
         inner.last_used = Instant::now();
     }
     writer.abort();
@@ -830,14 +1066,19 @@ pub async fn serve(state: AppState, doc_id: String, account: Option<Account>, ro
 
 async fn handle(state: &AppState, room: &Arc<Room>, conn_id: u64, bytes: &[u8]) -> ApiResult<()> {
     let mut decoder = DecoderV1::new(Cursor::new(bytes));
-    let messages: Vec<Message> = MessageReader::new(&mut decoder).filter_map(Result::ok).collect();
+    let messages: Vec<Message> = MessageReader::new(&mut decoder)
+        .filter_map(Result::ok)
+        .collect();
     for message in messages {
         match message {
             Message::Sync(SyncMessage::SyncStep1(sv)) => {
                 let inner = room.inner.lock().await;
                 // The history (the text of everything deleted) is for editors, like versions: anyone else
                 // syncs from a copy without it.
-                let reader = inner.conns.get(&conn_id).is_some_and(|c| c.role < Role::Editor);
+                let reader = inner
+                    .conns
+                    .get(&conn_id)
+                    .is_some_and(|c| c.role < Role::Editor);
                 let update = if reader {
                     match write_doc::history::without_history(&inner.full_state()) {
                         Ok(doc) => doc.transact().encode_state_as_update_v1(&sv),
@@ -850,10 +1091,13 @@ async fn handle(state: &AppState, room: &Arc<Room>, conn_id: u64, bytes: &[u8]) 
                     inner.ydoc.transact().encode_state_as_update_v1(&sv)
                 };
                 if let Some(conn) = inner.conns.get(&conn_id) {
-                    let _ = conn.tx.send(WsMessage::Binary(encode(&Message::Sync(SyncMessage::SyncStep2(update))).into()));
+                    let _ = conn.tx.send(WsMessage::Binary(
+                        encode(&Message::Sync(SyncMessage::SyncStep2(update))).into(),
+                    ));
                 }
             }
-            Message::Sync(SyncMessage::SyncStep2(update)) | Message::Sync(SyncMessage::Update(update)) => {
+            Message::Sync(SyncMessage::SyncStep2(update))
+            | Message::Sync(SyncMessage::Update(update)) => {
                 apply_client_update(state, room, conn_id, &update).await?;
             }
             Message::Awareness(update) => awareness(room, conn_id, update).await,
@@ -863,11 +1107,21 @@ async fn handle(state: &AppState, room: &Arc<Room>, conn_id: u64, bytes: &[u8]) 
                     clients: inner
                         .awareness
                         .iter()
-                        .map(|(c, (clock, json))| (yrs::ClientID::new(*c), AwarenessUpdateEntry { clock: *clock, json: Arc::from(json.as_str()) }))
+                        .map(|(c, (clock, json))| {
+                            (
+                                yrs::ClientID::new(*c),
+                                AwarenessUpdateEntry {
+                                    clock: *clock,
+                                    json: Arc::from(json.as_str()),
+                                },
+                            )
+                        })
                         .collect(),
                 };
                 if let Some(conn) = inner.conns.get(&conn_id) {
-                    let _ = conn.tx.send(WsMessage::Binary(encode(&Message::Awareness(update)).into()));
+                    let _ = conn.tx.send(WsMessage::Binary(
+                        encode(&Message::Awareness(update)).into(),
+                    ));
                 }
             }
             _ => {}
@@ -880,21 +1134,60 @@ async fn handle(state: &AppState, room: &Arc<Room>, conn_id: u64, bytes: &[u8]) 
 /// nobody can show up under someone else's name.
 async fn awareness(room: &Arc<Room>, conn_id: u64, update: AwarenessUpdate) {
     let mut inner = room.inner.lock().await;
-    let Some(conn) = inner.conns.get(&conn_id) else { return };
+    let Some(conn) = inner.conns.get(&conn_id) else {
+        return;
+    };
     let identity = conn.account.clone();
     let mut clients = HashMap::new();
     let mut announced = vec![];
     for (client, entry) in update.clients {
         let client_id = client.get();
+        // Providers relay awareness they receive. Only the connection that first announced a
+        // live presence may change it; relayed states never become the relay's own cursors.
+        if inner.visitors.values().any(|v| v.client == client_id)
+            || inner
+                .conns
+                .iter()
+                .any(|(id, c)| *id != conn_id && c.awareness.contains(&client_id))
+            || inner
+                .clients
+                .get(&client_id)
+                .is_some_and(|owner| identity.as_ref().is_none_or(|a| a.uuid != *owner))
+        {
+            continue;
+        }
+        if inner
+            .awareness
+            .get(&client_id)
+            .is_some_and(|(clock, _)| *clock >= entry.clock)
+        {
+            continue;
+        }
+        if entry.json.as_ref() == "null"
+            && !inner
+                .conns
+                .get(&conn_id)
+                .is_some_and(|c| c.awareness.contains(&client_id))
+        {
+            continue;
+        }
         let json = if entry.json.as_ref() == "null" {
             "null".to_owned()
         } else {
             let mut value: Value = serde_json::from_str(&entry.json).unwrap_or(json!({}));
             if let Some(map) = value.as_object_mut() {
-                let color = map.get("user").and_then(|u| u.get("color")).cloned().unwrap_or(json!("#1f5cb1"));
+                let color = map
+                    .get("user")
+                    .and_then(|u| u.get("color"))
+                    .cloned()
+                    .unwrap_or(json!("#1f5cb1"));
                 let user = match &identity {
-                    Some(a) => json!({ "uuid": a.uuid, "id": a.id, "name": if a.display_name.is_empty() { a.id.clone() } else { a.display_name.clone() }, "kind": a.kind, "pfp_url": a.pfp_url, "color": color }),
-                    None => json!({ "id": "", "name": "Someone with the link", "kind": "carbon", "color": color }),
+                    Some(a) => {
+                        json!({ "uuid": a.uuid, "id": a.id, "name": if a.display_name.is_empty() { a.id.clone() } else { a.display_name.clone() }, "kind": a.kind, "pfp_url": a.pfp_url, "color": color })
+                    }
+                    None => {
+                        json!({ "id": "", "name": "Someone with the link", "kind": "carbon", "color": color })
+                    }
                 };
                 map.insert("user".into(), user);
             }
@@ -903,13 +1196,24 @@ async fn awareness(room: &Arc<Room>, conn_id: u64, update: AwarenessUpdate) {
         if json == "null" {
             inner.awareness.remove(&client_id);
         } else {
-            inner.awareness.insert(client_id, (entry.clock, json.clone()));
+            inner
+                .awareness
+                .insert(client_id, (entry.clock, json.clone()));
             announced.push(client_id);
         }
-        clients.insert(client, AwarenessUpdateEntry { clock: entry.clock, json: Arc::from(json.as_str()) });
+        clients.insert(
+            client,
+            AwarenessUpdateEntry {
+                clock: entry.clock,
+                json: Arc::from(json.as_str()),
+            },
+        );
     }
     if let Some(conn) = inner.conns.get_mut(&conn_id) {
         conn.awareness.extend(announced);
+    }
+    if clients.is_empty() {
+        return;
     }
     let bytes = encode(&Message::Awareness(AwarenessUpdate { clients }));
     for (id, other) in &inner.conns {
@@ -919,7 +1223,12 @@ async fn awareness(room: &Arc<Room>, conn_id: u64, update: AwarenessUpdate) {
     }
 }
 
-async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, bytes: &[u8]) -> ApiResult<()> {
+async fn apply_client_update(
+    state: &AppState,
+    room: &Arc<Room>,
+    conn_id: u64,
+    bytes: &[u8],
+) -> ApiResult<()> {
     let mut inner = room.inner.lock().await;
     if inner.poisoned {
         return Err(ApiError::unavailable("This doc is being reloaded."));
@@ -928,14 +1237,16 @@ async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, b
         Some(c) => (c.role, c.account.clone()),
         None => return Ok(()),
     };
-    let update = Update::decode_v1(bytes).map_err(|_| ApiError::invalid("That change couldn't be read."))?;
-    let known = inner.ydoc.transact().state_vector();
+    let update =
+        Update::decode_v1(bytes).map_err(|_| ApiError::invalid("That change couldn't be read."))?;
+    let snapshot = inner.ydoc.transact().snapshot();
+    let known = &snapshot.state_map;
     let new_clients: Vec<u64> = write_doc::history::inserted_upper(&update)
         .into_iter()
         .filter(|(client, end)| *end > known.get(&yrs::ClientID::new(*client)))
         .map(|(client, _)| client)
         .collect();
-    let deletes = !update.delete_set().is_empty();
+    let deletes = !update.delete_set().diff(&snapshot.delete_set).is_empty();
     if new_clients.is_empty() && !deletes {
         return Ok(());
     }
@@ -948,35 +1259,73 @@ async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, b
     for client in &new_clients {
         let owner = inner.clients.get(client);
         if owner.is_some_and(|o| *o != account.uuid) {
-            return Err(ApiError::forbidden("That change claims to come from someone else."));
+            return Err(ApiError::forbidden(
+                "That change claims to come from someone else.",
+            ));
         }
     }
-    // Commenters can only suggest, and nobody suggests in someone else's name (a suggestion's marks
-    // carry its author): such changes are checked on a copy first. A change that sets no suggestion
-    // marks can't make one.
-    let marks_suggestions = bytes.windows(b"suggestion".len()).any(|w| w == b"suggestion");
-    if role == Role::Commenter || marks_suggestions {
-        let before = inner.read();
-        let copy = ydoc::new_ydoc(1);
-        copy.transact_mut().apply_update(Update::decode_v1(&inner.full_state()).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
-        copy.transact_mut().apply_update(Update::decode_v1(bytes).map_err(ApiError::internal)?).map_err(ApiError::internal)?;
-        let after = ydoc::read_doc(&copy);
-        if role == Role::Commenter && !suggestion_only(&before, &after, &account.uuid) {
-            return Err(ApiError::forbidden("Commenters can only suggest changes.").hint("Switch to suggesting."));
+    // Reject clock gaps before Yrs can integrate a Skip which Yjs cannot replay. Missing
+    // dependencies are refused on a scratch document, never left pending in the live room.
+    for (client, ranges) in update.insertions(true).iter() {
+        let mut next = known.get(client);
+        for range in ranges.iter() {
+            if range.start > next {
+                return Err(ApiError::conflict(
+                    "An earlier change is missing. Reconnect to sync your changes first.",
+                ));
+            }
+            next = next.max(range.end);
         }
-        if suggests_for_someone_else(&before, &after, &account.uuid) {
-            return Err(ApiError::forbidden("A suggestion can only be made in your own name."));
-        }
+    }
+    let before = inner.read();
+    let copy = ydoc::new_ydoc(1);
+    copy.transact_mut()
+        .apply_update(Update::decode_v1(&inner.full_state()).map_err(ApiError::internal)?)
+        .map_err(ApiError::internal)?;
+    copy.transact_mut()
+        .apply_update(Update::decode_v1(bytes).map_err(ApiError::internal)?)
+        .map_err(ApiError::internal)?;
+    if copy.transact().has_missing_updates() {
+        return Err(ApiError::conflict(
+            "An earlier change is missing. Reconnect to sync your changes first.",
+        ));
+    }
+    validation::validate(&copy)?;
+    let after = ydoc::read_doc(&copy);
+    if role == Role::Commenter && !suggestion_only(&before, &after, &account.uuid) {
+        return Err(ApiError::forbidden("Commenters can only suggest changes.")
+            .hint("Switch to suggesting."));
+    }
+    if suggests_for_someone_else(&before, &after, &account.uuid)
+        || validation::foreign_suggestions(&inner.ydoc, &copy, &account.uuid)
+    {
+        return Err(ApiError::forbidden(
+            "A suggestion can only be made in your own name.",
+        ));
     }
     let mut claimed = false;
     for client in new_clients {
         if !inner.clients.contains_key(&client) {
             claimed = true;
         }
-        inner.claim_client(state, &room.doc_id, client, &account.uuid).await?;
+        inner
+            .claim_client(state, &room.doc_id, client, &account.uuid)
+            .await?;
     }
-    inner.ydoc.transact_mut().apply_update(update).map_err(ApiError::internal)?;
-    inner.commit(state, &room.doc_id, &account.uuid, Origin::Live, Some(conn_id)).await?;
+    inner
+        .ydoc
+        .transact_mut()
+        .apply_update(update)
+        .map_err(ApiError::internal)?;
+    inner
+        .commit(
+            state,
+            &room.doc_id,
+            &account.uuid,
+            Origin::Live,
+            Some(conn_id),
+        )
+        .await?;
     if claimed {
         inner.broadcast_authors(state).await;
     }
@@ -985,9 +1334,20 @@ async fn apply_client_update(state: &AppState, room: &Arc<Room>, conn_id: u64, b
 
 /// Whether `after` has a new suggestion that names someone other than `author` as its author.
 /// (Typing inside someone's pending suggestion adds to theirs, which is fine.)
-pub fn suggests_for_someone_else(before: &write_doc::Doc, after: &write_doc::Doc, author: &str) -> bool {
-    let known: std::collections::HashSet<(String, String)> = before.suggestions().into_iter().map(|s| (s.id, s.author)).collect();
-    after.suggestions().into_iter().any(|s| s.author != author && !known.contains(&(s.id, s.author)))
+pub fn suggests_for_someone_else(
+    before: &write_doc::Doc,
+    after: &write_doc::Doc,
+    author: &str,
+) -> bool {
+    let known: std::collections::HashSet<(String, String)> = before
+        .suggestions()
+        .into_iter()
+        .map(|s| (s.id, s.author))
+        .collect();
+    after
+        .suggestions()
+        .into_iter()
+        .any(|s| s.author != author && !known.contains(&(s.id, s.author)))
 }
 
 /// Whether `after` differs from `before` only by `author`'s own suggestions.
@@ -996,7 +1356,10 @@ pub fn suggestion_only(before: &write_doc::Doc, after: &write_doc::Doc, author: 
         return false;
     }
     let others = |doc: &write_doc::Doc| -> Vec<write_doc::SuggestionSummary> {
-        doc.suggestions().into_iter().filter(|s| s.author != author).collect()
+        doc.suggestions()
+            .into_iter()
+            .filter(|s| s.author != author)
+            .collect()
     };
     others(before) == others(after)
 }

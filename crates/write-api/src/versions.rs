@@ -298,6 +298,9 @@ pub async fn name_version(
             "Write something before naming a version.",
         ));
     }
+    if doc.deleted_at.is_some() {
+        return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
+    }
     let name = body.name.trim();
     if name.is_empty() || name.chars().count() > 200 {
         return Err(ApiError::invalid("A version name is 1 to 200 characters."));
@@ -326,7 +329,11 @@ pub async fn unname_version(
     Auth(caller): Auth,
     Path((id, seq)): Path<(String, i64)>,
 ) -> ApiResult<StatusCode> {
-    access::require_doc(&state, Some(&caller), &id, Role::Editor).await?;
+    let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Editor).await?;
+    check_seq(seq, doc.seq)?;
+    if doc.deleted_at.is_some() {
+        return Err(ApiError::conflict("This doc is in the trash.").hint("Restore it first."));
+    }
     let old: Option<String> = sqlx::query_scalar(
         "delete from version_names where doc_id = $1 and seq = $2 returning name",
     )
