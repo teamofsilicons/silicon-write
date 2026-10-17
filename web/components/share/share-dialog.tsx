@@ -14,6 +14,7 @@ import { Avatar } from "@/components/silicon-ui/avatar/avatar";
 import { Select } from "@/components/silicon-ui/select/select";
 import { CopyButton } from "@/components/silicon-ui/copy-button/copy-button";
 import { api, seg } from "@/lib/client/api";
+import { ApiError } from "@/lib/errors";
 import { useSessionView } from "@/lib/client/session";
 import { notify, notifyError } from "@/lib/notify";
 import { keys, useSharing } from "@/lib/write/queries";
@@ -35,7 +36,9 @@ const PUBLIC: { value: PublicAccess; label: string }[] = [
 
 export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "docs" | "folders"; id: string; title: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const client = useQueryClient();
-  const { data, isLoading } = useSharing(kind, id, open);
+  const { data, isLoading, error } = useSharing(kind, id, open);
+  // Someone who has the doc only through its public link doesn't see who it's shared with, or share it.
+  const linkOnly = error instanceof ApiError && error.status === 403;
   const [to, setTo] = useState("");
   const [role, setRole] = useState("editor");
   const [inviting, setInviting] = useState(false);
@@ -113,7 +116,17 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title={`Share “${title}”`} description={kind === "folders" ? "Everyone you add can open everything in this folder, now and later." : undefined}>
         <div className={styles.body}>
-          {canInvite ? (
+          {linkOnly ? (
+            <>
+              <p className={styles.note}>You have this doc through its link. Only its owner and the people it’s shared with can see who has it, or share it.</p>
+              <div className={styles.publicHead}>
+                <Link2 size={16} aria-hidden="true" />
+                <span>The link</span>
+                <CopyButton value={link} label="Copy link" />
+              </div>
+            </>
+          ) : null}
+          {linkOnly ? null : canInvite ? (
             <form className={styles.invite} onSubmit={invite}>
               <input className={styles.inviteInput} value={to} onChange={e => setTo(e.target.value)} placeholder="c:id, si:id or email" aria-label="Who to share with" autoFocus />
               <Select label="Role" options={ROLES} value={role} onValueChange={setRole} className={styles.roleSelect} />
@@ -124,6 +137,7 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
           ) : (
             <p className={styles.note}>Only the owner and editors can share this.</p>
           )}
+          {linkOnly ? null : (
           <ul className={styles.people} aria-label="People with access">
             {data?.owner ? (
               <li className={styles.person}>
@@ -161,14 +175,15 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
                 <span className={styles.who}>
                   <span>{member.account ? displayName(member.account) : member.email}</span>
                   <span className={styles.id}>
-                    {member.account?.id} · through the folder {typeof member.via === "object" && member.via.folder ? `“${member.via.folder.name}”` : ""}
+                    {member.account?.id ?? member.email} · {typeof member.via === "object" && member.via.folder ? `through the folder “${member.via.folder.name}”` : "through a folder above it"}
                   </span>
                 </span>
                 <span className={styles.role}>{member.role[0].toUpperCase() + member.role.slice(1)}</span>
               </li>
             ))}
           </ul>
-          {kind === "docs" ? (
+          )}
+          {kind === "docs" && !linkOnly ? (
             <section className={styles.public} aria-label="Public link">
               <div className={styles.publicHead}>
                 {data?.public_access && data.public_access !== "none" ? <Globe size={16} aria-hidden="true" /> : <Link2 size={16} aria-hidden="true" />}
