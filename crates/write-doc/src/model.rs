@@ -43,6 +43,10 @@ pub mod names {
     pub const HIGHLIGHT: &str = "highlight";
     pub const SUGGESTION_INSERT: &str = "suggestionInsert";
     pub const SUGGESTION_DELETE: &str = "suggestionDelete";
+
+    /// The node attribute (on any block, list item, task item, table row or inline node) that holds
+    /// the node's pending suggestion: `{kind, id, author}`.
+    pub const SUGGESTION: &str = "suggestion";
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -90,6 +94,14 @@ pub enum Block {
         latex: String,
     },
     TableOfContents,
+    /// A block someone suggests adding (it isn't in the doc until the suggestion is accepted) or
+    /// removing (it stays until then). In the live doc this is the block's `suggestion` attribute.
+    /// A list item, task item or table row suggested as a whole has each of its blocks (each block
+    /// of each of its cells) wrapped with that same suggestion.
+    Suggested {
+        suggestion: Suggestion,
+        block: Box<Block>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -137,6 +149,9 @@ pub enum Inline {
     Footnote { content: String },
     /// A `[[link]]` to another doc, by its title.
     DocLink { title: String },
+    /// An inline node (a line break, maths, a footnote, a doc link) someone suggests adding or
+    /// removing: its `suggestion` attribute in the live doc. Text carries its suggestion as a mark.
+    Suggested { suggestion: Suggestion, inline: Box<Inline> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -191,6 +206,34 @@ pub enum SuggestionKind {
     Delete,
 }
 
+impl SuggestionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SuggestionKind::Insert => "insert",
+            SuggestionKind::Delete => "delete",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<SuggestionKind> {
+        match value {
+            "insert" => Some(SuggestionKind::Insert),
+            "delete" => Some(SuggestionKind::Delete),
+            _ => None,
+        }
+    }
+}
+
+impl Suggestion {
+    /// Whether what this suggestion covers goes when it's decided this way: an accepted deletion
+    /// or a rejected insertion.
+    pub fn goes_when(&self, accept: bool) -> bool {
+        matches!(
+            (self.kind, accept),
+            (SuggestionKind::Delete, true) | (SuggestionKind::Insert, false)
+        )
+    }
+}
+
 impl Marks {
     pub fn is_plain(&self) -> bool {
         *self == Marks::default()
@@ -236,6 +279,31 @@ impl Block {
             Block::Table { .. } => TABLE,
             Block::BlockMath { .. } => BLOCK_MATH,
             Block::TableOfContents => TABLE_OF_CONTENTS,
+            Block::Suggested { block, .. } => block.type_name(),
+        }
+    }
+
+    /// `block`, suggested by `suggestion`.
+    pub fn suggested(suggestion: Suggestion, block: Block) -> Block {
+        Block::Suggested {
+            suggestion,
+            block: Box::new(block),
+        }
+    }
+
+    /// The block's own suggestion (the outermost one), and the block under it.
+    pub fn split_suggestion(&self) -> (Option<&Suggestion>, &Block) {
+        match self {
+            Block::Suggested { suggestion, block } => (Some(suggestion), block),
+            other => (None, other),
+        }
+    }
+
+    /// The block under every suggestion wrapping it.
+    pub fn unsuggested(&self) -> &Block {
+        match self {
+            Block::Suggested { block, .. } => block.unsuggested(),
+            other => other,
         }
     }
 
@@ -254,24 +322,23 @@ impl Block {
         }
     }
 
+    /// An empty paragraph (suggested or not): Markdown has no way to write one.
     pub fn is_empty_paragraph(&self) -> bool {
-        matches!(self, Block::Paragraph { content } if content.is_empty())
+        matches!(self.unsuggested(), Block::Paragraph { content } if content.is_empty())
     }
 
-    /// A paragraph or heading whose text is all a pending suggested insertion: it isn't in the doc
-    /// yet, so the Markdown leaves it out.
+    /// A block that isn't in the doc as it reads now, so the Markdown leaves it out: a block
+    /// suggested for adding (or holding nothing but suggested additions), or a paragraph or heading
+    /// whose text is all a pending suggested insertion.
     pub fn is_suggested_only(&self) -> bool {
-        self.is_all_suggested(SuggestionKind::Insert)
+        self.is_all_suggested(SuggestionKind::Insert) || decided_block(self, &|_| false).is_none()
     }
 
-    /// A paragraph or heading whose text is all pending suggestions of this kind: resolving them
+    /// A paragraph or heading whose content is all pending suggestions of this kind: resolving them
     /// that way (rejecting insertions, accepting deletions) takes the block away with its text.
     pub fn is_all_suggested(&self, kind: SuggestionKind) -> bool {
         self.inline_content().is_some_and(|content| {
-            !content.is_empty()
-                && content.iter().all(|inline| {
-                    matches!(inline, Inline::Text { marks, .. } if marks.suggestion.as_ref().is_some_and(|s| s.kind == kind))
-                })
+            !content.is_empty() && content.iter().all(|inline| inline.suggestion_kind() == Some(kind))
         })
     }
 
@@ -321,6 +388,11 @@ impl Block {
                 }
             }
             Block::BlockMath { latex } => out.push_str(latex),
+            Block::Suggested { suggestion, block } => {
+                if suggestion.kind != SuggestionKind::Insert {
+                    block.write_plain(out)
+                }
+            }
         }
     }
 }
@@ -346,6 +418,11 @@ fn inline_plain(content: &[Inline], out: &mut String) {
             Inline::InlineMath { latex } => out.push_str(latex),
             Inline::Footnote { .. } => {}
             Inline::DocLink { title } => out.push_str(title),
+            Inline::Suggested { suggestion, inline } => {
+                if suggestion.kind != SuggestionKind::Insert {
+                    inline_plain(std::slice::from_ref(inline), out)
+                }
+            }
         }
     }
 }
@@ -373,6 +450,24 @@ impl Inline {
             Inline::InlineMath { .. } => Some(names::INLINE_MATH),
             Inline::Footnote { .. } => Some(names::FOOTNOTE),
             Inline::DocLink { .. } => Some(names::DOC_LINK),
+            Inline::Suggested { inline, .. } => inline.atom_name(),
+        }
+    }
+
+    /// The kind of suggestion this piece of content is (a mark on text, or an inline node's own).
+    pub fn suggestion_kind(&self) -> Option<SuggestionKind> {
+        match self {
+            Inline::Text { marks, .. } => marks.suggestion.as_ref().map(|s| s.kind),
+            Inline::Suggested { suggestion, .. } => Some(suggestion.kind),
+            _ => None,
+        }
+    }
+
+    /// The inline node's own suggestion, and the node under it.
+    pub fn split_suggestion(&self) -> (Option<&Suggestion>, &Inline) {
+        match self {
+            Inline::Suggested { suggestion, inline } => (Some(suggestion), inline),
+            other => (None, other),
         }
     }
 }
@@ -422,94 +517,40 @@ impl Doc {
     }
 
     /// The doc as it reads once every pending suggestion is rejected: suggested insertions are
-    /// left out, and text suggested for deletion stays.
+    /// left out, and what was suggested for deletion stays.
     pub fn without_suggestions(&self) -> Doc {
-        let mut doc = self.clone();
-        drop_all_suggested(&mut doc.blocks, SuggestionKind::Insert);
-        map_inlines(&mut doc.blocks, &mut |content| {
-            let kept = content
-                .drain(..)
-                .filter_map(|inline| match inline {
-                    Inline::Text { text, marks } => match &marks.suggestion {
-                        Some(s) if s.kind == SuggestionKind::Insert => None,
-                        _ => Some(Inline::Text {
-                            text,
-                            marks: marks.without_suggestion(),
-                        }),
-                    },
-                    other => Some(other),
-                })
-                .collect();
-            *content = normalize_inlines(kept);
-        });
-        doc
+        self.decided(&|_| false)
     }
 
     /// The doc with every pending suggestion accepted.
     pub fn with_suggestions_accepted(&self) -> Doc {
-        let mut doc = self.clone();
-        drop_all_suggested(&mut doc.blocks, SuggestionKind::Delete);
-        map_inlines(&mut doc.blocks, &mut |content| {
-            let kept = content
-                .drain(..)
-                .filter_map(|inline| match inline {
-                    Inline::Text { text, marks } => match &marks.suggestion {
-                        Some(s) if s.kind == SuggestionKind::Delete => None,
-                        _ => Some(Inline::Text {
-                            text,
-                            marks: marks.without_suggestion(),
-                        }),
-                    },
-                    other => Some(other),
-                })
-                .collect();
-            *content = normalize_inlines(kept);
-        });
-        doc
+        self.decided(&|_| true)
+    }
+
+    /// The doc once every pending suggestion is decided, each accepted when `accept` says so, the
+    /// way deciding them in the live doc leaves it ([`crate::ydoc::resolve_suggestion`]).
+    pub fn decided(&self, accept: &dyn Fn(&Suggestion) -> bool) -> Doc {
+        let mut blocks = decided_blocks(&self.blocks, accept);
+        if blocks.is_empty() {
+            blocks.push(Block::empty_paragraph());
+        }
+        Doc { blocks }
     }
 
     /// Every pending suggestion, in document order: what it would insert and what it would
-    /// delete.
+    /// delete. Text reads as itself; a suggested block, list item, table row or inline node reads
+    /// as its Markdown. Pieces from different places are separated by a blank line.
     pub fn suggestions(&self) -> Vec<SuggestionSummary> {
-        let mut found: Vec<SuggestionSummary> = vec![];
-        let mut blocks = self.blocks.clone();
-        map_inlines(&mut blocks, &mut |content| {
-            for inline in content.iter() {
-                if let Inline::Text {
-                    text,
-                    marks:
-                        Marks {
-                            suggestion: Some(s),
-                            ..
-                        },
-                } = inline
-                {
-                    let entry = match found.iter_mut().position(|f| f.id == s.id) {
-                        Some(i) => &mut found[i],
-                        None => {
-                            found.push(SuggestionSummary {
-                                id: s.id.clone(),
-                                author: s.author.clone(),
-                                inserted: String::new(),
-                                deleted: String::new(),
-                            });
-                            found.last_mut().unwrap()
-                        }
-                    };
-                    match s.kind {
-                        SuggestionKind::Insert => entry.inserted.push_str(text),
-                        SuggestionKind::Delete => entry.deleted.push_str(text),
-                    }
-                }
-            }
-        });
-        found
+        let mut found = Summaries::default();
+        found.blocks(&self.blocks, &[]);
+        found.list
     }
 
-    /// The titles of every `[[doc link]]`.
+    /// The titles of every `[[doc link]]` in the doc as it reads now (a suggested link isn't one
+    /// yet).
     pub fn doc_links(&self) -> Vec<String> {
         let mut titles = vec![];
-        let mut blocks = self.blocks.clone();
+        let mut blocks = self.without_suggestions().blocks;
         map_inlines(&mut blocks, &mut |content| {
             for inline in content.iter() {
                 if let Inline::DocLink { title } = inline
@@ -531,41 +572,361 @@ impl Doc {
     }
 }
 
-/// Calls `f` on the inline content of every text block, depth first.
-/// Leaves out the paragraphs and headings whose text is all pending suggestions of `kind`, as
-/// resolving every suggestion that way does (`ydoc::resolve_suggestion`): never the last block of
-/// the doc, a list item, a quote or a cell.
-fn drop_all_suggested(blocks: &mut Vec<Block>, kind: SuggestionKind) {
-    for block in blocks.iter_mut() {
+// ------------------------------------------------------------------------------------------
+// Deciding suggestions
+// ------------------------------------------------------------------------------------------
+
+/// How a block reads once its pending suggestions are decided, each accepted when `accept` says
+/// so; `None` when the block goes with them. A container left with nothing goes too: a list
+/// without items, a list item, quote or table row whose every block went, a table without rows.
+/// This is what deciding them in the live doc does ([`crate::ydoc::resolve_suggestion`]).
+pub fn decided_block(block: &Block, accept: &dyn Fn(&Suggestion) -> bool) -> Option<Block> {
+    Some(match block {
+        Block::Suggested { suggestion, block } => {
+            return if suggestion.goes_when(accept(suggestion)) { None } else { decided_block(block, accept) };
+        }
+        Block::Paragraph { content } => Block::Paragraph {
+            content: decided_inlines(content, accept),
+        },
+        Block::Heading { level, content } => Block::Heading {
+            level: *level,
+            content: decided_inlines(content, accept),
+        },
+        Block::BulletList { items } => {
+            let kept: Vec<ListItem> = items
+                .iter()
+                .filter_map(|item| decided_item(&item.blocks, accept).map(|blocks| ListItem { blocks }))
+                .collect();
+            if kept.is_empty() && !items.is_empty() {
+                return None;
+            }
+            Block::BulletList { items: kept }
+        }
+        Block::OrderedList { start, items } => {
+            let kept: Vec<ListItem> = items
+                .iter()
+                .filter_map(|item| decided_item(&item.blocks, accept).map(|blocks| ListItem { blocks }))
+                .collect();
+            if kept.is_empty() && !items.is_empty() {
+                return None;
+            }
+            Block::OrderedList { start: *start, items: kept }
+        }
+        Block::TaskList { items } => {
+            let kept: Vec<TaskItem> = items
+                .iter()
+                .filter_map(|item| {
+                    decided_item(&item.blocks, accept).map(|blocks| TaskItem {
+                        checked: item.checked,
+                        blocks,
+                    })
+                })
+                .collect();
+            if kept.is_empty() && !items.is_empty() {
+                return None;
+            }
+            Block::TaskList { items: kept }
+        }
+        Block::Blockquote { blocks } => {
+            let kept = decided_blocks(blocks, accept);
+            if kept.is_empty() && !blocks.is_empty() {
+                return None;
+            }
+            Block::Blockquote { blocks: kept }
+        }
+        Block::Table { rows } => {
+            let mut kept: Vec<TableRow> = vec![];
+            for row in rows {
+                let cells: Vec<(TableCell, bool)> = row
+                    .cells
+                    .iter()
+                    .map(|cell| {
+                        let blocks = decided_blocks(&cell.blocks, accept);
+                        let emptied = blocks.is_empty() && !cell.blocks.is_empty();
+                        let blocks = if emptied { vec![Block::empty_paragraph()] } else { blocks };
+                        (TableCell { blocks, ..cell.clone() }, emptied)
+                    })
+                    .collect();
+                // A row whose every cell went is a row suggested as a whole.
+                if !cells.is_empty() && cells.iter().all(|(_, emptied)| *emptied) {
+                    continue;
+                }
+                kept.push(TableRow {
+                    cells: cells.into_iter().map(|(cell, _)| cell).collect(),
+                });
+            }
+            if kept.is_empty() && !rows.is_empty() {
+                return None;
+            }
+            Block::Table { rows: kept }
+        }
+        other => other.clone(),
+    })
+}
+
+/// Each of a container's blocks once their suggestions are decided (`None` for the ones that go).
+/// A paragraph or heading whose whole content goes goes with it, unless it's all the container
+/// has left.
+pub fn decided_each(blocks: &[Block], accept: &dyn Fn(&Suggestion) -> bool) -> Vec<Option<Block>> {
+    let mut out: Vec<Option<Block>> = blocks.iter().map(|block| decided_block(block, accept)).collect();
+    let mut left = out.iter().filter(|b| b.is_some()).count();
+    for (i, block) in blocks.iter().enumerate() {
+        if left > 1 && out[i].is_some() && all_goes(block, accept) {
+            out[i] = None;
+            left -= 1;
+        }
+    }
+    out
+}
+
+fn decided_blocks(blocks: &[Block], accept: &dyn Fn(&Suggestion) -> bool) -> Vec<Block> {
+    decided_each(blocks, accept).into_iter().flatten().collect()
+}
+
+/// A list item's blocks once decided; `None` when every block went. An item still starts with a
+/// paragraph.
+fn decided_item(blocks: &[Block], accept: &dyn Fn(&Suggestion) -> bool) -> Option<Vec<Block>> {
+    let mut kept = decided_blocks(blocks, accept);
+    if kept.is_empty() && !blocks.is_empty() {
+        return None;
+    }
+    if kept.len() < blocks.len() && !matches!(kept.first(), Some(Block::Paragraph { .. })) {
+        kept.insert(0, Block::empty_paragraph());
+    }
+    Some(kept)
+}
+
+/// A paragraph or heading whose content is all suggestions that go when decided this way.
+fn all_goes(block: &Block, accept: &dyn Fn(&Suggestion) -> bool) -> bool {
+    block.inline_content().is_some_and(|content| {
+        !content.is_empty()
+            && content.iter().all(|inline| match inline {
+                Inline::Text { marks, .. } => marks.suggestion.as_ref().is_some_and(|s| s.goes_when(accept(s))),
+                Inline::Suggested { suggestion, .. } => suggestion.goes_when(accept(suggestion)),
+                _ => false,
+            })
+    })
+}
+
+fn decided_inlines(content: &[Inline], accept: &dyn Fn(&Suggestion) -> bool) -> Vec<Inline> {
+    normalize_inlines(content.iter().filter_map(|inline| decided_inline(inline, accept)).collect())
+}
+
+fn decided_inline(inline: &Inline, accept: &dyn Fn(&Suggestion) -> bool) -> Option<Inline> {
+    match inline {
+        Inline::Text { text, marks } => match &marks.suggestion {
+            Some(s) if s.goes_when(accept(s)) => None,
+            _ => Some(Inline::Text {
+                text: text.clone(),
+                marks: marks.without_suggestion(),
+            }),
+        },
+        Inline::Suggested { suggestion, inline } => {
+            if suggestion.goes_when(accept(suggestion)) {
+                None
+            } else {
+                decided_inline(inline, accept)
+            }
+        }
+        other => Some(other.clone()),
+    }
+}
+
+/// The suggestion a list item or table row is suggested as a whole by: the one every block of it
+/// is wrapped with.
+pub fn common_suggestion<'a>(blocks: impl IntoIterator<Item = &'a Block>) -> Option<Suggestion> {
+    let mut common: Option<&Suggestion> = None;
+    for block in blocks {
         match block {
-            Block::BulletList { items } | Block::OrderedList { items, .. } => {
+            Block::Suggested { suggestion, .. } if common.is_none_or(|c| c == suggestion) => common = Some(suggestion),
+            _ => return None,
+        }
+    }
+    common.cloned()
+}
+
+/// Blocks without the suggestion they are all wrapped with (see [`common_suggestion`]).
+pub fn without_common_suggestion(blocks: &[Block]) -> Vec<Block> {
+    blocks
+        .iter()
+        .map(|block| match block {
+            Block::Suggested { block, .. } => (**block).clone(),
+            other => other.clone(),
+        })
+        .collect()
+}
+
+// ------------------------------------------------------------------------------------------
+// Summaries
+// ------------------------------------------------------------------------------------------
+
+/// Collects every suggestion's summary, in document order.
+#[derive(Default)]
+struct Summaries {
+    list: Vec<SuggestionSummary>,
+    /// The place (a text block, or a suggested node) each side of a summary was last added from.
+    last: std::collections::HashMap<(String, SuggestionKind), usize>,
+    place: usize,
+}
+
+impl Summaries {
+    fn add(&mut self, suggestion: &Suggestion, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let index = match self.list.iter().position(|f| f.id == suggestion.id) {
+            Some(i) => i,
+            None => {
+                self.list.push(SuggestionSummary {
+                    id: suggestion.id.clone(),
+                    author: suggestion.author.clone(),
+                    inserted: String::new(),
+                    deleted: String::new(),
+                });
+                self.list.len() - 1
+            }
+        };
+        let entry = &mut self.list[index];
+        let side = match suggestion.kind {
+            SuggestionKind::Insert => &mut entry.inserted,
+            SuggestionKind::Delete => &mut entry.deleted,
+        };
+        let key = (suggestion.id.clone(), suggestion.kind);
+        if !side.is_empty() && self.last.get(&key) != Some(&self.place) {
+            side.push_str("\n\n");
+        }
+        side.push_str(text);
+        self.last.insert(key, self.place);
+    }
+
+    /// `within`: the suggestions the blocks are part of as a whole (they're summarised already).
+    fn blocks(&mut self, blocks: &[Block], within: &[String]) {
+        for block in blocks {
+            self.block(block, within);
+        }
+    }
+
+    fn block(&mut self, block: &Block, within: &[String]) {
+        match block {
+            Block::Suggested { suggestion, block: inner } => {
+                if !within.contains(&suggestion.id) {
+                    self.place += 1;
+                    self.add(suggestion, &node_markdown(inner, suggestion));
+                    self.place += 1;
+                }
+                let within = [within, std::slice::from_ref(&suggestion.id)].concat();
+                self.block(inner, &within);
+            }
+            Block::Paragraph { content } | Block::Heading { content, .. } => {
+                self.place += 1;
+                self.inlines(content, within);
+            }
+            Block::BulletList { items } => {
                 for item in items {
-                    drop_all_suggested(&mut item.blocks, kind);
+                    self.item(&item.blocks, within, &|blocks| Block::BulletList { items: vec![ListItem { blocks }] });
+                }
+            }
+            Block::OrderedList { start, items } => {
+                for (i, item) in items.iter().enumerate() {
+                    let start = *start + i as u32;
+                    self.item(&item.blocks, within, &|blocks| Block::OrderedList { start, items: vec![ListItem { blocks }] });
                 }
             }
             Block::TaskList { items } => {
                 for item in items {
-                    drop_all_suggested(&mut item.blocks, kind);
+                    let checked = item.checked;
+                    self.item(&item.blocks, within, &|blocks| Block::TaskList { items: vec![TaskItem { checked, blocks }] });
                 }
             }
-            Block::Blockquote { blocks } => drop_all_suggested(blocks, kind),
+            Block::Blockquote { blocks } => self.blocks(blocks, within),
             Block::Table { rows } => {
                 for row in rows {
-                    for cell in &mut row.cells {
-                        drop_all_suggested(&mut cell.blocks, kind);
+                    match common_suggestion(row.cells.iter().flat_map(|c| &c.blocks)).filter(|s| !within.contains(&s.id)) {
+                        Some(suggestion) => {
+                            self.place += 1;
+                            let cells: Vec<String> = row
+                                .cells
+                                .iter()
+                                .map(|cell| {
+                                    let doc = Doc { blocks: without_common_suggestion(&cell.blocks) };
+                                    let doc = doc.decided(&|s| adds_with(s, &suggestion));
+                                    crate::markdown::to_markdown(&doc).trim().replace('\n', " ")
+                                })
+                                .collect();
+                            self.add(&suggestion, &format!("| {} |", cells.join(" | ")));
+                            self.place += 1;
+                            let within = [within, std::slice::from_ref(&suggestion.id)].concat();
+                            for cell in &row.cells {
+                                self.blocks(&without_common_suggestion(&cell.blocks), &within);
+                            }
+                        }
+                        None => {
+                            for cell in &row.cells {
+                                self.blocks(&cell.blocks, within);
+                            }
+                        }
                     }
                 }
             }
             _ => {}
         }
     }
-    let mut i = 0;
-    while i < blocks.len() {
-        if blocks.len() > 1 && blocks[i].is_all_suggested(kind) {
-            blocks.remove(i);
-        } else {
-            i += 1;
+
+    /// A list item: summarised whole when it's suggested whole (`list` makes a one-item list of it).
+    fn item(&mut self, blocks: &[Block], within: &[String], list: &dyn Fn(Vec<Block>) -> Block) {
+        match common_suggestion(blocks).filter(|s| !within.contains(&s.id)) {
+            Some(suggestion) => {
+                self.place += 1;
+                let inner = without_common_suggestion(blocks);
+                self.add(&suggestion, &node_markdown(&list(inner.clone()), &suggestion));
+                self.place += 1;
+                let within = [within, std::slice::from_ref(&suggestion.id)].concat();
+                self.blocks(&inner, &within);
+            }
+            None => self.blocks(blocks, within),
         }
+    }
+
+    fn inlines(&mut self, content: &[Inline], within: &[String]) {
+        for inline in content {
+            match inline {
+                Inline::Text {
+                    text,
+                    marks: Marks { suggestion: Some(s), .. },
+                } if !within.contains(&s.id) => self.add(s, text),
+                Inline::Suggested { suggestion, inline } if !within.contains(&suggestion.id) => {
+                    self.add(suggestion, &inline_markdown(inline))
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Whether `s`, inside a node `suggestion` adds, is part of what it adds (the rest is decided
+/// against, to show the node without other suggestions in it).
+fn adds_with(s: &Suggestion, suggestion: &Suggestion) -> bool {
+    suggestion.kind == SuggestionKind::Insert && s.id == suggestion.id && s.kind == SuggestionKind::Insert
+}
+
+/// A suggested node's Markdown, as the suggestion would make it: what it adds, or what it takes
+/// away (other suggestions inside it left out).
+fn node_markdown(block: &Block, suggestion: &Suggestion) -> String {
+    match decided_block(block, &|s| adds_with(s, suggestion)) {
+        Some(block) => crate::markdown::to_markdown(&Doc { blocks: vec![block] }).trim_end().to_owned(),
+        None => String::new(),
+    }
+}
+
+/// An inline node as Markdown (a footnote as its note, `^[…]`).
+fn inline_markdown(inline: &Inline) -> String {
+    match inline {
+        Inline::Text { text, .. } => text.clone(),
+        Inline::HardBreak => "\n".to_owned(),
+        Inline::InlineMath { latex } => format!("${latex}$"),
+        Inline::Footnote { content } => format!("^[{content}]"),
+        Inline::DocLink { title } => format!("[[{title}]]"),
+        Inline::Suggested { inline, .. } => inline_markdown(inline),
     }
 }
 
@@ -591,6 +952,7 @@ pub fn map_inlines(blocks: &mut [Block], f: &mut dyn FnMut(&mut Vec<Inline>)) {
                     }
                 }
             }
+            Block::Suggested { block, .. } => map_inlines(std::slice::from_mut(block.as_mut()), f),
             _ => {}
         }
     }
@@ -598,69 +960,73 @@ pub fn map_inlines(blocks: &mut [Block], f: &mut dyn FnMut(&mut Vec<Inline>)) {
 
 fn normalize_blocks(blocks: &mut Vec<Block>) {
     for block in blocks.iter_mut() {
-        match block {
-            Block::Paragraph { content } | Block::Heading { content, .. } => {
-                *content = normalize_inlines(std::mem::take(content));
-            }
-            Block::BulletList { items } | Block::OrderedList { items, .. } => {
-                for item in items.iter_mut() {
-                    normalize_item_blocks(&mut item.blocks);
-                }
-                if items.is_empty() {
-                    items.push(ListItem {
-                        blocks: vec![Block::empty_paragraph()],
-                    });
-                }
-            }
-            Block::TaskList { items } => {
-                for item in items.iter_mut() {
-                    normalize_item_blocks(&mut item.blocks);
-                }
-                if items.is_empty() {
-                    items.push(TaskItem {
-                        checked: false,
-                        blocks: vec![Block::empty_paragraph()],
-                    });
-                }
-            }
-            Block::Blockquote { blocks } => {
-                normalize_blocks(blocks);
-                if blocks.is_empty() {
-                    blocks.push(Block::empty_paragraph());
-                }
-            }
-            Block::Table { rows } => {
-                rows.retain(|row| !row.cells.is_empty());
-                for row in rows.iter_mut() {
-                    for cell in row.cells.iter_mut() {
-                        normalize_blocks(&mut cell.blocks);
-                        if cell.blocks.is_empty() {
-                            cell.blocks.push(Block::empty_paragraph());
-                        }
-                        cell.colspan = cell.colspan.max(1);
-                        cell.rowspan = cell.rowspan.max(1);
-                    }
-                }
-            }
-            Block::CodeBlock { language, .. }
-                if language.as_deref().is_some_and(|l| l.trim().is_empty()) => {
-                    *language = None;
-                }
-            _ => {}
-        }
+        normalize_block(block);
     }
-    blocks.retain(|block| !matches!(block, Block::Table { rows } if rows.is_empty()));
-    for block in blocks.iter_mut() {
-        if let Block::Heading { level, .. } = block {
+    blocks.retain(|block| !matches!(block.unsuggested(), Block::Table { rows } if rows.is_empty()));
+}
+
+fn normalize_block(block: &mut Block) {
+    match block {
+        Block::Paragraph { content } => {
+            *content = normalize_inlines(std::mem::take(content));
+        }
+        Block::Heading { level, content } => {
+            *content = normalize_inlines(std::mem::take(content));
             *level = (*level).clamp(1, 6);
         }
+        Block::BulletList { items } | Block::OrderedList { items, .. } => {
+            for item in items.iter_mut() {
+                normalize_item_blocks(&mut item.blocks);
+            }
+            if items.is_empty() {
+                items.push(ListItem {
+                    blocks: vec![Block::empty_paragraph()],
+                });
+            }
+        }
+        Block::TaskList { items } => {
+            for item in items.iter_mut() {
+                normalize_item_blocks(&mut item.blocks);
+            }
+            if items.is_empty() {
+                items.push(TaskItem {
+                    checked: false,
+                    blocks: vec![Block::empty_paragraph()],
+                });
+            }
+        }
+        Block::Blockquote { blocks } => {
+            normalize_blocks(blocks);
+            if blocks.is_empty() {
+                blocks.push(Block::empty_paragraph());
+            }
+        }
+        Block::Table { rows } => {
+            rows.retain(|row| !row.cells.is_empty());
+            for row in rows.iter_mut() {
+                for cell in row.cells.iter_mut() {
+                    normalize_blocks(&mut cell.blocks);
+                    if cell.blocks.is_empty() {
+                        cell.blocks.push(Block::empty_paragraph());
+                    }
+                    cell.colspan = cell.colspan.max(1);
+                    cell.rowspan = cell.rowspan.max(1);
+                }
+            }
+        }
+        Block::CodeBlock { language, .. }
+            if language.as_deref().is_some_and(|l| l.trim().is_empty()) => {
+                *language = None;
+            }
+        Block::Suggested { block, .. } => normalize_block(block),
+        _ => {}
     }
 }
 
-/// A list item's content must start with a paragraph.
+/// A list item's content must start with a paragraph (suggested or not).
 fn normalize_item_blocks(blocks: &mut Vec<Block>) {
     normalize_blocks(blocks);
-    if !matches!(blocks.first(), Some(Block::Paragraph { .. })) {
+    if !matches!(blocks.first().map(Block::unsuggested), Some(Block::Paragraph { .. })) {
         blocks.insert(0, Block::empty_paragraph());
     }
 }
