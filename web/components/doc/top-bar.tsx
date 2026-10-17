@@ -15,7 +15,7 @@ import { AvatarGroup } from "@/components/silicon-ui/avatar-group/avatar-group";
 import { InlineEdit } from "@/components/silicon-ui/inline-edit/inline-edit";
 import SegmentedControl from "@/components/silicon-ui/segmented-control/segmented-control";
 import {
-  DropdownMenuContent, DropdownMenuItem, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
+  DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/silicon-ui/dropdown-menu/dropdown-menu";
 import { Tooltip } from "@/components/silicon-ui/tooltip/tooltip";
 import { api, seg } from "@/lib/client/api";
@@ -212,6 +212,16 @@ export function TopBar({ doc, account, live, mode, onMode, canEdit, canComment, 
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            {(canEdit || canComment) && doc.kind === "doc" && !doc.deleted_at ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className={styles.modeMenu}>Mode</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuRadioGroup value={canEdit ? mode : mode === "suggesting" ? "suggesting" : "viewing"} onValueChange={value => onMode(value as EditMode)}>
+                    {modes.map(option => <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>)}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger icon={<Download size={16} />}>Download as</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>

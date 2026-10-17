@@ -1674,6 +1674,34 @@ test.describe("suggestions and roles", () => {
     await owner.context.close();
   });
 
+  test("on a phone a commenter switches between commenting and proposing changes", async ({ browser }) => {
+    const owner = await signedIn(browser, "carbon");
+    const friend = await signedIn(browser, "friend");
+    const doc = await newDoc(owner.page, `Phone review ${tag()}`, "Read this proposal.");
+    await share(owner.page, doc.id, friend.account.id, "commenter");
+    const page = friend.page;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openDoc(page, doc.id);
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Mode", exact: true }).click();
+    await expect(page.getByRole("menuitemradio", { name: "Editing", exact: true })).toHaveCount(0);
+    await page.getByRole("menuitemradio", { name: "Suggesting", exact: true }).click();
+    await expect(toolbarOf(page)).toBeVisible();
+    await expect(editorOf(page)).toHaveAttribute("contenteditable", "true");
+    await caretAfter(page, "Read");
+    await page.keyboard.type(" closely");
+    await expectMarkdown(owner.page, doc.id, "Read this proposal.\n");
+    await expectMarkdown(owner.page, doc.id, "Read{++ closely++} this proposal.\n", "?suggestions=critic");
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Mode", exact: true }).click();
+    await page.getByRole("menuitemradio", { name: "Commenting", exact: true }).click();
+    await expect(toolbarOf(page)).toBeHidden();
+    await expect(editorOf(page)).toHaveAttribute("contenteditable", "false");
+    await shot(page, "phone-commenter");
+    await friend.context.close();
+    await owner.context.close();
+  });
+
   test("a viewer reads only: no formatting bar, no modes, no comment box, no changes", async ({ browser }) => {
     const owner = await signedIn(browser, "carbon");
     const friend = await signedIn(browser, "friend");
