@@ -7,34 +7,41 @@ distributes executable packages through Silicon Apps, not crates.io.
 
 ## Current publication boundary
 
-Read-only checks on 2026-10-18 confirmed that Write 0.1.0 remains public with four
-Linux targets. Its production release is `4138ff02-2fd0-4834-88b2-f9c527549d68`,
-promoted from `b5ef0577-39a5-4726-9079-900cdcc955a4`. The original package bytes,
-source receipts, runner checks and public download checks are retained in
-`~/.silicon-release/accounts-apps/write/cli-0.1.0/` and summarized in
-`identity-release-20261017.json`.
+Write CLI **0.2.0** is public on six targets: Linux x86_64, aarch64, i686 and
+armv7hf; Apple Silicon macOS; and Windows x86_64. Production release
+`0bad7e9f-96ab-4d03-beaa-2bf409a2abf0` was promoted from development release
+`a1804e00-928f-4972-96e4-ed7a60b8176e` on 2026-10-18 UTC. All six packages passed
+the normal authenticated store upload and isolated discovery commands. The
+release receipts and original archives are retained in
+`~/.silicon-release/accounts-apps/write/cli-0.2.0/`. The checked package hashes,
+public signatures, fresh Mac and Windows installs, and Linux 0.1.0 upgrade are
+recorded in [the 0.2.0 verification receipt](verification-cli-0.2.0-2026-10-18.json).
 
-The live Apps service now requires `linux-x86_64`, `windows-x86_64` and
-`macos-aarch64` in every new development release and production promotion. Preserve
-the existing four Linux targets too, for a total of six packages. These are two
-separate gates:
+The live Apps service requires `linux-x86_64`, `windows-x86_64` and
+`macos-aarch64` for every new release and promotion. Preserve the other three
+Linux packages too. Missing required targets are rejected; validated immutable
+package IDs are required even when builds succeed locally.
 
-- Release creation and promotion reject missing required targets with HTTP 400
-  `required_targets_missing`. `silicon-apps readiness write --json` currently reports
-  both existing channels missing Windows x86_64 and macOS aarch64. This does not
-  withdraw the existing public release.
-- Public upload validation currently has live runners only for the four Linux
-  targets. For a target absent from `runner_targets`, the service rejects upload at
-  the runner stage with HTTP 503 `dependency_unavailable`. A successful local build
-  or local `validate` cannot produce an accepted package ID for that target.
+Validation for all four Linux targets and the dedicated Windows Hyper-V worker
+remain available.
+Mac upload validation is **on demand**: this release used the owner's existing
+Apple Silicon Mac, with a temporary loopback listener and authenticated SSH/SSM
+transport to the Linux gateway. The listener accepted only the exact approved
+Write archive before extraction or execution. The local process, tunnel,
+temporary routes and credentials were removed after acceptance; no cloud Mac was
+allocated. Prepare a fresh approved release session for the next Mac upload; see
+`silicon-apps/runner/RELEASE-SESSION.md` in the sibling repository. General public
+Mac uploads are not enabled while that session is absent.
 
-This was checked against live `capabilities` and `readiness`, the Apps service's
-`validate_package` and release policy, and its
-`deploy/verification-required-targets-2026-10-18.json` live rejection receipt.
-No new Write upload or release was attempted. Recheck the public runner state before
-publication; retain prepared packages if the prerequisite remains unmet. The Apps
-operator helper `publish-first-party.py` is restricted to Silicon Apps and Silicon
-Accounts and is not a Write publication path.
+Recheck live `capabilities` for the target being uploaded. A target without a
+running validation environment returns HTTP 503 `dependency_unavailable`; local
+`validate` cannot create an accepted package ID. The first-party operator import
+helper is not a Write publication path. Existing accepted packages remain valid
+for release creation and installation after a temporary validator disconnects.
+
+Write 0.1.0 and its original four Linux packages remain retained. Its production
+release is `4138ff02-2fd0-4834-88b2-f9c527549d68`; the 0.1.0 artifacts and receipts
+remain in their separate directory.
 
 ## Build inputs and targets
 
@@ -50,7 +57,7 @@ receipts. The previous Linux build used Zig 0.15.2, Rust musl targets, and
 | linux-i686 | i686-unknown-linux-musl | cargo zigbuild | write |
 | linux-armv7hf | armv7-unknown-linux-musleabihf | cargo zigbuild | write |
 | macos-aarch64 | aarch64-apple-darwin | cargo build | write |
-| windows-x86_64 | x86_64-pc-windows-msvc | cargo xwin build | write.exe |
+| windows-x86_64 | x86_64-pc-windows-msvc | `RUSTFLAGS="-C target-feature=+crt-static" cargo xwin build` | write.exe |
 
 On the release Mac all six Rust targets are installed. `cargo-xwin` 0.23.1 and its
 cached x86_64 CRT/SDK are present. `clang-cl` is in `/opt/homebrew/opt/llvm/bin` and
@@ -77,8 +84,15 @@ cargo zigbuild --locked --release -p write-cli --bin write --target aarch64-unkn
 cargo zigbuild --locked --release -p write-cli --bin write --target i686-unknown-linux-musl
 cargo zigbuild --locked --release -p write-cli --bin write --target armv7-unknown-linux-musleabihf
 cargo build --locked --release -p write-cli --bin write --target aarch64-apple-darwin
-cargo xwin build --locked --release -p write-cli --bin write --target x86_64-pc-windows-msvc
+RUSTFLAGS="-C target-feature=+crt-static" cargo xwin build --locked --release -p write-cli --bin write --target x86_64-pc-windows-msvc
 ```
+
+The Windows package must statically link the Microsoft C runtime. A dynamically
+linked build failed all three discovery commands in a clean Hyper-V Server Core
+container with `0xC0000135` (missing DLL). Keep `+crt-static` in the release command,
+inspect the resulting PE imports for unexpected runtime DLL dependencies, and
+validate the exact archive on the native worker. Do not add runtime libraries to
+the validator image to hide a package dependency.
 
 Retain build logs and a `source.json` per target containing the full source commit,
 Rust target, actual build command, toolchain versions, Cargo.lock SHA-256, and binary
@@ -115,7 +129,9 @@ shasum -a 256 "$WRITE_RELEASE_DIR/write-0.2.0-$target.tar.gz"
 
 Before uploading, verify `silicon-apps login status --json` identifies an existing
 Write author, `silicon-apps show write --json` confirms author access, and
-`silicon-apps capabilities --json` reports all required runners live. Package
+`silicon-apps capabilities --json` reports the target being uploaded live. Keep
+the approved local Mac session active for its upload, then disconnect it after
+acceptance. Package
 validation and packing are local operations. The following are catalog mutations;
 run them only as the authorized publication step, after prerequisites pass:
 

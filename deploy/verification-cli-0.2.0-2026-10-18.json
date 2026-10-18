@@ -1,0 +1,166 @@
+{
+  "checked_at": "2026-10-18T18:53:32.087376+00:00",
+  "app_id": "write",
+  "version": "0.2.0",
+  "status": "production-published-and-public-installation-verified",
+  "source_revision": "31c21aff78cc03bcb66d5e1f9e72d19bc5fd4174",
+  "source_files_sha256": "c67b6b163130b8d394190ad9eb977094ece5d749a3e0e8987faf8dff8170a159",
+  "development_release_id": "a1804e00-928f-4972-96e4-ed7a60b8176e",
+  "production_release_id": "0bad7e9f-96ab-4d03-beaa-2bf409a2abf0",
+  "store_url": "https://apps.teamofsilicons.com/apps/write",
+  "publication": "Normal authenticated upload for each package, development release, then production promotion; no direct catalog import.",
+  "packages": [
+    {
+      "target": "linux-x86_64",
+      "rust_target": "x86_64-unknown-linux-musl",
+      "archive_sha256": "d6baaf6cad1337752afab33fe95875e7fb8e8d73a79eb29d2c7e816f8d7ac15e",
+      "archive_bytes": 4541819,
+      "binary_sha256": "4f19e177309238427c5877c57c721d6d2921493dea12c4f3bcc8713a235a56cb",
+      "package_id": "7bc2218f-07fa-424d-858f-be55a32a8bb6",
+      "public_download_matches": true,
+      "signature_verified": true
+    },
+    {
+      "target": "linux-aarch64",
+      "rust_target": "aarch64-unknown-linux-musl",
+      "archive_sha256": "b86b5a3d5014273b5c83e064715c824a0c4a2ca10c568f594880ab028e4edad7",
+      "archive_bytes": 4212287,
+      "binary_sha256": "362a912e4ef3963c21454a32b26424532f90f57d2cc76e6ea232ea231a3f21e4",
+      "package_id": "ae9b8c3d-33e0-4288-a881-9bd8c1c479e9",
+      "public_download_matches": true,
+      "signature_verified": true
+    },
+    {
+      "target": "linux-i686",
+      "rust_target": "i686-unknown-linux-musl",
+      "archive_sha256": "be3004da8c1bf6c5bd6a5a29b2d42c32dace68b14c699edd56bd20f7868f86e9",
+      "archive_bytes": 4261715,
+      "binary_sha256": "63f1bc146688cffd1055b1811efb520c875bd71414d727bbe583db3d83a18e40",
+      "package_id": "599c3583-0aca-49a8-8132-b48ee4fedbb2",
+      "public_download_matches": true,
+      "signature_verified": true
+    },
+    {
+      "target": "linux-armv7hf",
+      "rust_target": "armv7-unknown-linux-musleabihf",
+      "archive_sha256": "f37fd751dd912d649ddbe9d292de16037a0c12285e7cb8d2fe87e4be5c2c668a",
+      "archive_bytes": 3734092,
+      "binary_sha256": "1ce1fcec3abe007d89d3baa8b27a4f1acde5747afc4d213b9863acb29026499e",
+      "package_id": "9daed634-76c7-4338-b012-d872e6bcd2ec",
+      "public_download_matches": true,
+      "signature_verified": true
+    },
+    {
+      "target": "macos-aarch64",
+      "rust_target": "aarch64-apple-darwin",
+      "archive_sha256": "f381fd90882ba38385bc4d8a3a01b71b29759336b0eb1423bf9ac6ec12feb6b8",
+      "archive_bytes": 4457164,
+      "binary_sha256": "21beb46fc5c77461a3a372828f735b0c1a2fc23e44c83bec328c37dbb0df2cec",
+      "package_id": "48edc0c2-4e30-4b3c-8042-b21ae8fca8d1",
+      "public_download_matches": true,
+      "signature_verified": true
+    },
+    {
+      "target": "windows-x86_64",
+      "rust_target": "x86_64-pc-windows-msvc",
+      "archive_sha256": "416cdbde4da910d14bb672ca68c19832663f1331a6480fc25ead995e00518e9a",
+      "archive_bytes": 4433639,
+      "binary_sha256": "277a7b995a884f78020e314dcebba8b3753b907febce430a82a979dd1e91d615",
+      "package_id": "1110c276-eaaf-4aa7-ac4e-18c198cbe802",
+      "public_download_matches": true,
+      "signature_verified": true
+    }
+  ],
+  "signature_key_id": "apps-2026-10",
+  "readiness": {
+    "errors": [],
+    "ready": true,
+    "required_commands": [
+      "--help",
+      "accounts --json",
+      "login status --json"
+    ],
+    "required_targets": [
+      "linux-x86_64",
+      "windows-x86_64",
+      "macos-aarch64"
+    ]
+  },
+  "windows_build": {
+    "crt_static": true,
+    "rustflags": "-C target-feature=+crt-static",
+    "reason": "Dynamic CRT build failed in clean native validation with missing DLL status 0xC0000135.",
+    "failed_archive_sha256": "27c246ead99e45382e02eb63b4210465f7961bb62a01bb63cc653186b649ba56"
+  },
+  "mac_validation": {
+    "mode": "temporary local approved-release session",
+    "paid_host_allocated": false,
+    "package_sha256": "f381fd90882ba38385bc4d8a3a01b71b29759336b0eb1423bf9ac6ec12feb6b8",
+    "accepted_package_id": "48edc0c2-4e30-4b3c-8042-b21ae8fca8d1",
+    "acceptance_checks": 12,
+    "gateway_forwarding": true,
+    "normal_store_upload": true,
+    "process_stopped": true,
+    "tunnel_closed": true,
+    "credentials_and_temporary_routes_removed": true,
+    "general_public_mac_uploads": false
+  },
+  "public_install_journeys": {
+    "macos_fresh_install": {
+      "passed": true,
+      "target": "macos-aarch64",
+      "checks_passed": 12,
+      "signed_out": true,
+      "updater_disabled": true,
+      "receipt": {
+        "file": "fresh-mac-store-install.json",
+        "sha256": "5e81a3703d5141be3b1811fd67d05096fc2c441767789261271001f98b6dcb51"
+      }
+    },
+    "windows_fresh_install": {
+      "passed": true,
+      "target": "windows-x86_64",
+      "checks_passed": 8,
+      "signed_out": true,
+      "updater_running": false,
+      "receipt": {
+        "file": "windows-public-install-receipt.json",
+        "sha256": "bd740852a1540e1413f0efe8066cb50d79b2d06e6469521bbec2e2bfce35e042"
+      }
+    },
+    "linux_upgrade": {
+      "passed": true,
+      "target": "linux-x86_64",
+      "previous_version": "0.1.0",
+      "version": "0.2.0",
+      "public_client": true,
+      "execution_image": "python@sha256:cfe2e24a75302a15934d37c2d86412893c0aa934dc3a97cbb439d04c01890ca9",
+      "receipt": {
+        "file": "linux-upgrade-final.json",
+        "sha256": "faaf535e189ac4806a30807d84556603455cb823205a2cd87baa8adf2841491a"
+      }
+    }
+  },
+  "store_ui": {
+    "url": "https://apps.teamofsilicons.com/apps/write",
+    "observed_version": "0.2.0",
+    "platforms": [
+      "macOS",
+      "Linux",
+      "Windows"
+    ],
+    "screenshot": {
+      "file": "write-0.2-store.png",
+      "sha256": "e96a61a44de61852c1654de5089b16fd6ad55d9c0264859164a9a3f8d75c50fb"
+    }
+  },
+  "verification_limits": [
+    "Native discovery and fresh install smoke checks do not substitute for signed-in document workflows.",
+    "Linux x86_64 public Apps 0.3.1 client needed a compatible Debian container because its glibc requirements exceed Amazon Linux 2023; no universal Linux distribution compatibility is claimed.",
+    "Windows proof helper used an official pinned ISRG Root X1 in its own Python TLS context; TLS verification stayed enabled and host and validation-service trust stores were unchanged."
+  ],
+  "artifact_directory": "~/.silicon-release/accounts-apps/write/cli-0.2.0/",
+  "journey_evidence_directory": "silicon-apps/.dev/production/native-runners-20261018 (sibling repository)",
+  "runner_receipt": "silicon-apps/deploy/verification-native-runners-2026-10-18.json (sibling repository)",
+  "previous_release_retained": "4138ff02-2fd0-4834-88b2-f9c527549d68"
+}
