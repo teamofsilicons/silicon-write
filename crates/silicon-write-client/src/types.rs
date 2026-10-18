@@ -398,7 +398,9 @@ impl FromStr for ExportFormat {
                     || (s == "htm" && *f == Self::Html)
             })
             .ok_or_else(|| {
-                format!("`{s}` is not a download format; use md, txt, docx, doc, odt, rtf, html or pdf")
+                format!(
+                    "`{s}` is not a download format; use md, txt, docx, doc, odt, rtf, html or pdf"
+                )
             })
     }
 }
@@ -479,6 +481,30 @@ pub struct LiveTicket {
     pub role: String,
     /// The caller, when signed in.
     pub account: Option<Account>,
+}
+
+/// One complete co-writing read, including independent content/comment revisions and live presence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentContext {
+    /// Opaque cursor captured before the snapshot; resume events from here to avoid missed changes.
+    pub cursor: String,
+    /// Document details and effective role.
+    pub doc: Doc,
+    /// Content version; comments may change independently.
+    pub seq: i64,
+    /// Current Markdown.
+    pub markdown: String,
+    /// Structured content with passage anchors.
+    pub prosemirror: Value,
+    /// Comment threads, or null when the caller cannot read comments.
+    pub threads: Value,
+    /// Independent revision information.
+    pub revisions: Value,
+    /// Authorship information.
+    pub authors: Value,
+    /// Additional context such as current participants and access capabilities.
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, Value>,
 }
 
 /// Roles someone can be invited with.

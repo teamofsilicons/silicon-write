@@ -224,7 +224,7 @@ pub fn content_disposition_filename(value: &str) -> Option<String> {
     plain.filter(|p| !p.is_empty())
 }
 
-fn network_error(source: reqwest::Error) -> Error {
+pub(crate) fn network_error(source: reqwest::Error) -> Error {
     let what = if source.is_timeout() {
         "timed out"
     } else if source.is_connect() {
@@ -711,6 +711,18 @@ impl Client {
 
     /// `POST /v1/docs/{id}/edits`: exact-text replacements, applied together and merged.
     pub async fn edit(&self, doc: &str, edits: &[Edit], suggest: bool) -> Result<EditResult> {
+        self.edit_expecting(doc, edits, suggest, None).await
+    }
+
+    /// Exact replacements with an optional atomic content-version check. A stale `expect_seq`
+    /// returns a conflict without applying any edits; reread before deciding whether to retry.
+    pub async fn edit_expecting(
+        &self,
+        doc: &str,
+        edits: &[Edit],
+        suggest: bool,
+        expect_seq: Option<i64>,
+    ) -> Result<EditResult> {
         if edits.is_empty() {
             return Err(Error::invalid_input(
                 "There are no edits to send.",
@@ -718,6 +730,15 @@ impl Client {
             ));
         }
         let mut payload = json!({ "edits": edits });
+        if let Some(seq) = expect_seq {
+            if seq < 0 {
+                return Err(Error::invalid_input(
+                    "The expected version cannot be negative.",
+                    "Use the seq from write context or write cat --json.",
+                ));
+            }
+            payload["expect_seq"] = json!(seq);
+        }
         if suggest {
             payload["suggest"] = json!(true);
         }
@@ -798,6 +819,52 @@ impl Client {
     }
 
     // ── Real time ────────────────────────────────────────────────────────────────────────
+
+    /// `GET /v1/docs/{id}/context`: content, comments, anchors, authors, revisions and presence.
+    pub async fn context(&self, doc: &str) -> Result<DocumentContext> {
+        self.get(&["v1", "docs", doc, "context"], &[]).await
+    }
+
+    /// Watches document and comment events. `joined` announces genuine presence for this open
+    /// connection; dropping the stream leaves the document. Pass the last consumed event id to
+    /// resume. A reset event contains a fresh snapshot when the cursor is no longer retained.
+    /// Connections are bounded; callers should reconnect and let the token provider refresh auth.
+    pub async fn document_events(
+        &self,
+        doc: &str,
+        joined: bool,
+        after: Option<&str>,
+    ) -> Result<crate::DocumentEvents> {
+        let endpoint = if joined { "join" } else { "events" };
+        let url = self.url(&["v1", "docs", doc, endpoint]);
+        let query: Vec<_> = after.map(|cursor| ("after", cursor)).into_iter().collect();
+        let response = self
+            .execute(|http| {
+                Ok(http
+                    .get(url.clone())
+                    .header(reqwest::header::ACCEPT, "text/event-stream")
+                    .query(&query)
+                    .timeout(Duration::from_secs(300)))
+            })
+            .await?;
+        if !response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                value
+                    .split(';')
+                    .next()
+                    .is_some_and(|mime| mime.trim() == "text/event-stream")
+            })
+        {
+            return Err(Error::Decode {
+                message: "The document stream did not return server-sent events.".into(),
+                hint: "Check the API URL and that the service supports document join/watch.".into(),
+            });
+        }
+        Ok(crate::DocumentEvents::new(response))
+    }
 
     /// `POST /v1/docs/{id}/live` (public): a ticket for the live WebSocket.
     pub async fn live(&self, doc: &str) -> Result<LiveTicket> {

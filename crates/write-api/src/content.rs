@@ -86,6 +86,8 @@ pub struct Edit {
 #[derive(Deserialize)]
 pub struct EditsBody {
     edits: Vec<Edit>,
+    /// Refuse even a uniquely matching edit if content has changed since it was read.
+    expect_seq: Option<i64>,
     #[serde(default)]
     suggest: bool,
 }
@@ -147,13 +149,16 @@ pub async fn post_edits(State(state): State<AppState>, Auth(caller): Auth, Path(
     if body.edits.is_empty() {
         return Err(ApiError::invalid("There are no edits."));
     }
+    if body.expect_seq.is_some_and(|seq| seq < 0) {
+        return Err(ApiError::invalid("expect_seq must be a non-negative revision."));
+    }
     // Commenters can only suggest: what they change becomes a suggestion.
     let suggest = body.suggest || role == Role::Commenter;
     let mode = suggest_mode(&caller, suggest);
     let origin = if suggest { Origin::Suggestion } else { Origin::Edit };
     let commenter = role == Role::Commenter;
     let author = caller.uuid.clone();
-    let (markdown, seq) = rooms::edit(&state, &id, &caller.uuid, origin, None, |y| {
+    let (markdown, seq) = rooms::edit_expecting(&state, &id, &caller.uuid, origin, None, body.expect_seq, |y| {
         let current = ydoc::read_doc(y);
         let before = write_doc::to_markdown(&current);
         let after = apply_edits(&before, &body.edits)?;

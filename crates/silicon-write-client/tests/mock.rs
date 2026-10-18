@@ -37,6 +37,110 @@ fn unauthorized() -> axum::response::Response {
         .into_response()
 }
 
+#[tokio::test]
+async fn event_stream_refreshes_auth_and_preserves_independent_comment_cursor() {
+    let base = serve(Router::new().route("/v1/docs/{id}/join", get(|headers: HeaderMap, Query(query): Query<std::collections::HashMap<String, String>>| async move {
+        if bearer(&headers).as_deref() != Some("fresh") { return unauthorized(); }
+        assert_eq!(query.get("after").map(String::as_str), Some("epoch:42+resume"));
+        assert_eq!(headers[header::ACCEPT], "text/event-stream");
+        ([(header::CONTENT_TYPE, "text/event-stream")], "id: epoch:43\nevent: comments\ndata: {\"type\":\"comments\",\"seq\":7,\"action\":\"replied\"}\n\nid: epoch:44\nevent: document\ndata: {\"type\":\"document\",\"seq\":8}\n\n").into_response()
+    }))).await;
+    let provider = Arc::new(Rotating {
+        refreshes: AtomicUsize::new(0),
+    });
+    let client = Client::new(&base)
+        .unwrap()
+        .with_token_provider(provider.clone());
+    let mut stream = client
+        .document_events("d_1", true, Some("epoch:42+resume"))
+        .await
+        .unwrap();
+    let first = stream.next_event().await.unwrap().unwrap();
+    assert_eq!(first.event, "comments");
+    assert_eq!(first.id.as_deref(), Some("epoch:43"));
+    assert_eq!(first.data["seq"], 7);
+    let next = stream.next_event().await.unwrap().unwrap();
+    assert_eq!(next.id.as_deref(), Some("epoch:44"));
+    assert_eq!(next.data["seq"], 8);
+    assert!(stream.next_event().await.unwrap().is_none());
+    assert_eq!(provider.refreshes.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn event_stream_rejects_non_stream_response() {
+    let base = serve(Router::new().route(
+        "/v1/docs/{id}/events",
+        get(|| async { "<html>Login</html>" }),
+    ))
+    .await;
+    let client = Client::new(&base).unwrap().with_token("t");
+    assert!(matches!(
+        client.document_events("d_1", false, None).await,
+        Err(Error::Decode { .. })
+    ));
+}
+
+#[tokio::test]
+async fn expected_version_conflict_is_returned_without_retry() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let base = serve(Router::new().route("/v1/docs/{id}/edits", post(move |Json(body): Json<Value>| {
+        let counter = counter.clone();
+        async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(body["expect_seq"], 42);
+            (StatusCode::CONFLICT, Json(json!({"error":{"code":"conflict","message":"Document changed","hint":"Read fresh context"}})))
+        }
+    }))).await;
+    let client = Client::new(&base).unwrap().with_token("t");
+    let error = client
+        .edit_expecting(
+            "d_1",
+            &[Edit {
+                old: "before".into(),
+                new: "after".into(),
+                all: false,
+            }],
+            false,
+            Some(42),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.status(), Some(409));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn structured_context_retains_permissions_locations_and_thread_activity() {
+    let snapshot = json!({
+        "cursor":"epoch:7", "doc":{"id":"d_1","title":"Plan","role":"editor"}, "seq":42,
+        "markdown":"Hello", "prosemirror":{"type":"doc"},
+        "threads":[{"id":"t_1","activity_version":"later","anchor":{"quote":"Hello"}}],
+        "revisions":[{"seq":42,"author":{"id":"si:writer"}}], "authors":{"blocks":[]},
+        "presence":[{"account":{"id":"c:reader"},"location":{"block_index":0,"quote":"Hello"}}],
+        "permissions":{"comments":true,"revisions":true},"revisions_truncated":false
+    });
+    let expected = snapshot.clone();
+    let base = serve(Router::new().route(
+        "/v1/docs/{id}/context",
+        get(move || {
+            let value = snapshot.clone();
+            async { Json(value) }
+        }),
+    ))
+    .await;
+    let context = Client::new(&base)
+        .unwrap()
+        .with_token("t")
+        .context("d_1")
+        .await
+        .unwrap();
+    assert_eq!(context.seq, 42);
+    assert_eq!(context.threads, expected["threads"]);
+    assert_eq!(context.extra["presence"], expected["presence"]);
+    assert_eq!(context.extra["permissions"], expected["permissions"]);
+}
+
 struct Rotating {
     refreshes: AtomicUsize,
 }

@@ -16,7 +16,7 @@ export function useThreadRead(docId: string, thread: Thread, card: RefObject<HTM
     }
     const seen = progress.current.seen;
     const element = card.current;
-    const panel = element.closest("aside");
+    const panel = element.closest("[data-comment-scroll], aside");
     const visibleSince = new Map<string, number>();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pending = false;

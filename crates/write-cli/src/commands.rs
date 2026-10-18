@@ -718,15 +718,25 @@ fn edit_summary(id: &str, seq: i64, suggest: bool, count: usize) -> String {
     }
 }
 
+pub struct EditOptions {
+    pub all: bool,
+    pub suggest: bool,
+    pub expect_seq: Option<i64>,
+}
+
 pub async fn edit(
     ctx: &Ctx,
     doc: &str,
     old: Option<String>,
     new: Option<String>,
-    all: bool,
-    suggest: bool,
+    options: EditOptions,
     edits_file: Option<String>,
 ) -> CliResult<()> {
+    let EditOptions {
+        all,
+        suggest,
+        expect_seq,
+    } = options;
     let edits: Vec<Edit> = match (edits_file, old, new) {
         (Some(file), None, None) => {
             let text = read_input(&file, "the edits")?;
@@ -765,7 +775,7 @@ pub async fn edit(
         ));
     }
     let id = resolve::doc_id(ctx, doc, false).await?;
-    let result = ctx.client.edit(&id, &edits, suggest).await.map_err(|e| {
+    let result = ctx.client.edit_expecting(&id, &edits, suggest, expect_seq).await.map_err(|e| {
         let mut err = CliError::from(e);
         if err.code == "no_match" && err.hint.is_none() {
             err.hint = Some(format!("`old` must be exact text from the current Markdown; read it with `write cat {id}`."));

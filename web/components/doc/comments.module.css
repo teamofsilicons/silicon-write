@@ -30,12 +30,15 @@
 }
 
 .panel.panel {
+  display: flex;
+  flex-direction: column;
   gap: 20px;
+  overflow: hidden;
   padding: 24px;
   background: var(--surface);
   font-family: var(--font-body);
 }
-.panelHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.panelHead { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; }
 .panelHead h2 { margin: 0; font: 500 18px/1.4 var(--font-body); letter-spacing: -.02em; }
 .panelHeadActions { display: flex; gap: 4px; }
 .iconButton {
@@ -57,6 +60,7 @@
 
 /* Keep the existing segmented control's keyboard behavior, with quiet tab rules. */
 .panel .tabs {
+  flex: none;
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--border);
@@ -75,6 +79,7 @@
 .panel .tabs[data-size] button[aria-pressed="true"] { border-bottom-color: var(--foreground); }
 .panel .tabs button > span[aria-hidden] { display: none; }
 
+.panelBody { display: grid; flex: 1 1 auto; align-content: start; gap: 20px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .threadList { display: grid; min-width: 0; }
 .threadCard { min-width: 0; padding: 20px 0; border-top: 1px solid var(--border); }
 .threadCard:first-child { padding-top: 0; border-top: 0; }

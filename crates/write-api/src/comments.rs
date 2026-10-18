@@ -285,6 +285,17 @@ pub async fn list(State(state): State<AppState>, Auth(caller): Auth, Path(id): P
     Ok(Json(json!({ "threads": views })))
 }
 
+/// Structured all-status context for an already-authorized commenter.
+pub async fn snapshot(state: &AppState, doc_id: &str, viewer: &str) -> ApiResult<Vec<Value>> {
+    let threads = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {THREAD_COLUMNS} from threads where doc_id = $1 order by created_at")))
+        .bind(doc_id).fetch_all(&state.db).await?;
+    thread_views(state, threads, Some(viewer)).await
+}
+
+async fn publish_change(state: &AppState, doc_id: &str, thread_id: &str, comment_id: Option<&str>, actor: &str, action: &str, version: i64) {
+    state.rooms.notify(doc_id, json!({"type":"threads", "action":action, "thread_id":thread_id, "comment_id":comment_id, "author_uuid":actor, "activity_version":version})).await;
+}
+
 /// Open threads as Markdown notes placed after the blocks they're on (for reading with comments).
 pub async fn annotations(state: &AppState, doc_id: &str) -> ApiResult<Vec<(usize, String)>> {
     let threads: Vec<ThreadRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {THREAD_COLUMNS} from threads where doc_id = $1 and status = 'open' order by created_at")))
@@ -528,9 +539,9 @@ async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, 
     sqlx::query("insert into thread_reads (thread_id, account_uuid, read_version) values ($1, $2, 1)")
         .bind(&thread_id).bind(&caller.uuid).execute(&mut *tx).await?;
     tx.commit().await?;
+    publish_change(&state, id, &thread_id, Some(&comment_id), &caller.uuid, "created", 1).await;
     let author = accounts::one(&state, &caller.uuid).await?;
     notify::comment(&state, doc, &thread_id, &comment_id, &author, &text, &quote, false, false).await?;
-    state.rooms.notify(id, json!({ "type": "threads" })).await;
     Ok((StatusCode::CREATED, Json(one_thread(&state, &thread_id, Some(&caller.uuid)).await?)))
 }
 
@@ -572,11 +583,11 @@ pub async fn reply(State(state): State<AppState>, Auth(caller): Auth, Path(threa
         .bind(&text)
         .execute(&mut *tx)
         .await?;
-    record_activity(&mut tx, &thread_id, &caller.uuid).await?;
+    let version = record_activity(&mut tx, &thread_id, &caller.uuid).await?;
     tx.commit().await?;
+    publish_change(&state, &thread.doc_id, &thread_id, Some(&comment_id), &caller.uuid, "replied", version).await;
     let author = accounts::one(&state, &caller.uuid).await?;
     notify::comment(&state, &doc, &thread_id, &comment_id, &author, &text, &thread.quote, true, false).await?;
-    state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok((StatusCode::CREATED, Json(comment_view(&state, &comment_id).await?)))
 }
 
@@ -626,12 +637,12 @@ pub async fn edit(State(state): State<AppState>, Auth(caller): Auth, Path(commen
     sqlx::query("update comments set body = $2, edited_at = now() where id = $1").bind(&comment_id).bind(&text).execute(&mut *tx).await?;
     sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'comment.edited', $3)")
         .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread.id, "comment": comment_id, "before": previous, "after": text })).execute(&mut *tx).await?;
-    record_activity(&mut tx, &thread.id, &caller.uuid).await?;
+    let version = record_activity(&mut tx, &thread.id, &caller.uuid).await?;
     tx.commit().await?;
+    publish_change(&state, &thread.doc_id, &thread.id, Some(&comment_id), &caller.uuid, "edited", version).await;
     // Newly mentioned people hear about it (the others were told already).
     let author = accounts::one(&state, &caller.uuid).await?;
     notify::comment(&state, &doc, &thread.id, &comment_id, &author, &text, &thread.quote, false, true).await?;
-    state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok(Json(comment_view(&state, &comment_id).await?))
 }
 
@@ -642,15 +653,18 @@ pub async fn delete(State(state): State<AppState>, Auth(caller): Auth, Path(comm
         return Err(ApiError::forbidden("Only the comment's author or the doc's owner can delete it."));
     }
     let mut tx = state.db.begin().await?;
+    let mut activity_version = None;
     let deleted: Option<String> = sqlx::query_scalar("update comments set deleted_at = now() where id = $1 and deleted_at is null returning body")
         .bind(&comment_id).fetch_optional(&mut *tx).await?;
     if let Some(body) = deleted {
         sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'comment.deleted', $3)")
             .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread.id, "comment": comment_id, "body": body, "author": comment.author_uuid })).execute(&mut *tx).await?;
-        record_activity(&mut tx, &thread.id, &caller.uuid).await?;
+        activity_version = Some(record_activity(&mut tx, &thread.id, &caller.uuid).await?);
     }
     tx.commit().await?;
-    state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
+    if let Some(version) = activity_version {
+        publish_change(&state, &thread.doc_id, &thread.id, Some(&comment_id), &caller.uuid, "deleted", version).await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -697,9 +711,9 @@ pub async fn react(State(state): State<AppState>, Auth(caller): Auth, Path(comme
             .execute(&mut *tx)
             .await?;
     }
-    record_activity(&mut tx, &thread.id, &caller.uuid).await?;
+    let version = record_activity(&mut tx, &thread.id, &caller.uuid).await?;
     tx.commit().await?;
-    state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
+    publish_change(&state, &thread.doc_id, &thread.id, Some(&comment_id), &caller.uuid, "reacted", version).await;
     Ok(Json(comment_view(&state, &comment_id).await?))
 }
 
@@ -707,18 +721,21 @@ pub async fn resolve(State(state): State<AppState>, Auth(caller): Auth, Path(thr
     let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
     require_active(&doc)?;
     let mut tx = state.db.begin().await?;
+    let mut activity_version = None;
     let changed = sqlx::query("update threads set status = 'resolved', resolved_by = $2, resolved_at = now() where id = $1 and status != 'resolved'").bind(&thread_id).bind(&caller.uuid).execute(&mut *tx).await?.rows_affected() != 0;
     if changed {
         sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'thread.resolved', $3)")
             .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread_id, "quote": thread.quote })).execute(&mut *tx).await?;
-        record_activity(&mut tx, &thread_id, &caller.uuid).await?;
+        activity_version = Some(record_activity(&mut tx, &thread_id, &caller.uuid).await?);
     }
     tx.commit().await?;
+    if let Some(version) = activity_version {
+        publish_change(&state, &thread.doc_id, &thread.id, None, &caller.uuid, "resolved", version).await;
+    }
     if changed {
         let resolver = accounts::one(&state, &caller.uuid).await?;
         notify::thread_resolved(&state, &doc, &thread_id, &thread.created_by, &resolver, &thread.quote).await?;
     }
-    state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
     Ok(Json(one_thread(&state, &thread_id, Some(&caller.uuid)).await?))
 }
 
@@ -726,13 +743,16 @@ pub async fn reopen(State(state): State<AppState>, Auth(caller): Auth, Path(thre
     let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
     require_active(&doc)?;
     let mut tx = state.db.begin().await?;
+    let mut activity_version = None;
     if sqlx::query("update threads set status = 'open', resolved_by = null, resolved_at = null where id = $1 and status != 'open'").bind(&thread_id).execute(&mut *tx).await?.rows_affected() != 0 {
         sqlx::query("insert into activity (doc_id, actor_uuid, kind, data) values ($1, $2, 'thread.reopened', $3)")
             .bind(&thread.doc_id).bind(&caller.uuid).bind(json!({ "thread": thread_id })).execute(&mut *tx).await?;
-        record_activity(&mut tx, &thread_id, &caller.uuid).await?;
+        activity_version = Some(record_activity(&mut tx, &thread_id, &caller.uuid).await?);
     }
     tx.commit().await?;
-    state.rooms.notify(&thread.doc_id, json!({ "type": "threads" })).await;
+    if let Some(version) = activity_version {
+        publish_change(&state, &thread.doc_id, &thread.id, None, &caller.uuid, "reopened", version).await;
+    }
     Ok(Json(one_thread(&state, &thread_id, Some(&caller.uuid)).await?))
 }
 

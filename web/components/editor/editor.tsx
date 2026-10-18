@@ -148,6 +148,50 @@ export function DocEditor(props: DocEditorProps) {
     if (editor) onReady(editor);
   }, [editor, onReady]);
 
+  // Publish a readable, ephemeral editing location alongside the CRDT caret so
+  // collaborators using the CLI can see the same active passage as browser peers.
+  useEffect(() => {
+    if (!editor) return;
+    const awareness = live.provider.awareness;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let previous = "";
+    const publish = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      if (editor.isDestroyed) return;
+      const { selection, doc } = editor.state;
+      const location = editor.isFocused ? {
+        block_index: selection.$from.index(0),
+        from: selection.from,
+        to: selection.to,
+        quote: selection.empty
+          ? selection.$from.parent.textContent.slice(0, 240)
+          : doc.textBetween(selection.from, selection.to, " ").slice(0, 240),
+        mode,
+      } : null;
+      const key = JSON.stringify(location);
+      if (key === previous) return;
+      previous = key;
+      awareness.setLocalStateField("location", location ? { ...location, updated_at: new Date().toISOString() } : null);
+    };
+    const schedule = () => {
+      if (timer === undefined) timer = setTimeout(publish, 100);
+    };
+    editor.on("selectionUpdate", schedule);
+    editor.on("update", schedule);
+    editor.on("focus", schedule);
+    editor.on("blur", publish);
+    publish();
+    return () => {
+      clearTimeout(timer);
+      editor.off("selectionUpdate", schedule);
+      editor.off("update", schedule);
+      editor.off("focus", schedule);
+      editor.off("blur", publish);
+      awareness.setLocalStateField("location", null);
+    };
+  }, [editor, live, mode]);
+
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     setAnchors(editor, threads, activeThread);

@@ -78,7 +78,7 @@ expect_exit 3 "commands need a sign-in (exit 3)" $C1 --json ls
 [ "$(jqv .error.code)" = unauthorized ] && pass "error JSON has code unauthorized" || fail "error JSON has code unauthorized"
 expect_exit 2 "usage errors are JSON with exit 2" $C1 --json edit
 [ "$(jqv .error.code)" = usage ] && pass "usage error code" || fail "usage error code"
-for cmd in login logout whoami accounts docs ls tree info link new import export original convert mv rename rm restore purge copy folder search backlinks cat edit put image asset pull push status share unshare members public transfer transfers comments comment reply resolve reopen react comment-edit comment-rm suggestions suggest accept reject versions version name compare revert undo activity authors; do
+for cmd in login logout whoami accounts docs ls tree info link new import export original convert mv rename rm restore purge copy folder search backlinks context join watch cat edit put image asset pull push status share unshare members public transfer transfers comments comment reply resolve reopen react comment-edit comment-rm suggestions suggest accept reject versions version name compare revert undo activity authors; do
   $WRITE $cmd --help >/dev/null 2>&1 || fail "$cmd --help"
 done
 pass "every command has --help"
@@ -230,6 +230,13 @@ check "share again changes the role" $C1 --json share "$DOC" "$C2ID" --role view
 check "invite by email" $C1 --json share "$DOC" "friend-$RANDOM@example.test" --role viewer
 [ "$(jqv .pending)" = true ] && pass "email invite is pending" || fail "email invite is pending"
 expect_exit 3 "a viewer can't edit" $C2 --json edit "$DOC" --old "Monday" --new "Friday"
+
+# ── live co-writing ───────────────────────────────────────────────────────────────────────
+section "Live co-writing"
+check "context, resumable watch, guarded edits and cancellable joined presence" \
+  python3 "$ROOT/crates/write-cli/e2e/live.py" --write "$WRITE" \
+  --owner-home "$WORK/carbon" --silicon-home "$WORK/silicon" --viewer-home "$WORK/carbon2" \
+  --api-url "$WRITE_API_URL" --output "$WORK/live-e2e"
 
 # ── reading and editing (Silicon) ──────────────────────────────────────────────────────────
 section "Editing"

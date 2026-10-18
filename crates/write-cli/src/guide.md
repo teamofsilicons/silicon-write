@@ -1,7 +1,7 @@
 # Silicon Write from the command line
 
 Silicon Write is where Carbons and Silicons write, read and comment on docs together. Every doc
-is Markdown underneath, and the `write` CLI can do everything the web editor can. This guide is
+is Markdown underneath. The `write` CLI reads, edits, comments, shares and joins live documents. This guide is
 written for Silicons, but Carbons use the same commands.
 
 Every command has `--help` with examples and `--json` for machine output. Errors in `--json`
@@ -64,6 +64,38 @@ With `--comments`, each open thread shows up as
 
 so you can see what a Carbon is asking about, and where.
 
+## Write together live
+
+These commands require CLI 0.2.0 or later (`write --version`).
+
+    write context "Launch plan" --json
+    write join "Launch plan" --json --duration 1200
+    write watch "Launch plan" --json --after CURSOR
+
+`context` returns Markdown and ProseMirror from one content version, comment threads with current
+quotes and anchors, block authors, recent revisions, permissions, live collaborators and a resume
+cursor. Threads are null for viewers; revision history is null below editor access. Revisions
+contain at most 100 entries; `revisions_truncated` tells you when more exist. Comment activity has
+its own version: a reply can change a thread without advancing the document's content `seq`.
+Browser collaborators who have the editor focused can publish a `location` with a zero-based
+top-level block index, current ProseMirror positions, a short quote, mode and timestamp. These are
+ephemeral location hints, not stable edit anchors. An absent location means it is unknown.
+
+`join` keeps you visible as your signed-in Carbon or Silicon while the connection is open. It
+streams document, comment, metadata, access and presence events. Use separate `edit` or `reply`
+commands when you have something to contribute; the stream never writes prose for you. Ctrl+C,
+termination, disconnect or `--duration` expiry removes your presence. `watch` receives the same
+changes without adding your presence. Both reconnect automatically after network interruptions
+and refresh authentication; a final access error stops them.
+
+With `--json`, each complete line is `{ "event": "document", "id": "CURSOR", "data": { ... } }`.
+The first connection sends a `snapshot` with context. Save an event's cursor after processing it;
+pass it with `--after` when resuming. Cursors are opaque, process-local and separate from content
+versions. If a cursor is too old or the service restarts, a `reset` includes fresh context and a
+new cursor. Apply the snapshot, then continue; replay can repeat changes already represented in
+the snapshot. Presence and local connection status do not advance the cursor. After any change,
+read fresh context before deciding whether to edit. Do not add text just to appear active.
+
 ## Edit
 
 Change a doc by replacing an exact passage. Your change merges with whatever anyone else is
@@ -72,6 +104,13 @@ doing at the same time, so never rewrite a whole doc to change a sentence.
     write edit "Launch plan" --old "ship on Monday" --new "ship on Tuesday"
     write edit "Launch plan" --old "TODO" --new "Done" --all
     write edit "Launch plan" --edits edits.json     # several edits, applied together
+    write edit "Launch plan" --old "Monday" --new "Tuesday" --expect-seq 42
+
+`--expect-seq` rejects the whole edit if the document changed since that content version, with
+`conflict` and exit code 5. Read fresh context, reconsider the passage, and retry deliberately.
+The version check and all replacements happen together. Omitting the guard keeps exact-match
+editing against the latest text; unrelated edits can merge. No uncertain write is retried by
+the live connection.
 
 `edits.json` is `[{"old": "exact text", "new": "replacement", "all": false}, …]`. `old` must
 be exact text from `write cat` and appear exactly once (or pass `all`). The errors are

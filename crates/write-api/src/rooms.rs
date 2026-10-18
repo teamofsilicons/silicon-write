@@ -82,9 +82,9 @@ pub struct RoomState {
     pub clients: HashMap<u64, String>,
     pub conns: HashMap<u64, Conn>,
     awareness: HashMap<u64, (u32, String)>,
-    /// Accounts that changed the doc through the API lately (a Silicon at the command line), shown
-    /// among the people in the doc like anyone typing in it, by account uuid.
-    visitors: HashMap<String, Visitor>,
+    /// Authenticated HTTP event streams that explicitly joined the document.
+    joined: HashMap<u64, Account>,
+    pub events: crate::events::journal::Journal,
     last_used: Instant,
     pub deleted: bool,
     index_due: Option<Instant>,
@@ -161,8 +161,22 @@ impl Rooms {
         let room = self.map.lock().await.get(doc_id).cloned();
         if let Some(room) = room {
             let bytes = event_message(&event);
-            let inner = room.inner.lock().await;
+            let mut inner = room.inner.lock().await;
+            if event.get("type").and_then(Value::as_str) == Some("meta") {
+                inner.events.push(event.clone());
+            } else if event.get("type").and_then(Value::as_str) == Some("threads")
+                && event.get("action").is_some()
+            {
+                let mut change = event.clone();
+                change["type"] = json!("comments");
+                inner.events.push(change);
+            }
             for conn in inner.conns.values() {
+                if event.get("type").and_then(Value::as_str) == Some("threads")
+                    && conn.role < Role::Commenter
+                {
+                    continue;
+                }
                 let _ = conn.tx.send(WsMessage::Binary(bytes.clone().into()));
             }
         }
@@ -203,8 +217,28 @@ impl Rooms {
                 }
             }
         }
+        inner.events.wake();
         for id in closed {
             inner.remove_connection(id);
+        }
+        let joined: Vec<_> = inner
+            .joined
+            .iter()
+            .map(|(id, a)| (*id, a.clone()))
+            .collect();
+        for (id, account) in joined {
+            let caller = crate::auth::Caller {
+                uuid: account.uuid,
+                id: account.id,
+                kind: account.kind,
+                token: String::new(),
+            };
+            if !matches!(
+                crate::access::doc_role(state, Some(&caller), &doc).await,
+                Ok(Some(_))
+            ) {
+                inner.leave(id);
+            }
         }
     }
 
@@ -213,8 +247,7 @@ impl Rooms {
         let rooms: Vec<Arc<Room>> = self.map.lock().await.values().cloned().collect();
         for room in &rooms {
             let due = {
-                let mut inner = room.inner.lock().await;
-                inner.end_visits();
+                let inner = room.inner.lock().await;
                 inner.index_due.is_some_and(|t| t <= Instant::now())
             };
             if due && let Err(e) = index(state, room).await {
@@ -230,6 +263,7 @@ impl Rooms {
             }
             if let Ok(inner) = room.inner.try_lock() {
                 let idle_room = inner.conns.is_empty()
+                    && inner.joined.is_empty()
                     && inner.index_due.is_none()
                     && inner.last_used.elapsed() > Duration::from_secs(600);
                 if idle_room || inner.poisoned {
@@ -311,7 +345,8 @@ async fn load(state: &AppState, doc_id: &str) -> ApiResult<Room> {
             clients: clients.into_iter().map(|(c, a)| (c as u64, a)).collect(),
             conns: HashMap::new(),
             awareness: HashMap::new(),
-            visitors: HashMap::new(),
+            joined: HashMap::new(),
+            events: crate::events::journal::Journal::default(),
             last_used: Instant::now(),
             deleted: doc.deleted_at.is_some(),
             index_due: None,
@@ -321,7 +356,89 @@ async fn load(state: &AppState, doc_id: &str) -> ApiResult<Room> {
 }
 
 impl RoomState {
+    /// An actual stream owns this presence; editing through HTTP never creates one.
+    pub fn join(&mut self, account: Account) -> u64 {
+        let id = loop {
+            let id = ids::new_client_id();
+            if !self.awareness.contains_key(&id)
+                && !self.clients.contains_key(&id)
+                && !self.conns.contains_key(&id)
+            {
+                break id;
+            }
+        };
+        let value = json!({"user": {"uuid": account.uuid, "id": account.id, "name": if account.display_name.is_empty() {&account.id} else {&account.display_name}, "kind": account.kind, "pfp_url": account.pfp_url, "color": colour_for(&account.uuid)}}).to_string();
+        self.joined.insert(id, account);
+        self.awareness.insert(id, (1, value.clone()));
+        self.send_awareness(id, 1, &value);
+        self.last_used = Instant::now();
+        id
+    }
+
+    pub fn leave(&mut self, id: u64) {
+        if self.joined.remove(&id).is_some() {
+            if let Some((clock, _)) = self.awareness.remove(&id) {
+                self.send_awareness(id, clock.saturating_add(1), "null");
+            }
+            self.last_used = Instant::now();
+        }
+    }
+
+    pub fn heartbeat_join(&mut self, id: u64) {
+        if self.joined.contains_key(&id)
+            && let Some((clock, value)) = self.awareness.get_mut(&id)
+        {
+            *clock = clock.saturating_add(1);
+            let (clock, value) = (*clock, value.clone());
+            self.send_awareness(id, clock, &value);
+        }
+    }
+
+    pub fn presence(&self) -> Vec<Value> {
+        let mut people: Vec<Value> = self
+            .joined
+            .iter()
+            .map(|(id, account)| json!({"connection_id":id.to_string(),"account":account}))
+            .collect();
+        for (id, conn) in &self.conns {
+            // Only a currently announced browser presence has a known selection.
+            let selection = conn
+                .awareness
+                .iter()
+                .filter_map(|id| self.awareness.get(id))
+                .find_map(|(_, state)| {
+                    serde_json::from_str::<Value>(state)
+                        .ok()?
+                        .get("cursor")
+                        .cloned()
+                });
+            let mut person = json!({"connection_id":id.to_string(),"account":conn.account});
+            if let Some(selection) = selection {
+                person["selection"] = selection;
+            }
+            let location = conn
+                .awareness
+                .iter()
+                .filter_map(|id| self.awareness.get(id))
+                .find_map(|(_, state)| {
+                    let state: Value = serde_json::from_str(state).ok()?;
+                    crate::events::location(state.get("location")?)
+                });
+            if let Some(location) = location {
+                person["location"] = location;
+            }
+            people.push(person);
+        }
+        people.sort_by(|a, b| {
+            a["connection_id"]
+                .as_str()
+                .cmp(&b["connection_id"].as_str())
+        });
+        people
+    }
+
     fn remove_connection(&mut self, id: u64) {
+        self.events.wake();
         if let Some(conn) = self.conns.remove(&id) {
             for client in conn.awareness {
                 if let Some((clock, _)) = self.awareness.remove(&client) {
@@ -335,7 +452,7 @@ impl RoomState {
         ydoc::read_doc(&self.ydoc)
     }
 
-    fn full_state(&self) -> Vec<u8> {
+    pub(crate) fn full_state(&self) -> Vec<u8> {
         self.ydoc
             .transact()
             .encode_state_as_update_v1(&StateVector::default())
@@ -406,6 +523,7 @@ impl RoomState {
             self.last_checkpoint = self.seq;
         }
         tx.commit().await?;
+        self.events.push(json!({"type":"document", "seq":self.seq, "origin":origin.as_str(), "author_uuid":author}));
         for update in &updates {
             let bytes = encode(&Message::Sync(SyncMessage::Update(update.clone())));
             // An offline editor with GC disabled can send text it already deleted. Its history
@@ -523,7 +641,6 @@ pub async fn edit_expecting<T>(
     let room = state.rooms.get(state, doc_id).await?;
     let mut inner = room.inner.lock().await;
     inner.editable(expect_seq)?;
-    let creating = inner.seq == 0 && matches!(origin, Origin::Import);
     let copy = inner.copy(state, doc_id, base_seq, &[]).await?;
     let result = f(&copy.doc)?;
     if !copy.changed() {
@@ -533,10 +650,6 @@ pub async fn edit_expecting<T>(
     // The browser attributes an update as it arrives, so publish its new client id first.
     inner.broadcast_authors(state).await;
     inner.commit(state, doc_id, author, origin, None).await?;
-    // A brand-new doc has no one in it to see its creator arrive.
-    if !creating && !matches!(origin, Origin::Create) {
-        inner.visit(state, author, &copy).await;
-    }
     let seq = inner.seq;
     drop(inner);
     // Changes made through the API (a Silicon's edit, a restore) are searchable as soon as the call returns.
@@ -650,25 +763,11 @@ pub async fn write_version(
     }
     let seq = inner.seq;
     let changed = last.is_some();
-    if let Some(copy) = &last {
-        inner.visit(state, author, copy).await;
-    }
     drop(inner);
     if changed && let Err(e) = index(state, &room).await {
         tracing::warn!(doc = %doc_id, error = %e.message, "indexing failed");
     }
     Ok(Written { seq, conflicts })
-}
-
-/// How long someone who changed the doc through the API stays among the people in it.
-const VISIT: Duration = Duration::from_secs(30);
-
-/// Someone shown in the doc after changing it through the API.
-struct Visitor {
-    /// The awareness client id they show up under here.
-    client: u64,
-    clock: u32,
-    until: Instant,
 }
 
 /// The caret colour the web editor gives an account (components/editor/editor.tsx, `colourFor`).
@@ -763,102 +862,8 @@ impl RoomState {
         })
     }
 
-    /// After `author` changed the doc through the API (a Silicon at the command line), shows them
-    /// among the people in the doc for a while, like anyone typing in it (UNDERSTANDING.md:
-    /// "Silicons show up exactly like Carbons do"), with their cursor just after the last thing the
-    /// change put in. Not for someone who has the doc open: they are there already.
-    async fn visit(&mut self, state: &AppState, author: &str, copy: &Copy) {
-        if self
-            .conns
-            .values()
-            .any(|c| c.account.as_ref().is_some_and(|a| a.uuid == author))
-        {
-            return;
-        }
-        let Ok(account) = accounts::one(state, author).await else {
-            return;
-        };
-        // The last thing the change inserted, if anything: the cursor goes right after it.
-        let changed = copy.doc.transact().encode_diff_v1(&copy.before);
-        let last = Update::decode_v1(&changed)
-            .ok()
-            .and_then(|update| {
-                write_doc::history::inserted_upper(&update)
-                    .into_iter()
-                    .find(|(client, _)| *client == copy.client)
-            })
-            .map(|(client, end)| (client, end - 1))
-            .or_else(|| {
-                let deleted = copy
-                    .doc
-                    .transact()
-                    .snapshot()
-                    .delete_set
-                    .diff(&copy.snapshot.delete_set);
-                deleted.iter().find_map(|(client, ranges)| {
-                    ranges.iter().next().map(|r| (client.get(), r.start))
-                })
-            });
-        let taken: HashSet<u64> = self
-            .awareness
-            .keys()
-            .copied()
-            .chain(self.clients.keys().copied())
-            .collect();
-        let visitor = self
-            .visitors
-            .entry(author.to_owned())
-            .or_insert_with(|| Visitor {
-                client: loop {
-                    let candidate = ids::new_client_id();
-                    if !taken.contains(&candidate) {
-                        break candidate;
-                    }
-                },
-                clock: 0,
-                until: Instant::now(),
-            });
-        visitor.clock += 1;
-        visitor.until = Instant::now() + VISIT;
-        let name = if account.display_name.is_empty() {
-            account.id.clone()
-        } else {
-            account.display_name.clone()
-        };
-        let mut presence = json!({
-            "user": { "uuid": account.uuid, "id": account.id, "name": name, "kind": account.kind, "pfp_url": account.pfp_url, "color": colour_for(&account.uuid) },
-        });
-        if let Some((client, clock)) = last {
-            let at = json!({ "item": { "client": client, "clock": clock }, "assoc": -1 });
-            presence["cursor"] = json!({ "anchor": at, "head": at });
-        }
-        let (client, clock, presence) = (visitor.client, visitor.clock, presence.to_string());
-        self.awareness.insert(client, (clock, presence.clone()));
-        self.send_awareness(client, clock, &presence);
-    }
-
-    /// Visitors whose time is up leave the doc.
-    fn end_visits(&mut self) {
-        let now = Instant::now();
-        let ended: Vec<String> = self
-            .visitors
-            .iter()
-            .filter(|(_, v)| v.until <= now)
-            .map(|(author, _)| author.clone())
-            .collect();
-        for author in ended {
-            self.end_visit(&author);
-        }
-    }
-
-    fn end_visit(&mut self, author: &str) {
-        if let Some(visitor) = self.visitors.remove(author) {
-            self.awareness.remove(&visitor.client);
-            self.send_awareness(visitor.client, visitor.clock + 1, "null");
-        }
-    }
-
     fn send_awareness(&self, client: u64, clock: u32, json: &str) {
+        self.events.wake();
         let update = AwarenessUpdate {
             clients: HashMap::from([(
                 yrs::ClientID::new(client),
@@ -986,10 +991,6 @@ pub async fn serve(
     let conn_id = ids::new_client_id();
     {
         let mut inner = room.inner.lock().await;
-        // Someone shown here after an API change who now opens the doc is here for real.
-        if let Some(account) = &account {
-            inner.end_visit(&account.uuid);
-        }
         // Hello: start syncing, then who wrote what, then who's here.
         let sv = inner.ydoc.transact().state_vector();
         let _ = tx.send(WsMessage::Binary(
@@ -1031,6 +1032,7 @@ pub async fn serve(
             },
         );
         inner.last_used = Instant::now();
+        inner.events.wake();
     }
 
     let writer = tokio::spawn(async move {
@@ -1146,7 +1148,7 @@ async fn awareness(room: &Arc<Room>, conn_id: u64, update: AwarenessUpdate) {
         let client_id = client.get();
         // Providers relay awareness they receive. Only the connection that first announced a
         // live presence may change it; relayed states never become the relay's own cursors.
-        if inner.visitors.values().any(|v| v.client == client_id)
+        if inner.joined.contains_key(&client_id)
             || inner
                 .conns
                 .iter()
@@ -1217,6 +1219,7 @@ async fn awareness(room: &Arc<Room>, conn_id: u64, update: AwarenessUpdate) {
     if clients.is_empty() {
         return;
     }
+    inner.events.wake();
     let bytes = encode(&Message::Awareness(AwarenessUpdate { clients }));
     for (id, other) in &inner.conns {
         if *id != conn_id {

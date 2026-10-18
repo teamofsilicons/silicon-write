@@ -76,10 +76,12 @@ file is the technical reference.
   `> [!comment t_… by c:saket on "quoted text"] body` (replies follow as `> ↳ si:x: reply`).
   Inline comment notes are for reading: writing them back is refused. Read with `comments=none` before editing.
 - `GET /v1/docs/{id}/prosemirror?seq=<n>` **public** → `{ "seq", "doc": <ProseMirror JSON> }` (read-only rendering).
-- `POST /v1/docs/{id}/edits` `{ "edits": [{ "old": "exact text", "new": "replacement", "all"?: false }], "suggest"?: false }`
+- `POST /v1/docs/{id}/edits` `{ "edits": [{ "old": "exact text", "new": "replacement", "all"?: false }], "suggest"?: false, "expect_seq"?: 42 }`
   → `{ "seq", "markdown", "suggested" }`. Each `old` is exact text from the current Markdown and must appear once (or
   `all: true`). Applied together; the change merges with whatever anyone else is doing. `suggest: true` makes it a
   suggestion; a commenter's change always is one (`suggested` says which it was).
+  `expect_seq` atomically requires that content version before applying the complete edit batch;
+  a mismatch returns `409 conflict` and makes no change. Re-read and reconsider instead of blindly retrying.
 - `PUT /v1/docs/{id}/markdown` `{ "markdown", "base_seq"?, "suggest"? }` → `{ "seq", "markdown", "suggested", "conflicts" }`.
   Writes a whole new version (as a suggestion with `suggest`, and always for a commenter). With `base_seq` (the `seq` the Markdown was read at), only what changed since then is applied,
   merged with everything that happened after: what only one side changed is merged, and a change both sides made the
@@ -102,6 +104,30 @@ file is the technical reference.
 - `GET /v1/search?q=…` → `{ "results": [{ "doc": Doc, "snippet": "…" }] }`.
 
 ## Real time
+
+- `GET /v1/docs/{id}/context` (signed in) → `{ "doc": Doc, "seq", "markdown", "prosemirror",
+  "threads", "revisions", "revisions_truncated", "authors": { "accounts": [Account], "blocks": [{"index","authors":[Account]}] },
+  "presence", "permissions": {"comments","revisions"}, "cursor" }`. Markdown, ProseMirror and authorship
+  come from one captured content version. Threads use the existing full thread shape with anchors,
+  current quotes, activity versions and comment authors; null below commenter access. Revisions are
+  the latest 100 entries at or before `seq` with author/origin/time; null below editor access. The
+  cursor precedes the related reads so subsequent replay cannot miss intervening changes.
+- `GET /v1/docs/{id}/events?after=CURSOR` (signed in) → `text/event-stream`, with optional
+  `Last-Event-ID` instead of `after`. `GET /v1/docs/{id}/join` is the same stream with real, connection-owned
+  presence as the authenticated account. A disconnected body removes that presence; ordinary edit calls
+  do not imply an ongoing session. Presence includes only locations actually published by a live editor.
+- SSE events are named `snapshot`, `reset`, `document`, `comments`, `meta`, `presence`, `access` or
+  `reconnect`. Data is JSON with `type` and event-specific fields. `snapshot`/`reset` contain `context`
+  and `cursor`; reset also includes a reason. Document events include `seq`, `origin`, `author_uuid`;
+  comment events include action, author, thread/comment IDs and activity version where relevant. Comments
+  advance their own event cursor even when content `seq` stays unchanged. Viewers receive no comment events.
+- Save the SSE `id` only after handling an event. The opaque cursor is a bounded in-memory room journal,
+  not a durable content revision. Valid cursors replay later events; expired, invalid, ahead or prior-epoch
+  cursors send `reset` with fresh context. Replay can duplicate changes already present in a snapshot.
+  Presence is ephemeral and does not advance the cursor. The server rechecks access during streaming;
+  `access` with null role ends the stream. Streams periodically send `reconnect` and close so clients can
+  refresh authentication. Clients should resume with backoff after network failure, stop on terminal
+  authorization errors, and never retry writes as part of stream reconnection.
 
 - `POST /v1/docs/{id}/live` **public** → `{ "url": "wss://…/v1/live/d_…", "ticket": "…", "expires_at", "role", "account": Account | null }`.
 - `GET /v1/live/{id}?ticket=…` (WebSocket): the Yjs sync and awareness protocol (y-websocket messages 0 and 1) on the

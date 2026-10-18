@@ -9,6 +9,7 @@ mod config;
 mod content;
 mod convert;
 mod error;
+mod events;
 mod ids;
 mod library;
 mod live;
@@ -57,6 +58,9 @@ fn router(state: AppState) -> Router {
         .route("/v1/docs/{id}/backlinks", get(content::backlinks))
         .route("/v1/docs/{id}/authorship", get(content::authorship))
         .route("/v1/docs/{id}/live", post(live::ticket))
+        .route("/v1/docs/{id}/context", get(events::context))
+        .route("/v1/docs/{id}/events", get(events::watch))
+        .route("/v1/docs/{id}/join", get(events::join))
         .route("/v1/docs/{id}/sharing", get(sharing::doc_members).post(sharing::share_doc))
         .route("/v1/docs/{id}/sharing/{member}", patch(sharing::change_doc_member).delete(sharing::remove_doc_member))
         .route("/v1/docs/{id}/public", put(sharing::set_public))

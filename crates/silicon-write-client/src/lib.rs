@@ -33,6 +33,7 @@
 
 mod client;
 mod error;
+mod events;
 pub mod types;
 
 pub use client::{
@@ -40,4 +41,5 @@ pub use client::{
     content_disposition_filename, guess_mime,
 };
 pub use error::{Error, Result};
+pub use events::{DocumentEvent, DocumentEvents};
 pub use types::*;

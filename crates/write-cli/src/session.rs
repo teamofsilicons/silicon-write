@@ -312,6 +312,16 @@ impl SessionProvider {
     ) -> Result<Session, CliError> {
         let _lock = self.store.lock().await?;
         let on_disk = self.store.load()?.ok_or_else(signed_out_error)?;
+        if current
+            .as_ref()
+            .is_some_and(|session| session.account.uuid != on_disk.account.uuid)
+        {
+            return Err(CliError::new(
+                "unauthorized",
+                "The signed-in account changed while this command was running.",
+                "This command stopped to preserve its original identity. Check `write whoami` before starting it again.",
+            ));
+        }
         if on_disk.access_token != rejected && !on_disk.needs_refresh() {
             *current = Some(on_disk.clone());
             return Ok(on_disk);
@@ -492,5 +502,30 @@ mod tests {
         );
         let token = TokenProvider::refresh(&provider, "at").await.unwrap();
         assert_eq!(token.as_deref(), Some("at2"));
+    }
+
+    #[tokio::test]
+    async fn never_adopts_or_refreshes_a_different_identity() {
+        for expires_at in [now() + 1800, now() - 10] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Store::new(dir.path());
+            let mut original = sample();
+            original.expires_at = now() - 10;
+            let mut replacement = sample();
+            replacement.account.uuid = "another-account".into();
+            replacement.access_token = "another-token".into();
+            replacement.expires_at = expires_at;
+            store.save(&replacement).unwrap();
+            let provider = SessionProvider::new(store.clone(), Some(original));
+            assert_eq!(
+                provider.valid_token().await.unwrap_err().code,
+                "unauthorized"
+            );
+            assert_eq!(provider.session().await.unwrap().account.uuid, "u");
+            assert_eq!(
+                store.load().unwrap().unwrap().account.uuid,
+                "another-account"
+            );
+        }
     }
 }

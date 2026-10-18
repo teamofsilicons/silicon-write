@@ -51,7 +51,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   const replyDraft = useCommentDraft(account.uuid, docId, `reply:${thread.id}`);
   useEffect(() => {
     if (!active || !scrollToActive || !ref.current) return;
-    const panel = ref.current.closest("aside");
+    const panel = ref.current.closest("[data-comment-scroll], aside");
     if (!panel) return;
     const card = ref.current.getBoundingClientRect();
     const bounds = panel.getBoundingClientRect();
@@ -233,17 +233,19 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, onAc
         </div>
       </div>
       <SegmentedControl className={commentStyles.tabs} options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setShow(v as "open" | "resolved")} label="Show" size="xs" />
-      {doc.kind === "doc" ? <SuggestionCards docId={docId} editor={editor} canEdit={canEdit} /> : null}
-      <div className={commentStyles.threadList}>
-        {list.length === 0 ? (
-          <p className={commentStyles.panelEmpty}>{show === "open" ? "No open comments. Select text to comment on it." : "No resolved comments yet."}</p>
-        ) : (
-          list.map(thread => (
-            <ThreadCard key={thread.id} thread={thread} active={thread.id === activeThread} account={account} people={people} onActivate={() => onActivate(thread.id)} docId={docId} scrollToActive />
-          ))
-        )}
+      <div className={commentStyles.panelBody} data-comment-scroll>
+        {doc.kind === "doc" ? <SuggestionCards docId={docId} editor={editor} canEdit={canEdit} /> : null}
+        <div className={commentStyles.threadList}>
+          {list.length === 0 ? (
+            <p className={commentStyles.panelEmpty}>{show === "open" ? "No open comments. Select text to comment on it." : "No resolved comments yet."}</p>
+          ) : (
+            list.map(thread => (
+              <ThreadCard key={thread.id} thread={thread} active={thread.id === activeThread} account={account} people={people} onActivate={() => onActivate(thread.id)} docId={docId} scrollToActive />
+            ))
+          )}
+        </div>
+        {list.length ? <p className={commentStyles.panelFoot}>{list.length === 1 ? "1 thread" : `${list.length} threads`} · J and K move between them · updated {formatRelative(list[list.length - 1].created_at)}</p> : null}
       </div>
-      {list.length ? <p className={commentStyles.panelFoot}>{list.length === 1 ? "1 thread" : `${list.length} threads`} · J and K move between them · updated {formatRelative(list[list.length - 1].created_at)}</p> : null}
     </aside>
   );
 }

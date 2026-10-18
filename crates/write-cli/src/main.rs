@@ -4,9 +4,62 @@ mod auth;
 mod commands;
 mod ctx;
 mod error;
+mod live;
 mod resolve;
 mod session;
 mod sync;
+
+#[cfg(test)]
+mod live_command_tests {
+    use super::*;
+    #[test]
+    fn accepts_resumable_join_and_guarded_batch_edits() {
+        let cli = Cli::try_parse_from([
+            "write",
+            "join",
+            "https://write.teamofsilicons.com/d/d_1",
+            "--json",
+            "--after",
+            "epoch:42",
+            "--duration",
+            "1200",
+        ])
+        .unwrap();
+        assert!(cli.global.json);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Join(LiveArgs {
+                duration: Some(1200),
+                ..
+            }))
+        ));
+        let cli =
+            Cli::try_parse_from(["write", "edit", "d_1", "--edits", "-", "--expect-seq", "42"])
+                .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Edit {
+                expect_seq: Some(42),
+                ..
+            })
+        ));
+        assert!(Cli::try_parse_from(["write", "join", "d_1", "--duration", "0"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "write",
+                "edit",
+                "d_1",
+                "--old",
+                "a",
+                "--new",
+                "b",
+                "--expect-seq",
+                "-1"
+            ])
+            .is_err()
+        );
+    }
+}
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -38,6 +91,8 @@ QUICK START
   silicon-accounts login --app write | write login --token-stdin
                                                 Silicon: sign in with a short-lived token
   write ls                                      your docs and folders
+  write context DOC --json                      content, comments, authors and presence
+  write join DOC --json                         stay present and receive live changes
   write new --title \"Launch plan\" --file plan.md
   write cat \"Launch plan\" --comments            Markdown with open comments inline
   write edit \"Launch plan\" --old \"Monday\" --new \"Tuesday\"
@@ -290,6 +345,24 @@ Examples:
     },
 
     // ── reading and editing ──
+    /// Read content, comments, authors, revisions, and live collaborators together
+    #[command(
+        after_help = "Example:\n  write context DOC --json\n\nThe response includes a resumable cursor for `write watch` or `write join`."
+    )]
+    Context {
+        /// Doc id, link or exact title
+        doc: String,
+    },
+    /// Stream document and comment activity without appearing as a collaborator
+    #[command(
+        after_help = "Example:\n  write watch DOC --json --after CURSOR\n\nJSON output is one event per line. Save the cursor after processing each event.\nAn expired cursor produces a reset with fresh context. Ctrl+C stops watching."
+    )]
+    Watch(LiveArgs),
+    /// Stay in a doc as your signed-in identity and stream collaboration activity
+    #[command(
+        after_help = "Example:\n  write join DOC --json --duration 1200\n\nYou appear in the document while connected. JSON output is one event per line.\nUse separate edit or comment commands to contribute. Ctrl+C leaves the session."
+    )]
+    Join(LiveArgs),
     /// Print a doc as Markdown, optionally with suggestions or open comments shown inline
     #[command(after_help = "\
 Examples:
@@ -336,6 +409,9 @@ no_match (the text isn't there) and not_unique (it appears several times).")]
         /// JSON file with several edits applied together (- reads stdin)
         #[arg(long, value_name = "FILE|-", conflicts_with_all = ["old", "new", "all"])]
         edits: Option<String>,
+        /// Apply only if the document still has this content version; conflict exits 5
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        expect_seq: Option<i64>,
     },
     /// Write a whole doc from Markdown (with --base-seq, only your changes since then)
     #[command(after_help = "\
@@ -710,6 +786,18 @@ Examples:
 }
 
 #[derive(Args)]
+struct LiveArgs {
+    /// Doc id, link or exact title
+    doc: String,
+    /// Resume from the last processed event cursor
+    #[arg(long)]
+    after: Option<String>,
+    /// Leave after this many seconds (otherwise stay until Ctrl+C)
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    duration: Option<u64>,
+}
+
+#[derive(Args)]
 #[command(args_conflicts_with_subcommands = true)]
 struct LoginArgs {
     #[command(subcommand)]
@@ -910,6 +998,9 @@ async fn run(ctx: &Ctx, command: Command) -> CliResult<()> {
         Command::Link { title } => c::link(ctx, &title).await,
         Command::Search { query } => c::search(ctx, &query).await,
         Command::Backlinks { doc } => c::backlinks(ctx, &doc).await,
+        Command::Context { doc } => live::context(ctx, &doc).await,
+        Command::Watch(args) => live::watch(ctx, &args.doc, false, args.after, args.duration).await,
+        Command::Join(args) => live::watch(ctx, &args.doc, true, args.after, args.duration).await,
         Command::Cat {
             doc,
             critic,
@@ -922,7 +1013,22 @@ async fn run(ctx: &Ctx, command: Command) -> CliResult<()> {
             all,
             suggest,
             edits,
-        } => c::edit(ctx, &doc, old, new, all, suggest, edits).await,
+            expect_seq,
+        } => {
+            c::edit(
+                ctx,
+                &doc,
+                old,
+                new,
+                c::EditOptions {
+                    all,
+                    suggest,
+                    expect_seq,
+                },
+                edits,
+            )
+            .await
+        }
         Command::Put {
             doc,
             file,
@@ -963,7 +1069,19 @@ async fn run(ctx: &Ctx, command: Command) -> CliResult<()> {
         Command::CommentRm { comment } => c::comment_rm(ctx, &comment).await,
         Command::Suggestions { doc } => c::suggestions(ctx, &doc).await,
         Command::Suggest { doc, old, new, all } => {
-            c::edit(ctx, &doc, Some(old), Some(new), all, true, None).await
+            c::edit(
+                ctx,
+                &doc,
+                Some(old),
+                Some(new),
+                c::EditOptions {
+                    all,
+                    suggest: true,
+                    expect_seq: None,
+                },
+                None,
+            )
+            .await
         }
         Command::Accept {
             doc,
