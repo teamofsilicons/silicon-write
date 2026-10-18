@@ -1,0 +1,187 @@
+{
+  "recorded_at": "2026-10-18T16:58:17.434540+00:00",
+  "scope": [
+    "Sticky All comments heading, navigation, close button and Open/Resolved filters",
+    "Structured context with compact CLI revision history",
+    "Authenticated resumable document and comment events",
+    "Real connection-owned Silicon presence and readable focused browser passage",
+    "Atomic expected-version narrow edits, safe cancellation and identity-pinned refresh"
+  ],
+  "api": {
+    "revision": "aa1cd0b261b45bc4c1456a125cc805dcd4021199",
+    "url": "https://api.write.teamofsilicons.com",
+    "archive_sha256": "54ae55d2e539172c3e807858436ed633e6b76b89f796c6c3e09484c90176a2c8",
+    "install_ssm_command": "f9b80c04-971e-4d0a-9037-2ac3ee4cb489",
+    "verification": {
+      "installed_revision": "aa1cd0b261b45bc4c1456a125cc805dcd4021199",
+      "archive_sha256": "54ae55d2e539172c3e807858436ed633e6b76b89f796c6c3e09484c90176a2c8",
+      "binary_sha256": "e4c8d71edb81810d3aadabab9c2d6ba71e22d2035bdb7efa60ba74a9f36fc733",
+      "previous": "/opt/silicon-write/releases/598895f22d675849170e3f77b070ae31a2e2f7a2",
+      "local_readiness": true,
+      "services": {
+        "silicon-write": "active",
+        "silicon-write-caddy": "active",
+        "silicon-write-backup.timer": "active"
+      },
+      "before_counts": {
+        "docs": 5,
+        "assets": 4,
+        "migrations": 4
+      },
+      "after_counts": {
+        "docs": 5,
+        "assets": 4,
+        "migrations": 4
+      },
+      "predeploy_backup": "predeploy-20261018T165202Z",
+      "backup_files": {
+        "database.dump": "8d34aeb06baa9709357799971f113be9cfb3a75fa519fd5e219a558e8ef6f9a3",
+        "files.tar.gz": "4b53c7a658a5ad892fe97ba756a3a2ba524fa8ed81b5747b51270707ce074897"
+      },
+      "migration_4_applied": true,
+      "schema": {
+        "migration_4": true,
+        "activity_version": true,
+        "thread_activity": true,
+        "thread_reads": true
+      }
+    },
+    "production_cli_checks": [
+      "public production API verifies TLS and is ready",
+      "native CLI is authenticated as si:udd-saket",
+      "fixture is new, private, and owned by the Silicon",
+      "context pairs content, revision, authors, and structured data",
+      "ordinary CLI reads create no online presence",
+      "join creates actual Silicon room presence",
+      "duration expiry removes presence without changing prose",
+      "watch remains absent from collaborators",
+      "comment cursor advances independently of document revision",
+      "context contains comment anchors and Silicon authorship",
+      "resume replays disconnected reply without duplicating processed comment",
+      "unknown cursor explicitly resets with fresh context",
+      "live document event identifies persisted revision and author",
+      "stale guard conflicts without mutation",
+      "concurrent guards permit exactly one mutation",
+      "API edits create no synthetic online participant"
+    ],
+    "production_cli_check_count": 16,
+    "transport": {
+      "url": "https://api.write.teamofsilicons.com/readyz",
+      "http_status": 200,
+      "ssl_verify_result": 0
+    },
+    "fixture": {
+      "id": "d_FTXWogQyebHwkDf5bRVf",
+      "created_private_as": "si:udd-saket",
+      "cleanup": {
+        "trashed": true,
+        "deleted_at": "2026-10-18T16:53:37.402373Z"
+      }
+    },
+    "existing_user_document_content_changed": false
+  },
+  "web": {
+    "revision": "eae448df5dbd2947a8bffffad309ccfa3793b21d",
+    "deployment_id": "dpl_DbcT3N2MGRkMB68w6wtdsF6WMVUr",
+    "url": "https://write.teamofsilicons.com",
+    "immutable_url": "https://silicon-write-n27f19ua5-saketdev12-5675s-projects.vercel.app",
+    "ready": true,
+    "sticky_desktop_mobile_verified": true,
+    "readable_location_and_blur_verified": true,
+    "user_original_tab_untouched": true,
+    "screenshot": ".dev/design-reference/cowriter-sticky-live-20261018.png",
+    "public_guide": {
+      "status": 200,
+      "compact_context_guide": true,
+      "resume_snapshot_semantics": true
+    }
+  },
+  "cli": {
+    "version": "0.2.0",
+    "revision": "eae448df5dbd2947a8bffffad309ccfa3793b21d",
+    "native_binary": {
+      "version": "0.2.0",
+      "source_revision": "eae448df5dbd2947a8bffffad309ccfa3793b21d",
+      "target": "aarch64-apple-darwin",
+      "command": "cargo build --locked --release -p write-cli --bin write --target aarch64-apple-darwin",
+      "sha256": "21beb46fc5c77461a3a372828f735b0c1a2fc23e44c83bec328c37dbb0df2cec",
+      "cargo_lock_sha256": "7fbc6d8d233288350fcfb814c216c3497bddc2191b540e29f85f32c7c76736a2",
+      "catalog_published": false,
+      "catalog_blocker": "Required Mac and Windows upload validation runners unavailable",
+      "--version": "write 0.2.0",
+      "login status --json": "{\n  \"app_id\": \"write\",\n  \"authenticated\": false\n}"
+    },
+    "package": {
+      "path": ".dev/production/write-0.2.0-macos-aarch64.tar.gz",
+      "sha256": "faf7a9725247170336b674bfbbf44f2da6b404792c3dc36e01d303be3901f7ce",
+      "size": 4456620
+    },
+    "compact_context": {
+      "binary_sha256": "21beb46fc5c77461a3a372828f735b0c1a2fc23e44c83bec328c37dbb0df2cec",
+      "checks": [
+        {
+          "arguments": [],
+          "seq": 687,
+          "revision_count": 10,
+          "revisions_truncated": true,
+          "bytes": 17925
+        },
+        {
+          "arguments": [
+            "--revisions",
+            "0"
+          ],
+          "seq": 687,
+          "revision_count": 0,
+          "revisions_truncated": true,
+          "bytes": 14397
+        },
+        {
+          "arguments": [
+            "--revisions",
+            "100"
+          ],
+          "seq": 687,
+          "revision_count": 100,
+          "revisions_truncated": true,
+          "bytes": 49331
+        }
+      ],
+      "existing_document_read_only": true
+    },
+    "catalog_published": false,
+    "catalog_blocker": "Apps requires Windows x86_64 and macOS aarch64 packages, but both live upload validation runners are not_configured. Existing0.1.0 remains published."
+  },
+  "validation": {
+    "rust_workspace_tests": 130,
+    "final_cli_unit_tests": 17,
+    "web_unit_tests": 96,
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_build": true,
+    "api_and_cli_clippy": true,
+    "api_integration_tests": 11,
+    "cli_e2e_checks": 269,
+    "cli_live_scenarios": 6,
+    "deployment_unit_tests": 12,
+    "git_diff_check": true
+  },
+  "source_backup": {
+    "revision": "eae448df5dbd2947a8bffffad309ccfa3793b21d",
+    "bucket": "silicon-write-production-backups-qgkxwl8wkwl0",
+    "key": "releases/source/silicon-write-source-eae448df5dbd2947a8bffffad309ccfa3793b21d.bundle",
+    "sha256": "9a8a193176e0f39f5c38da367c8670dffdf3e51b4d8af16038c3debc26838413",
+    "download_verified": true
+  },
+  "experiment": {
+    "writer_discovered_new_commands_from_public_help": true,
+    "bounded_join_left_cleanly": true,
+    "draft_sequence_preserved": 687,
+    "automation": "fresh-silicon-co-writer",
+    "status": "PAUSED",
+    "reason": "20 minutes of user inactivity",
+    "paused_at": "2026-10-18T16:52:15Z",
+    "presence_disconnected": true
+  },
+  "secrets_included": false
+}

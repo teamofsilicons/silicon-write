@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-18T16:08:46.054380+00:00",
+  "recorded_at": "2026-10-18T16:58:17.434540+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_9ZX31A31ae91BdTA91jvWmkNarrW",
+    "deployment_id": "dpl_DbcT3N2MGRkMB68w6wtdsF6WMVUr",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,19 +13,17 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "fb1e798fb0f9cc67ea2ba7b54161eb2ed54c22e8",
+    "revision": "eae448df5dbd2947a8bffffad309ccfa3793b21d",
     "browser_checks": [
-      "Full Saket UDD hover label visible below presence avatar",
-      "Shift+Tab from Format focuses the avatar and opens the name",
-      "Escape dismisses tooltip",
-      "Document remains Connected and synced"
+      "All comments heading and filters stay fixed on desktop and mobile",
+      "Focused browser passage visible to Silicon CLI context; blur clears location"
     ]
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
-    "archive_sha256": "32ebf555e78b8c8829da22102b8183d31fc2e8d00b7b96a3e63ceb6b7243fe7a",
-    "install_ssm_command": "1f83d88d-1268-4997-8c06-7dd1f3ecd4e9",
+    "revision": "aa1cd0b261b45bc4c1456a125cc805dcd4021199",
+    "archive_sha256": "54ae55d2e539172c3e807858436ed633e6b76b89f796c6c3e09484c90176a2c8",
+    "install_ssm_command": "f9b80c04-971e-4d0a-9037-2ac3ee4cb489",
     "readiness": true,
     "private_document_journey": [
       "ordinary device sign-in authorizes production API",
@@ -76,7 +74,9 @@
       "passed": true,
       "transport": "Bounded local CONNECT tunnel pins the verified public API IP; CLI validates end-to-end TLS and hostname. No system DNS or TLS configuration changed."
     },
-    "comment_read_state_verified": true
+    "comment_read_state_verified": true,
+    "co_writing_live_verified": true,
+    "co_writing_production_check_count": 16
   },
   "infrastructure": {
     "aws_account": "234951665042",
@@ -104,14 +104,23 @@
   "identity_and_cli_receipt": "identity-release-20261017.json",
   "local_validation": {
     "deployment_tests": 12,
-    "rust_workspace_tests": 110,
+    "rust_workspace_tests": 130,
     "cli_tests": 268,
-    "web_unit_tests": 55,
+    "web_unit_tests": 96,
     "browser_cases": 88,
     "typecheck": true,
     "lint": true,
     "web_build": true,
-    "clippy": true
+    "clippy": true,
+    "final_cli_unit_tests": 17,
+    "web_typecheck": true,
+    "web_lint": true,
+    "api_and_cli_clippy": true,
+    "api_integration_tests": 11,
+    "cli_e2e_checks": 269,
+    "cli_live_scenarios": 6,
+    "deployment_unit_tests": 12,
+    "git_diff_check": true
   },
   "limitations": [
     "Invitation sender authorization and mail delivery unverified; no test email sent.",
@@ -171,5 +180,13 @@
   "comment_dismiss_tooltips_release_receipt": "comment-dismiss-tooltips-release-20261018.json",
   "comment_drafts_release_receipt": "comment-drafts-release-20261018.json",
   "comment_anchor_release_receipt": "comment-anchor-release-20261018.json",
-  "presence_tooltip_release_receipt": "presence-tooltip-release-20261018.json"
+  "presence_tooltip_release_receipt": "presence-tooltip-release-20261018.json",
+  "co_writing_release_receipt": "co-writing-release-20261018.json",
+  "cli_release": {
+    "published_version": "0.1.0",
+    "prepared_version": "0.2.0",
+    "native_verified": true,
+    "catalog_published": false,
+    "blocker": "Apps requires Windows x86_64 and macOS aarch64 packages, but both live upload validation runners are not_configured. Existing0.1.0 remains published."
+  }
 }
