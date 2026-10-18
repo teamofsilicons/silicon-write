@@ -26,19 +26,25 @@ export function SyncState({ live, error }: { live: LiveDoc | null; error?: strin
     if (!live) return () => {};
     live.provider.on("status", changed);
     live.provider.on("sync", changed);
+    live.ydoc.on("update", changed);
+    const unsubscribe = live.on(event => { if (event.type === "saved" || event.type === "rejected") changed(); });
     return () => {
       live.provider.off("status", changed);
       live.provider.off("sync", changed);
+      live.ydoc.off("update", changed);
+      unsubscribe();
     };
   }, [live]);
   const snapshot = useCallback(() => {
+    if (live?.rejectionReason) return "rejected";
     if (error) return "error";
     if (!live || live.provider.wsconnecting) return "connecting";
     if (!live.provider.wsconnected) return "disconnected";
+    if (live.hasPendingChanges()) return "saving";
     return live.provider.synced ? "synced" : "connecting";
   }, [live, error]);
   const status = useSyncExternalStore(subscribe, snapshot, () => "connecting");
-  const label = status === "synced" ? "Synced" : status === "disconnected" ? "Offline" : status === "error" ? "Couldn't connect" : "Connecting…";
-  const detail = status === "synced" ? "Connected and synced" : status === "disconnected" ? "Offline: your changes will be saved when you're back" : error || "Connecting to the doc";
+  const label = status === "rejected" ? "Can’t save" : status === "synced" ? "Synced" : status === "saving" ? "Saving…" : status === "disconnected" ? "Offline" : status === "error" ? "Couldn't connect" : "Connecting…";
+  const detail = live?.rejectionReason || (status === "synced" ? "Connected and synced" : status === "saving" ? "Saving your changes" : status === "disconnected" ? "Offline: your changes will be saved when you're back" : error || "Connecting to the doc");
   return <span role="status" aria-label={detail} title={detail} data-status={status} className={styles.saveState}><span className={styles.saveDot} aria-hidden="true" /><span className={styles.saveLabel}>{label}</span></span>;
 }

@@ -17,6 +17,7 @@ import { startSessionKeeper } from "@/lib/client/session";
 import { connectToasts } from "@/lib/notify";
 import { applyTheme } from "@/lib/theme";
 import styles from "./providers.module.css";
+import { WorkspaceTabsProvider } from "@/components/workspace/workspace-tabs";
 
 /** Hands the mounted toast stack to lib/notify, so toasts can be raised from anywhere. */
 function ToastBridge() {
@@ -25,7 +26,11 @@ function ToastBridge() {
   return null;
 }
 
-export function Providers({ session, children }: { session: SessionView; children: ReactNode }) {
+export function Providers(props: { session: SessionView; children: ReactNode }) {
+  return <SessionProviders key={props.session.account?.uuid ?? "signed-out"} {...props} />;
+}
+
+function SessionProviders({ session, children }: { session: SessionView; children: ReactNode }) {
   const [client] = useState(createQueryClient);
 
   // The boot script painted the stored theme; from here the theme store keeps <html> in sync.
@@ -43,7 +48,7 @@ export function Providers({ session, children }: { session: SessionView; childre
       <QueryClientProvider client={client}>
         <ToastStackProvider>
           <SquircleRuntime />
-          {children}
+          <WorkspaceTabsProvider account={session.account?.uuid ?? null}>{children}</WorkspaceTabsProvider>
           <ToastBridge />
           <ToastStack label="Notifications" className={styles.toasts} />
         </ToastStackProvider>

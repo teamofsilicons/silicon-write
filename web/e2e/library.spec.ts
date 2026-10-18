@@ -2,7 +2,7 @@
  * The library and sharing in a real browser (UNDERSTANDING.md, "Docs and folders" and "Sharing"): My docs, New doc and
  * New folder, folders inside folders and their breadcrumbs, renaming, moving and copying from a row's menu, the trash
  * (restore, Hold to delete forever with the mouse and the keyboard, a folder in the trash left open in another tab),
- * Open a file, the share dialog (people and roles, what owners, editors and viewers each get, email invites, what bad
+ * Open files, the share dialog (people and roles, what owners, editors and viewers each get, email invites, what bad
  * input is told, the public link, transfers and an offer whose doc went to the trash), shared folders (as editor and
  * as viewer, the move dialog inside one), Shared with me, Recent, Search, a public doc read signed out and signed in
  * from its Sign in button, light only in a browser that prefers dark, and a pass over every page at 1440×900 and at
@@ -143,8 +143,9 @@ async function choose(page: Page, select: Locator, option: string): Promise<void
 /** Opens the share dialog of a library row. */
 async function shareFromRow(page: Page, item: string): Promise<Locator> {
   await (await rowMenu(page, item)).getByRole("menuitem", { exact: true, name: "Share" }).click();
-  const dialog = page.getByRole("dialog", { name: `Share “${item}”` });
+  const dialog = page.getByRole("dialog", { name: "Share", exact: true });
   await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAccessibleDescription(item);
   await expect(dialog.getByRole("list", { name: "People with access" }).getByRole("listitem").first()).toContainText("Owner");
   return dialog;
 }
@@ -668,10 +669,10 @@ test("a folder in the trash takes nothing new: a tab left open on it can't make 
 });
 
 /* ---------------------------------------------------------------------------------------------------------------- */
-/* Open a file                                                                                                      */
+/* Open files                                                                                                      */
 /* ---------------------------------------------------------------------------------------------------------------- */
 
-test("Open a file makes a new doc from a .md file, in the folder it was opened in", async ({ browser }) => {
+test("opening files makes a new doc from a .md file, in the folder it was opened in", async ({ browser }) => {
   const carbon = await signedIn(browser, "carbon");
   const { page } = carbon;
   const stem = `launch-notes-${RUN}${(++made).toString(36)}`;
@@ -679,10 +680,11 @@ test("Open a file makes a new doc from a .md file, in the folder it was opened i
   const markdown = `# ${heading}\n\nWe ship on **Friday**, with _care_.\n\n- Write the notes\n- Tell the Silicons\n`;
 
   const chooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Open a file" }).click();
+  await page.getByRole("button", { name: "Open files" }).click();
   const files = await chooser;
-  expect(files.isMultiple()).toBe(false);
+  expect(files.isMultiple()).toBe(true);
   await files.setFiles({ name: `${stem}.md`, mimeType: "text/markdown", buffer: Buffer.from(markdown) });
+  await page.getByRole("dialog", { name: "Your files are ready" }).getByRole("button", { name: "Open doc", exact: true }).click();
   await page.waitForURL(/\/d\/d_[A-Za-z0-9]+$/, { timeout: 30_000 });
   const id = lastSegment(page);
   // The doc's title (an editor can rename it in place) is the file's name.
@@ -707,9 +709,10 @@ test("Open a file makes a new doc from a .md file, in the folder it was opened i
   const folder = await newFolder(page, named("Imports"));
   await page.goto(`/library/${folder.id}`);
   const inFolder = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Open a file" }).click();
+  await page.getByRole("button", { name: "Open files" }).click();
   const textStem = `inbox-${RUN}${(++made).toString(36)}`;
   await (await inFolder).setFiles({ name: `${textStem}.txt`, mimeType: "text/plain", buffer: Buffer.from("A plain text line.\n") });
+  await page.getByRole("dialog", { name: "Your files are ready" }).getByRole("button", { name: "Open doc", exact: true }).click();
   await page.waitForURL(/\/d\/d_[A-Za-z0-9]+$/, { timeout: 30_000 });
   const filed = await must<Doc>(page, "GET", `/v1/docs/${lastSegment(page)}`);
   expect(filed.title).toBe(textStem);
@@ -720,10 +723,13 @@ test("Open a file makes a new doc from a .md file, in the folder it was opened i
   await page.goto("/library");
   const before = (await must<{ docs: Doc[] }>(page, "GET", "/v1/docs")).docs.length;
   const bad = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Open a file" }).click();
+  await page.getByRole("button", { name: "Open files" }).click();
   await (await bad).setFiles({ name: "drawing.xyz", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
-  await expect(page.getByText("The file couldn't be opened")).toBeVisible();
-  await expect(page.getByText("can't open “drawing.xyz”")).toBeVisible();
+  const skipped = page.getByRole("dialog", { name: "Open files", exact: true });
+  await expect(skipped.getByText("No supported files were selected.")).toBeVisible();
+  await skipped.locator("summary").click();
+  await expect(skipped.getByText("drawing.xyz", { exact: true })).toBeVisible();
+  await expect(skipped.getByText("This file format is not supported.")).toBeVisible();
   await expect(page).toHaveURL(/\/library$/);
   expect((await must<{ docs: Doc[] }>(page, "GET", "/v1/docs")).docs.length).toBe(before);
   expect(carbon.errors).toEqual([]);
@@ -835,7 +841,7 @@ test("someone with view access sees who has it, can't share or change roles, and
   // A viewer's menu: share (to see who has it) and copy; never rename, move or trash.
   await expect(menu.getByRole("menuitem")).toHaveText(["Share", "Make a copy"]);
   await menu.getByRole("menuitem", { exact: true, name: "Share" }).click();
-  const dialog = friend.page.getByRole("dialog", { name: `Share “${doc.title}”` });
+  const dialog = friend.page.getByRole("dialog", { name: "Share", exact: true });
   await expect(dialog.getByText("Only the owner and editors can share this.")).toBeVisible();
   await expect(dialog.getByRole("textbox", { name: "Who to share with" })).toHaveCount(0);
   await expect(dialog.getByRole("combobox")).toHaveCount(0);
@@ -982,6 +988,7 @@ test("the share and transfer boxes say what is wrong with what was typed, and no
   expect((await must<Sharing>(page, "GET", `/v1/docs/${doc.id}/sharing`)).members).toEqual([]);
 
   // Transfers: to someone who doesn't exist, and to an email (only a c:id or si:id can take a doc over).
+  await dialog.getByText("Transfer ownership", { exact: true }).click();
   const to = dialog.getByRole("textbox", { name: "Transfer to" });
   const transfer = dialog.getByRole("button", { name: "Transfer" });
   await to.fill(`c:nobody_${RUN}`);
@@ -1110,7 +1117,7 @@ test("a folder shared as viewer: the friend opens everything in it, can't add, r
   await expect(link(page, shared.name, doc.title)).toBeVisible();
   await expect(link(page, shared.name, inner.name)).toBeVisible();
   // Nothing to add; the folder's people instead of Share folder.
-  for (const action of ["New doc", "New folder", "Open a file", "Share folder"]) await expect(page.getByRole("button", { name: action })).toHaveCount(0);
+  for (const action of ["New doc", "New folder", "Open files", "Open folder", "Share folder"]) await expect(page.getByRole("button", { name: action })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "People" })).toBeVisible();
   await shot(page, "desktop-folder-shared-as-viewer");
   // Row menus: Share (to see who has it) and, for a doc, a copy of their own. Never rename, move or trash.
@@ -1138,7 +1145,7 @@ test("a folder shared as viewer: the friend opens everything in it, can't add, r
   // Leaving, from the folder's People.
   await page.goto(`/library/${shared.id}`);
   await page.getByRole("button", { name: "People" }).click();
-  const dialog = page.getByRole("dialog", { name: `Share “${shared.name}”` });
+  const dialog = page.getByRole("dialog", { name: "Share", exact: true });
   await expect(dialog.getByText("Only the owner and editors can share this.")).toBeVisible();
   await dialog.getByRole("button", { name: "Leave" }).click();
   await expect.poll(async () => (await call(page, "GET", `/v1/folders/${shared.id}`)).status).toBe(404);
@@ -1223,6 +1230,7 @@ test("names reach other Carbons exactly as typed: markup in a doc or folder name
   await expect(carbon.page.getByRole("navigation", { name: "Breadcrumb" }).locator("[aria-current=page]")).toHaveText(folderName);
   await expect(link(carbon.page, folderName, docName)).toBeVisible();
   const dialog = await shareFromRow(carbon.page, docName);
+  await dialog.getByText("Transfer ownership", { exact: true }).click();
   await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(carbon.page, dialog.getByRole("button", { name: "Transfer" }), `/v1/docs/${doc.id}/transfer`)).status).toBe(200);
   await expect(carbon.page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
@@ -1264,6 +1272,7 @@ test("a transfer offered to the friend shows on their My docs with Accept and De
   // Offer the doc in the folder from its share dialog.
   await page.goto(`/library/${outbox.id}`);
   let dialog = await shareFromRow(page, handover.title);
+  await dialog.getByText("Transfer ownership", { exact: true }).click();
   const to = dialog.getByRole("textbox", { name: "Transfer to" });
   await expect(dialog.getByRole("button", { name: "Transfer" })).toBeDisabled();
   // Not to yourself.
@@ -1281,6 +1290,7 @@ test("a transfer offered to the friend shows on their My docs with Accept and De
   // And the other doc, from My docs.
   await page.goto("/library");
   dialog = await shareFromRow(page, keep.title);
+  await dialog.getByText("Transfer ownership", { exact: true }).click();
   await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(page, dialog.getByRole("button", { name: "Transfer" }), `/v1/docs/${keep.id}/transfer`)).status).toBe(200);
   await expect(page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
@@ -1339,7 +1349,8 @@ test("a folder transferred to the friend moves to them with everything in it", a
   // From the folder's own page.
   await carbon.page.goto(`/library/${folder.id}`);
   await carbon.page.getByRole("button", { name: "Share folder" }).click();
-  const dialog = carbon.page.getByRole("dialog", { name: `Share “${folder.name}”` });
+  const dialog = carbon.page.getByRole("dialog", { name: "Share", exact: true });
+  await dialog.getByText("Transfer ownership", { exact: true }).click();
   await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(carbon.page, dialog.getByRole("button", { name: "Transfer" }), `/v1/folders/${folder.id}/transfer`)).status).toBe(200);
   await expect(carbon.page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
@@ -1373,6 +1384,7 @@ test("an offer for a doc its owner then puts in the trash is withdrawn, and the 
   const page = carbon.page;
   await page.goto("/library");
   const dialog = await shareFromRow(page, doc.title);
+  await dialog.getByText("Transfer ownership", { exact: true }).click();
   await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(page, dialog.getByRole("button", { name: "Transfer" }), `/v1/docs/${doc.id}/transfer`)).status).toBe(200);
   await expect(page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
@@ -1689,7 +1701,7 @@ test("a public doc's Sign in button signs the reader in and brings them back to 
 
   // Someone who only has the public link can copy it, but cannot inspect membership.
   await page.getByRole("button", { name: "Share" }).click();
-  const dialog = page.getByRole("dialog", { name: `Share “${doc.title}”` });
+  const dialog = page.getByRole("dialog", { name: "Share", exact: true });
   await expect(dialog.getByText("You have this doc through its link.", { exact: false })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Copy link" })).toBeVisible();
   await expect(dialog.getByRole("list", { name: "People with access" })).toHaveCount(0);
@@ -1724,7 +1736,7 @@ test("light only: a browser that prefers dark still gets the light site, signed 
   await light("My docs", page.getByRole("list", { name: "My docs", exact: true }));
   await shot(page, "desktop-dark-preference-my-docs");
   await (await rowMenu(page, doc.title)).getByRole("menuitem", { exact: true, name: "Share" }).click();
-  const dialog = page.getByRole("dialog", { name: `Share “${doc.title}”` });
+  const dialog = page.getByRole("dialog", { name: "Share", exact: true });
   await light("the share dialog", dialog.getByRole("list", { name: "People with access" }));
   await shot(page, "desktop-dark-preference-share-dialog", false);
   await page.keyboard.press("Escape");
@@ -1786,7 +1798,7 @@ for (const [label, viewport] of [["desktop", DESKTOP], ["phone", PHONE]] as cons
     await expect(page.getByRole("menu")).toBeVisible();
     await screen(page, prefix, "row-menu", problems, false);
     await page.getByRole("menu").getByRole("menuitem", { exact: true, name: "Share" }).click();
-    const share = page.getByRole("dialog", { name: `Share “${doc.title}”` });
+    const share = page.getByRole("dialog", { name: "Share", exact: true });
     await expect(share.getByRole("list", { name: "People with access" }).getByRole("listitem").filter({ hasText: friend.id })).toBeVisible();
     await screen(page, prefix, "share-dialog", problems, false);
     await page.keyboard.press("Escape");
@@ -1808,7 +1820,7 @@ for (const [label, viewport] of [["desktop", DESKTOP], ["phone", PHONE]] as cons
     await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
     await screen(page, prefix, "folder", problems);
     await page.getByRole("button", { name: "Share folder" }).click();
-    await expect(page.getByRole("dialog", { name: `Share “${folder.name}”` })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Share", exact: true })).toBeVisible();
     await screen(page, prefix, "share-folder-dialog", problems, false);
     await page.keyboard.press("Escape");
 
@@ -1841,7 +1853,7 @@ for (const [label, viewport] of [["desktop", DESKTOP], ["phone", PHONE]] as cons
     await expect(page.locator(".ProseMirror")).toContainText("Everyone with the doc can read the plan");
     await screen(page, prefix, "doc", problems);
     await page.getByRole("button", { name: "Share" }).click();
-    await expect(page.getByRole("dialog", { name: `Share “${doc.title}”` })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Share", exact: true })).toBeVisible();
     await screen(page, prefix, "doc-share-dialog", problems, false);
     await page.keyboard.press("Escape");
 

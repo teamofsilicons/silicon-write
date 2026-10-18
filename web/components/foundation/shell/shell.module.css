@@ -43,7 +43,7 @@
 .column { display: flex; min-width: 0; min-height: 100vh; min-height: 100dvh; flex-direction: column; }
 .top {
   position: sticky;
-  top: 0;
+  top: var(--workspace-tabs-height, 0px);
   z-index: 30;
   display: flex;
   height: var(--topbar-height);

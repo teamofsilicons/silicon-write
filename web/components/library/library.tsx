@@ -4,10 +4,9 @@
  * The library: your docs and folders (UNDERSTANDING.md, "Docs and folders"), what's shared with you, recent docs and
  * the trash. One calm list: folders first, then docs, each with its actions in a menu.
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowLeftRight, FilePlus2, FileText, FileUp, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users } from "lucide-react";
+import { ArrowLeftRight, FilePlus2, FileText, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users } from "lucide-react";
 import { Page } from "@/components/foundation/layout/layout";
 import { Button } from "@/components/silicon-ui/button/button";
 import { Breadcrumb } from "@/components/silicon-ui/breadcrumb/breadcrumb";
@@ -23,6 +22,8 @@ import { useLibrary, useRefreshLibrary, useTransfers } from "@/lib/write/queries
 import { atLeast, type Doc, type Folder, type Transfer } from "@/lib/write/types";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { MoveDialog } from "./move-dialog";
+import { ImportFiles } from "./import-files";
+import { useWorkspaceTabs } from "@/components/workspace/workspace-tabs";
 import styles from "./library.module.css";
 
 export type LibraryView = "mine" | "shared" | "recent" | "trash";
@@ -103,13 +104,14 @@ function Transfers({ transfers, onDone }: { transfers: Transfer[]; onDone: () =>
 }
 
 export function Library({ view, folderId }: { view: LibraryView; folderId?: string }) {
-  const router = useRouter();
+  const { openDocs } = useWorkspaceTabs();
   const me = useSessionView().account?.uuid;
   const { data, isLoading, error } = useLibrary(view, folderId ?? null);
   const transfers = useTransfers();
   const refresh = useRefreshLibrary();
   const [dialog, setDialog] = useState<Dialogs>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const selectionScope = `${view}:${folderId ?? ""}`;
+  const [selection, setSelection] = useState<{ scope: string; ids: Set<string> }>({ scope: selectionScope, ids: new Set() });
   const folder = data?.folder ?? null;
   const inTrash = Boolean(folder?.deleted_at);
   const canAdd = view === "mine" && !error && !inTrash && (!folderId || Boolean(folder && atLeast(folder.role, "editor")));
@@ -118,24 +120,9 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const newDoc = async () => {
     try {
       const doc = await api.post<Doc>("/v1/docs", { folder_id: folderId ?? null, title: "" });
-      router.push(`/d/${doc.id}`);
+      openDocs([doc]);
     } catch (e) {
       notifyError(e, "The doc couldn't be made");
-    }
-  };
-
-  const importFile = async (file: File) => {
-    const form = new FormData();
-    form.append("file", file, file.name);
-    if (folderId) form.append("folder_id", folderId);
-    const toast = notify.loading("Opening the file", file.name);
-    try {
-      const doc = await api.post<Doc>("/v1/docs/import", undefined, { raw: form });
-      notify.dismiss(toast);
-      router.push(`/d/${doc.id}`);
-    } catch (e) {
-      notify.dismiss(toast);
-      notifyError(e, "The file couldn't be opened");
     }
   };
 
@@ -162,6 +149,13 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const copyFolder = (doc: Doc) => folder && atLeast(folder.role, "editor") ? folder.id : doc.owner.uuid === me ? doc.folder_id : null;
   const folders = data?.folders ?? [];
   const docs = data?.docs ?? [];
+  const selectable = view !== "trash" && !inTrash;
+  const selected = selectable && selection.scope === selectionScope ? docs.filter(doc => selection.ids.has(doc.id)) : [];
+  const toggleSelected = (id: string, checked: boolean) => setSelection(current => {
+    const ids = new Set(current.scope === selectionScope ? current.ids : []);
+    if (checked) ids.add(id); else ids.delete(id);
+    return { scope: selectionScope, ids };
+  });
   const empty = !isLoading && !error && !folders.length && !docs.length;
 
   return (
@@ -181,9 +175,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
             <Button variant="secondary" size="sm" onClick={() => setDialog({ kind: "newFolder" })}>
               <FolderPlus size={16} aria-hidden="true" /> New folder
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => fileInput.current?.click()}>
-              <FileUp size={16} aria-hidden="true" /> Open a file
-            </Button>
+            <ImportFiles folderId={folderId} onImported={openDocs} />
             {folder && atLeast(folder.role, "editor") ? (
               <Button variant="ghost" size="sm" onClick={() => setDialog({ kind: "share", type: "folders", id: folder.id, title: folder.name })}>
                 <Users size={16} aria-hidden="true" /> Share folder
@@ -207,7 +199,19 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
           icon={<FileText size={22} aria-hidden="true" />}
         />
       ) : null}
-      <ul className={styles.list} aria-label={heading.title}>
+      {selectable && docs.length ? (
+        <div className={styles.selectionBar} aria-label="Select documents">
+          <label className={styles.selectAll}>
+            <input type="checkbox" checked={selected.length === docs.length} ref={input => { if (input) input.indeterminate = selected.length > 0 && selected.length < docs.length; }} onChange={event => setSelection({ scope: selectionScope, ids: new Set(event.target.checked ? docs.map(doc => doc.id) : []) })} />
+            <span>{selected.length ? `${selected.length} selected` : "Select all"}</span>
+          </label>
+          {selected.length ? <>
+            <Button variant="ghost" size="sm" onClick={() => setSelection({ scope: selectionScope, ids: new Set() })}>Clear</Button>
+            <Button className={styles.openSelected} variant="secondary" size="sm" onClick={() => openDocs(selected)}>Open selected <span aria-hidden="true">({selected.length})</span></Button>
+          </> : folder ? <Button className={styles.openSelected} variant="ghost" size="sm" onClick={() => openDocs(docs)}>Open all docs</Button> : null}
+        </div>
+      ) : null}
+      <ul className={`${styles.list} ${selectable && docs.length ? styles.selectableList : ""}`} aria-label={heading.title}>
         {folders.map(f => (
           <li key={f.id} className={styles.row}>
             <div className={styles.rowText}>
@@ -245,7 +249,8 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
           </li>
         ))}
         {docs.map(d => (
-          <li key={d.id} className={styles.row}>
+          <li key={d.id} className={`${styles.row} ${selectable ? styles.selectableRow : ""}`} data-selected={selected.some(doc => doc.id === d.id) || undefined}>
+            {selectable ? <label className={styles.docCheck}><input type="checkbox" checked={selected.some(doc => doc.id === d.id)} aria-label={`Select ${d.title}`} onChange={event => toggleSelected(d.id, event.target.checked)} /></label> : null}
             <div className={styles.rowText}>
               {view === "trash" ? <span className={styles.rowTitle}>{d.title}</span> : <Link href={`/d/${d.id}`} className={styles.rowTitle}>{d.title}</Link>}
               <span className={styles.rowMeta}>
@@ -284,17 +289,6 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
           </li>
         ))}
       </ul>
-      <input
-        ref={fileInput}
-        type="file"
-        hidden
-        accept=".md,.markdown,.txt,.docx,.doc,.odt,.rtf,.html,.htm,.pdf"
-        onChange={e => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (file) void importFile(file);
-        }}
-      />
       {dialog?.kind === "newFolder" ? (
         <NameDialog open onOpenChange={o => !o && setDialog(null)} title="New folder" label="Folder name" initial="" action="Make folder" onSubmit={name => api.post("/v1/folders", { name, parent_id: folderId ?? null }).then(refresh)} />
       ) : null}

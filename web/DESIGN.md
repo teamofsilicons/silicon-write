@@ -59,8 +59,10 @@ targets. The page provides a keyboard-visible skip link to its main landmark.
 
 ## Comments, suggestions, and side panels
 
-Comments are closed on an ordinary document visit. A `?thread=` deep link opens them, as does activating an anchor
-or starting a text comment. Posting an image or PDF-area comment also opens its resulting thread.
+Comments are closed on an ordinary document visit. The header's Comments action opens the full conversation list.
+Activating a photo or highlighted passage opens only that thread in a small popover beside its anchor, without
+moving the writing. The popover offers **All comments** and Close. A `?thread=` deep link or a newly posted comment
+opens the same focused conversation; missing or deleted anchors retain the conversation and its original quote.
 
 At wide desktop sizes, comments occupy the right margin beside the centered document. Below 1440 px, the panel
 becomes a floating surface; at phone widths it becomes a bottom panel. Each layout keeps its close control visible,
@@ -75,7 +77,7 @@ Open and Resolved use quiet underlined selectors while retaining their keyboard 
 Open comments have a small profile photo beside their anchor in the document. The photo belongs to the first
 remaining comment's author (or the thread creator if all comments were deleted), and opens the conversation.
 Its **2 px border** uses `--accent` for unread activity and `--border-strong` once read. Read state is saved per
-account by the service; fetching a document never marks its conversations read. The focused Comments panel
+account by the service; fetching a document never marks its conversations read. A visible conversation
 acknowledges only the activity version it displayed after every comment has been visible. A later reply or edit
 from another account makes the border accent again. Own activity does not clear earlier unread activity.
 The former yellow section marks are absent; selected text receives a quiet accent tint while its thread is open.
@@ -105,7 +107,7 @@ below the header. This does not change the shared `Page` primitive's widths for 
 
 - A small uppercase eyebrow precedes a blue Hedvig title at 48 px, then an 18 px description. Phones use smaller
   type and side gutters.
-- New doc is the ink primary action. New folder, Open a file, and applicable sharing actions remain compact and
+- New doc is the ink primary action. New folder, Open files, Open folder, and applicable sharing actions remain compact and
   accessible near the heading. Folder breadcrumbs wrap long names without pushing actions off screen.
 - Documents are an airy list, with 24 px serif titles and smaller metadata below. Rows have hairlines rather than
   card frames. Long titles and account ids wrap. Document icons do not repeat on every row; PDFs have a type label
@@ -114,6 +116,22 @@ below the header. This does not change the shared `Page` primitive's widths for 
   restore, and permanent deletion. Trash actions wrap on phones and keep the hold-to-confirm safeguard.
 - Search uses the same heading and reading width. Snippets wrap, mark matching text, and open the result without
   a delayed query update cancelling navigation.
+
+Document rows offer selection controls, a select-all control, and **Open selected**. The selection applies to the
+current library view and never includes trashed documents. Opening several docs adds them to one horizontal tab
+strip. Each tab names its document, shows which one is active, and has a separate close control. Long names truncate
+within the strip; the strip scrolls horizontally rather than widening the page. Keyboard navigation must leave
+normal document editing shortcuts intact.
+
+Open tab metadata is kept for the current account and browser tab, including across visits to the library. Document
+contents are not stored with tab titles. Editors load when visited; switching between open tabs keeps their live
+document state, including edits waiting for the connection to return. Closing a tab never deletes its document.
+
+**Open files** accepts multiple supported files. **Open folder** imports the selected folder and its nested structure
+into the current library location. Hidden/system files and unsupported formats are skipped with a visible reason.
+An import shows progress, preserves completed documents when another file fails, and offers opening the imported
+docs together in tabs. Stopping finishes the current file; continuing retains completed documents and folder IDs.
+An unconfirmed server response must never be silently retried in a way that could create duplicates.
 
 ## Colour and type
 
@@ -180,7 +198,7 @@ Use Carbons and Silicons, and their public `c:` / `si:` ids. Never expose a UUID
 display name and profile photo, with Carbon or Silicon where the kind matters. Sharing targets exact accounts or
 email invitations and follows the service's permission rules.
 
-Use sentence case and concrete action labels: New doc, Open a file, Move to the trash. Do not borrow publishing
+Use sentence case and concrete action labels: New doc, Open files, Move to the trash. Do not borrow publishing
 terms from Writings for Write operations. Errors state what failed, why, and the next action. Relative dates work
 in library rows; detailed timestamps belong in version history and other detailed views.
 

@@ -14,14 +14,18 @@ import type { Editor } from "@tiptap/react";
 import "katex/dist/katex.min.css";
 import { api, seg } from "@/lib/client/api";
 import { notify, notifyError } from "@/lib/notify";
-import { connectLive, type LiveDoc } from "@/lib/write/live";
+import { type LiveDoc } from "@/lib/write/live";
+import { acquireWorkspaceLive } from "@/lib/write/workspace-live";
+import { useWorkspaceTabs } from "@/components/workspace/workspace-tabs";
 import { keys, useThreads } from "@/lib/write/queries";
 import { atLeast, type Account, type Anchor, type Doc, type Thread } from "@/lib/write/types";
 import { DocEditor, type EditMode } from "@/components/editor/editor";
-import { anchorFor, rangeOf } from "@/components/editor/anchors";
+import { anchorFor } from "@/components/editor/anchors";
 import { TopBar } from "./top-bar";
 import { Toolbar } from "./toolbar";
 import { CommentsPanel } from "./comments-panel";
+import { FocusedComment } from "./focused-comment";
+import { revealThreadAnchor } from "./thread-anchor";
 import { SelectionComment, type PendingComment } from "./selection-comment";
 import { FindBar } from "./find-bar";
 import { VersionsPanel } from "./versions-panel";
@@ -43,12 +47,16 @@ export interface DocPageProps {
 
 export function DocPage({ initialDoc, account }: DocPageProps) {
   const client = useQueryClient();
+  const { registerDoc } = useWorkspaceTabs();
   const docId = initialDoc.id;
   const { data: doc = initialDoc } = useQuery({
     queryKey: keys.doc(docId),
     queryFn: () => api.get<Doc>(`/v1/docs/${seg(docId)}`),
     initialData: initialDoc,
   });
+  useEffect(() => {
+    registerDoc(doc);
+  }, [doc, registerDoc]);
   const role = doc.role;
   const canEdit = atLeast(role, "editor") && !doc.deleted_at;
   const canComment = atLeast(role, "commenter") && Boolean(account);
@@ -58,39 +66,62 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const [editor, setEditor] = useState<Editor | null>(null);
   // The thread to open first comes from a link (?thread=…).
   const wantedThread = useSearchParams().get("thread");
-  const [panel, setPanel] = useState<Panel>(wantedThread && canComment ? "comments" : null);
+  const [panel, setPanel] = useState<Panel>(null);
   const [activeThread, setActiveThread] = useState<string | null>(wantedThread);
-  const [openThreadRequest, setOpenThreadRequest] = useState(0);
+  const [focusedThreadId, setFocusedThreadId] = useState<string | null>(canComment ? wantedThread : null);
   const [pending, setPending] = useState<PendingComment | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
   const [lostAccess, setLostAccess] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
-  const threadsQuery = useThreads(docId, "open", canComment, doc.kind === "pdf" ? 2_000 : false);
-  const threads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data]);
+  const threadsQuery = useThreads(docId, "all", canComment, doc.kind === "pdf" ? 2_000 : false);
+  const allThreads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data]);
+  const threads = useMemo(() => allThreads.filter(thread => thread.status === "open"), [allThreads]);
+  const focusedThread = allThreads.find(thread => thread.id === focusedThreadId);
+  const deepLinkShown = useRef<string | null>(null);
+
+  // A link can point at a resolved conversation or a PDF page that is still loading.
+  useEffect(() => {
+    if (!wantedThread || deepLinkShown.current === wantedThread || !canComment) return;
+    const thread = allThreads.find(item => item.id === wantedThread);
+    if (!thread || doc.kind === "doc" && !editor) return;
+    const reveal = () => {
+      if (deepLinkShown.current === wantedThread) return;
+      if (revealThreadAnchor(editor, thread) || thread.orphaned) deepLinkShown.current = wantedThread;
+    };
+    reveal();
+    if (deepLinkShown.current === wantedThread) return;
+    const observer = new MutationObserver(reveal);
+    observer.observe(document.getElementById("main") ?? document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [wantedThread, allThreads, canComment, doc.kind, editor]);
 
   // The live connection (docs only; a PDF has no live text).
   useEffect(() => {
     if (doc.kind !== "doc" || doc.deleted_at) return;
     let disposed = false;
-    let current: LiveDoc | null = null;
-    connectLive(docId)
+    let current: Awaited<ReturnType<typeof acquireWorkspaceLive>> | null = null;
+    acquireWorkspaceLive(docId, account?.uuid ?? null)
       .then(next => {
         if (disposed) {
-          next.destroy();
+          next.release();
           return;
         }
         current = next;
         setLive(next);
+        if (next.rejectionReason) {
+          setLiveError(next.rejectionReason);
+          setMode("viewing");
+        }
       })
       .catch(error => setLiveError(error instanceof Error ? error.message : "The doc couldn't be opened."));
     return () => {
       disposed = true;
-      current?.destroy();
+      current?.release();
       setLive(null);
     };
-  }, [docId, doc.kind, doc.deleted_at]);
+  }, [docId, doc.kind, doc.deleted_at, account?.uuid]);
 
   // What the service tells everyone with the doc open.
   useEffect(() => {
@@ -110,7 +141,8 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
           break;
         case "rejected":
           notify.warning("That change wasn't saved", event.reason);
-          setTimeout(() => window.location.reload(), 1800);
+          setLiveError(event.reason);
+          setMode("viewing");
           break;
       }
     });
@@ -169,7 +201,9 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       if (!anchor) return;
       const coords = editor.view.coordsAtPos(empty ? from : to);
       setPending({ anchor, top: coords.bottom, left: coords.left });
-      setPanel("comments");
+      setFocusedThreadId(null);
+      setActiveThread(null);
+      setPanel(null);
     },
     [editor, canComment],
   );
@@ -210,27 +244,35 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       const a = anchorFor(editor, imagePos, imagePos);
       if (!a) return;
       const node = editor.state.doc.nodeAt(imagePos);
+      setFocusedThreadId(null);
+      setActiveThread(null);
+      setPanel(null);
       setPending({ anchor: { kind: "image", start: a.start, ...(rect ? { rect } : {}), quote: node?.attrs.alt || "Image" }, top: at.top, left: at.left });
     },
     [editor, canComment],
   );
 
-  /** Opens a thread: scrolls the editor to its text. */
-  const openThread = useCallback(
-    (id: string | null) => {
-      setActiveThread(id);
-      if (!id) return;
-      setPanel("comments");
-      const thread = threads.find(t => t.id === id);
-      if (thread) setOpenThreadRequest(request => request + 1);
-      if (!thread || !editor) return;
-      const range = rangeOf(editor, thread.anchor);
-      if (!range) return;
-      const dom = editor.view.domAtPos(range.from).node as HTMLElement;
-      (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
-    },
-    [threads, editor],
-  );
+  /** A passage or avatar opens just that conversation, without moving the document. */
+  const openThread = useCallback((id: string | null) => {
+    setActiveThread(id);
+    setFocusedThreadId(id);
+    setPending(null);
+    setPanel(null);
+  }, []);
+
+  /** Navigation from the full list reveals the passage and keeps the list open. */
+  const revealThread = useCallback((id: string | null) => {
+    setActiveThread(id);
+    const thread = allThreads.find(item => item.id === id);
+    if (thread) revealThreadAnchor(editor, thread);
+  }, [allThreads, editor]);
+
+  const showPanel = useCallback((next: Panel) => {
+    setFocusedThreadId(null);
+    setPending(null);
+    if (next !== "comments") setActiveThread(null);
+    setPanel(next);
+  }, []);
 
   const uploadImage = useCallback(
     async (file: File): Promise<string | null> => {
@@ -276,7 +318,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
         canEdit={canEdit}
         canComment={canComment}
         panel={panel}
-        onPanel={setPanel}
+        onPanel={showPanel}
         onFind={() => setFindOpen(true)}
         openThreads={threads.length}
         formatOpen={formatOpen}
@@ -291,10 +333,15 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       <div className={styles.body}>
         <main id="main" className={styles.main} tabIndex={-1}>
           <DocHeading doc={doc} canEdit={canEdit} />
+          {live?.rejectionReason ? <div className={styles.saveWarning} role="alert">
+            <p><strong>That change wasn’t saved.</strong> {live.rejectionReason}</p>
+            <p>Your local text is still here. Copy it before reloading the saved version.</p>
+            {editor ? <button type="button" onClick={() => void navigator.clipboard.writeText(editor.getText()).then(() => notify.success("Local text copied")).catch(error => notifyError(error, "The text couldn’t be copied"))}>Copy local text</button> : null}
+          </div> : null}
           {doc.deleted_at ? <p className={styles.trashNotice}>This doc is in the trash. Restore it to edit it again.</p> : null}
           {findOpen && editor ? <FindBar editor={editor} canReplace={canEdit && mode === "editing"} onClose={() => setFindOpen(false)} /> : null}
           {doc.kind === "pdf" ? (
-            <PdfView doc={doc} canComment={canComment} canEdit={canEdit} threads={threads} activeThread={activeThread} onActivate={openThread} onCommentArea={(anchor, at) => setPending({ anchor, ...at })} />
+            <PdfView doc={doc} canComment={canComment} canEdit={canEdit} threads={threads} activeThread={activeThread} onActivate={openThread} onCommentArea={(anchor, at) => { openThread(null); setPending({ anchor, ...at }); }} />
           ) : live ? (
             <div className={styles.column}>
               <DocEditor
@@ -305,14 +352,14 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
                 canSuggest={canComment}
                 mode={canEdit ? mode : canComment && mode === "suggesting" ? "suggesting" : "viewing"}
                 threads={threads}
-                activeThread={panel === "comments" ? activeThread : null}
+                activeThread={activeThread}
                 onActivateThread={openThread}
                 onRefused={onRefused}
                 onReady={setEditor}
                 onUploadImage={uploadImage}
                 pickImage={pickImage}
               />
-              {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={panel === "comments" ? activeThread : null} onActivate={openThread} /> : null}
+              {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={activeThread} onActivate={openThread} /> : null}
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
             </div>
@@ -329,20 +376,20 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               onPending={setPending}
               onStart={range => startComment({ range })}
               onCreated={thread => {
+                client.setQueryData<{ threads: Thread[] }>(keys.threads(docId, "all"), current => ({ threads: [...(current?.threads ?? []).filter(item => item.id !== thread.id), thread] }));
                 client.invalidateQueries({ queryKey: ["threads", docId] });
-                setActiveThread(thread.id);
-                setOpenThreadRequest(request => request + 1);
-                setPanel("comments");
+                openThread(thread.id);
               }}
             />
           ) : null}
         </main>
         {panel === "comments" && canComment ? (
-          <CommentsPanel docId={docId} doc={doc} account={account!} threads={threads} activeThread={activeThread} openThreadRequest={openThreadRequest} onActivate={openThread} editor={editor} canEdit={canEdit} onClose={() => setPanel(null)} />
+          <CommentsPanel docId={docId} doc={doc} account={account!} threads={allThreads} activeThread={activeThread} onActivate={revealThread} editor={editor} canEdit={canEdit} onClose={() => showPanel(null)} />
         ) : null}
-        {panel === "versions" && canEdit ? <VersionsPanel doc={doc} editor={editor} live={live} onClose={() => setPanel(null)} /> : null}
-        {panel === "links" && account ? <LinksPanel doc={doc} onClose={() => setPanel(null)} /> : null}
+        {panel === "versions" && canEdit ? <VersionsPanel doc={doc} editor={editor} live={live} onClose={() => showPanel(null)} /> : null}
+        {panel === "links" && account ? <LinksPanel doc={doc} onClose={() => showPanel(null)} /> : null}
       </div>
+      {focusedThread && canComment ? <FocusedComment key={focusedThread.id} docId={docId} thread={focusedThread} account={account!} editor={editor} onClose={() => openThread(null)} onAll={() => showPanel("comments")} /> : null}
       {editor && doc.kind === "doc" ? <StatusBar editor={editor} /> : null}
       <input
         ref={imageInput}

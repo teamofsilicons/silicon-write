@@ -12,6 +12,7 @@ const authorOf = (thread: Thread) => thread.comments.find(comment => !comment.de
 
 function Marker({ threads, top, activeThread, onActivate }: { threads: Thread[]; top: number; activeThread: string | null; onActivate: (id: string) => void }) {
   const [open, setOpen] = useState(false);
+  const choosing = useRef(false);
   const thread = threads.find(item => item.unread) ?? threads[0];
   const author = authorOf(thread);
   const name = displayName(author);
@@ -19,15 +20,15 @@ function Marker({ threads, top, activeThread, onActivate }: { threads: Thread[];
   const label = threads.length > 1 ? `${threads.length} comment threads · ${unread ? "Unread activity" : "Read"}` : `Comment by ${name} · ${unread ? "Unread activity" : "Read"}`;
   const face = <><Avatar name={name} src={author.pfp_url || undefined} size="sm" className={styles.markerPhoto} />{threads.length > 1 ? <span className={styles.markerCount} aria-hidden="true">{threads.length}</span> : null}</>;
   if (threads.length === 1) return <button type="button" className={styles.marker} style={{ top }} data-comment-marker={thread.id} data-unread={unread ? "true" : "false"}
-    aria-label={label} title={label} aria-pressed={thread.id === activeThread} onClick={() => onActivate(thread.id)}>{face}</button>;
+    aria-label={label} title={label} aria-haspopup="dialog" aria-pressed={thread.id === activeThread} onClick={() => onActivate(thread.id)}>{face}</button>;
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild><button type="button" className={styles.marker} style={{ top }} data-comment-marker={threads.map(item => item.id).join(" ")}
       data-unread={unread ? "true" : "false"} aria-label={label} title={label}>{face}</button></PopoverTrigger>
-    <PopoverContent side="right" className={styles.markerChoices} aria-label="Comments on this passage">
+    <PopoverContent side="right" className={styles.markerChoices} aria-label="Comments on this passage" onCloseAutoFocus={event => { if (choosing.current) { event.preventDefault(); choosing.current = false; } }}>
       {threads.map(item => {
         const person = authorOf(item);
         return <button type="button" key={item.id} className={styles.markerChoice} data-unread={item.unread ? "true" : "false"}
-          onClick={() => { setOpen(false); onActivate(item.id); }}>
+          onClick={() => { choosing.current = true; setOpen(false); onActivate(item.id); }}>
           <Avatar name={displayName(person)} src={person.pfp_url || undefined} size="sm" className={styles.markerPhoto} />
           <span><strong>{displayName(person)}</strong><span>{item.comments.find(comment => !comment.deleted)?.body.slice(0, 120) || "Comment thread"}</span><small>{item.unread ? "Unread activity" : "Read"}</small></span>
         </button>;

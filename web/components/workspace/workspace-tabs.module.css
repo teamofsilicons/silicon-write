@@ -1,0 +1,18 @@
+.workspaceBar { position: sticky; top: 0; z-index: 50; min-width: 0; width: 100%; background: var(--background); border-bottom: 1px solid var(--border-subtle); }
+.tabs { display: flex; align-items: stretch; gap: 3px; width: 100%; overflow-x: auto; scrollbar-width: thin; padding: 6px 20px 0; overscroll-behavior-x: contain; }
+.item { display: flex; align-items: center; flex: 0 0 auto; max-width: 240px; min-width: 96px; border-bottom: 2px solid transparent; }
+.item[data-active] { border-color: var(--accent); background: var(--surface-muted); }
+.tab { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; max-width: 214px; height: 37px; padding: 0 9px 0 12px; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; font: 400 .8125rem/1.2 var(--font-body); text-align: left; }
+.tab > svg { flex: none; opacity: .7; }
+.tab > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--foreground); font-weight: 500; }
+.tab:hover, .tab:focus-visible { background: var(--surface-pressed); color: var(--foreground); outline: none; }
+.tab:focus-visible { box-shadow: inset 0 -2px var(--accent); }
+.library { flex: 0 0 auto; margin-right: 4px; border-bottom: 2px solid transparent; }
+.library[aria-selected="true"] { border-color: var(--accent); }
+.close { display: grid; place-items: center; flex: none; width: 26px; height: 28px; padding: 0; margin-right: 3px; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }
+.close:hover, .close:focus-visible { color: var(--foreground); background: var(--surface-pressed); outline: none; }
+.unavailable { width: min(100%, 720px); margin: 72px auto; padding: 0 24px; }
+.unavailable h1 { font: 400 2rem/1.25 var(--font-serif); }
+.unavailable p { color: var(--text-secondary); overflow-wrap: anywhere; }
+@media (max-width: 640px) { .tabs { padding-inline: 8px; } .item { max-width: 190px; } .tab { max-width: 164px; height: 40px; } .close { width: 30px; height: 34px; } }

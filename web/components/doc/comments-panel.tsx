@@ -16,7 +16,7 @@ import { Avatar } from "@/components/silicon-ui/avatar/avatar";
 import { api, seg } from "@/lib/client/api";
 import { notify, notifyError } from "@/lib/notify";
 import { formatRelative } from "@/lib/format";
-import { keys, useSuggestions, useThreads } from "@/lib/write/queries";
+import { keys, useSuggestions } from "@/lib/write/queries";
 import { displayName, type Account, type Doc, type Thread } from "@/lib/write/types";
 import { useMentionPeople } from "./selection-comment";
 import { useThreadRead } from "./use-thread-read";
@@ -42,14 +42,22 @@ function toThreadComments(thread: Thread): ThreadComment[] {
   return [{ ...map(first), replies: rest.map(map) }];
 }
 
-function ThreadCard({ thread, active, account, people, onActivate, docId }: { thread: Thread; active: boolean; account: Account; people: { id: string; name: string; avatar?: string }[]; onActivate: () => void; docId: string }) {
+export function ThreadCard({ thread, active, account, people, onActivate, docId, scrollToActive = false }: { thread: Thread; active: boolean; account: Account; people: { id: string; name: string; avatar?: string }[]; onActivate?: () => void; docId: string; scrollToActive?: boolean }) {
   const client = useQueryClient();
   const ref = useRef<HTMLDivElement>(null);
   useThreadRead(docId, thread, ref);
   const comments = useMemo(() => toThreadComments(thread), [thread]);
   useEffect(() => {
-    if (active) ref.current?.scrollIntoView({ behavior: scrollBehavior(), block: "nearest" });
-  }, [active]);
+    if (!active || !scrollToActive || !ref.current) return;
+    const panel = ref.current.closest("aside");
+    if (!panel) return;
+    const card = ref.current.getBoundingClientRect();
+    const bounds = panel.getBoundingClientRect();
+    // Reveal inside the list without scrolling the document underneath it.
+    if (card.top < bounds.top || card.bottom > bounds.bottom) {
+      panel.scrollBy({ top: card.top - bounds.top - 16, behavior: scrollBehavior() });
+    }
+  }, [active, scrollToActive]);
   const refresh = () => client.invalidateQueries({ queryKey: ["threads", docId] });
 
   const onChange = async (_next: ThreadComment[], event: CommentThreadEvent) => {
@@ -65,9 +73,7 @@ function ThreadCard({ thread, active, account, people, onActivate, docId }: { th
   };
 
   const quote = thread.orphaned ? thread.quote : thread.current_quote ?? thread.quote;
-  return (
-    <div ref={ref} className={commentStyles.threadCard} data-active={active ? "" : undefined} data-thread-card={thread.id} onClick={onActivate}>
-      <button type="button" className={commentStyles.threadQuote} title="Show comment in document" onClick={event => { event.stopPropagation(); onActivate(); }}>
+  const quoteContent = <>
         {thread.anchor.kind === "block" ? <span className={commentStyles.threadKind}>Section</span> : null}
         {thread.anchor.kind === "cell" ? <span className={commentStyles.threadKind}>Cell</span> : null}
         {thread.anchor.kind === "image" ? <span className={commentStyles.threadKind}>{thread.anchor.rect ? "Image area" : "Image"}</span> : null}
@@ -75,7 +81,10 @@ function ThreadCard({ thread, active, account, people, onActivate, docId }: { th
         {quote ? <q>{quote.slice(0, 140)}{quote.length > 140 ? "…" : ""}</q> : null}
         {!quote && thread.anchor.kind === "text" ? <span className={commentStyles.threadKind}>Comment on document</span> : null}
         {thread.orphaned ? <span className={commentStyles.orphaned}>The text this was on was deleted.</span> : null}
-      </button>
+  </>;
+  return (
+    <div ref={ref} className={commentStyles.threadCard} data-active={active ? "" : undefined} data-thread-card={thread.id}>
+      {onActivate ? <button type="button" className={commentStyles.threadQuote} title="Show comment in document" onClick={onActivate}>{quoteContent}</button> : <div className={commentStyles.threadQuote}>{quoteContent}</div>}
       <CommentThread
         comments={comments}
         onCommentsChange={(next, event) => void onChange(next, event)}
@@ -153,25 +162,22 @@ function SuggestionCards({ docId, editor, canEdit }: { docId: string; editor: Ed
   );
 }
 
-export function CommentsPanel({ docId, doc, account, threads, activeThread, openThreadRequest, onActivate, editor, canEdit, onClose }: {
+export function CommentsPanel({ docId, doc, account, threads, activeThread, onActivate, editor, canEdit, onClose }: {
   docId: string;
   doc: Doc;
   account: Account;
   threads: Thread[];
   activeThread: string | null;
-  openThreadRequest: number;
   onActivate: (id: string | null) => void;
   editor: Editor | null;
   canEdit: boolean;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<{ value: "open" | "resolved"; request: number }>({ value: "open", request: openThreadRequest });
-  // A marker can request the same active thread again after the reader visits Resolved.
-  const show = tab.request === openThreadRequest ? tab.value : "open";
-  const resolved = useThreads(docId, "resolved", show === "resolved");
-  const list = show === "open" ? threads : resolved.data?.threads ?? [];
+  const [show, setShow] = useState<"open" | "resolved">(() => threads.find(thread => thread.id === activeThread)?.status ?? "open");
+  const list = threads.filter(thread => thread.status === show);
   const people = useMentionPeople(docId, true);
   const panel = useRef<HTMLElement>(null);
+  useEffect(() => { panel.current?.focus({ preventScroll: true }); }, []);
 
   const step = (delta: number) => {
     if (!list.length) return;
@@ -183,7 +189,7 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, open
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && (target.isContentEditable || /input|textarea|select/i.test(target.tagName))) return;
+      if (!panel.current?.contains(document.activeElement) || target && (target.isContentEditable || /input|textarea|select/i.test(target.tagName))) return;
       if (event.key === "j" || event.key === "ArrowDown") {
         if (!panel.current?.contains(document.activeElement) && event.key === "ArrowDown") return;
         event.preventDefault();
@@ -200,9 +206,9 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, open
   });
 
   return (
-    <aside ref={panel} className={`${styles.panel} ${commentStyles.panel}`} aria-label="Comments">
+    <aside ref={panel} className={`${styles.panel} ${commentStyles.panel}`} aria-label="All comments" tabIndex={-1}>
       <div className={commentStyles.panelHead}>
-        <h2>Comments</h2>
+        <h2>All comments</h2>
         <div className={commentStyles.panelHeadActions}>
           <button type="button" className={commentStyles.iconButton} aria-label="Previous comment (K)" disabled={!list.length} onClick={() => step(-1)} data-sq="control">
             <ChevronUp size={16} aria-hidden="true" />
@@ -215,14 +221,14 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, open
           </button>
         </div>
       </div>
-      <SegmentedControl className={commentStyles.tabs} options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setTab({ value: v as "open" | "resolved", request: openThreadRequest })} label="Show" size="xs" />
+      <SegmentedControl className={commentStyles.tabs} options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setShow(v as "open" | "resolved")} label="Show" size="xs" />
       {doc.kind === "doc" ? <SuggestionCards docId={docId} editor={editor} canEdit={canEdit} /> : null}
       <div className={commentStyles.threadList}>
         {list.length === 0 ? (
           <p className={commentStyles.panelEmpty}>{show === "open" ? "No open comments. Select text to comment on it." : "No resolved comments yet."}</p>
         ) : (
           list.map(thread => (
-            <ThreadCard key={thread.id} thread={thread} active={thread.id === activeThread} account={account} people={people} onActivate={() => onActivate(thread.id)} docId={docId} />
+            <ThreadCard key={thread.id} thread={thread} active={thread.id === activeThread} account={account} people={people} onActivate={() => onActivate(thread.id)} docId={docId} scrollToActive />
           ))
         )}
       </div>

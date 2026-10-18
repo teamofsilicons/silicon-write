@@ -5,7 +5,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Providers } from "@/components/foundation/providers";
-import { DocPage } from "@/components/doc/doc-page";
+import { WorkspaceDocPage } from "@/components/workspace/workspace-doc-page";
 import { apiFetch, getSession } from "@/lib/server/rsc";
 import { serverEnv } from "@/lib/server/env";
 import type { Account, Doc } from "@/lib/write/types";
@@ -41,7 +41,7 @@ export default async function DocRoute({ params }: { params: Promise<{ id: strin
     : null;
   return (
     <Providers session={{ signedIn, account: session?.account ?? null, expiresAt: session?.expiresAt ?? null }}>
-      <DocPage initialDoc={doc} account={account} />
+      <WorkspaceDocPage initialDoc={doc} account={account} />
     </Providers>
   );
 }

@@ -1,0 +1,30 @@
+.dialog { --space-section: 24px; width: min(560px, calc(100vw - 32px)); }
+.dialog h2 { font: 400 24px/1.25 var(--font-serif); letter-spacing: -.015em; }
+.dialog > div:first-child > div { min-width: 0; }
+.dialog > div:first-child p { font-size: 14px; line-height: 1.5; }
+.body { display: grid; gap: 20px; min-width: 0; }
+.status { display: grid; gap: 10px; min-width: 0; }
+.counts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.saved { display: inline-flex; align-items: center; gap: 5px; color: var(--foreground); }
+.progress { display: block; width: 100%; height: 4px; border: 0; background: var(--surface-muted); accent-color: var(--accent); }
+.progress::-webkit-progress-bar { background: var(--surface-muted); }
+.progress::-webkit-progress-value { background: var(--accent); }
+.progress::-moz-progress-bar { background: var(--accent); }
+.current { min-width: 0; margin: 0; color: var(--text-secondary); font: 400 13px/1.5 var(--font-body); overflow-wrap: anywhere; }
+.note { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.problems { display: grid; gap: 12px; min-width: 0; }
+.failures { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; overscroll-behavior: contain; }
+.failures li { display: grid; min-width: 0; gap: 4px; padding: 10px 0; }
+.failures li + li { border-top: 1px solid var(--border-subtle); }
+.filename { color: var(--foreground); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.reason { color: var(--text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.skipped { min-width: 0; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.skipped summary { width: fit-content; padding: 4px; margin: -4px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; cursor: pointer; border-radius: 6px; corner-shape: squircle; }
+.skipped summary:hover, .skipped summary:focus-visible { outline: none; background: var(--surface-muted); color: var(--foreground); }
+.skipped[open] summary { margin-bottom: 8px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.openButton { --primary: var(--foreground); --primary-hover: var(--text-secondary); --primary-foreground: var(--background); }
+@media (max-width: 480px) {
+  .dialog { --space-section: 20px; width: calc(100vw - 24px); }
+  .actions { gap: 6px; }
+}

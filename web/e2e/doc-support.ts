@@ -17,10 +17,10 @@ export async function openFormatting(page: Page) {
   await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
 }
 
-/** Existing threads and proposals are opened explicitly; newly posted comments open this panel themselves. */
+/** The header opens the complete list; newly posted comments open only their own conversation. */
 export async function openComments(page: Page) {
   const toggle = page.getByRole("button", { name: "Comments", exact: true });
   await expect(toggle).toBeVisible();
   if (await toggle.getAttribute("aria-pressed") !== "true") await toggle.click();
-  await expect(page.getByRole("complementary", { name: "Comments", exact: true })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "All comments", exact: true })).toBeVisible();
 }

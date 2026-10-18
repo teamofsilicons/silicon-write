@@ -1256,6 +1256,9 @@ test.describe("comments", () => {
     await expect(field).toBeFocused();
     await page.keyboard.type("Shorter, please.");
     await page.keyboard.press("Enter");
+    await expect(threadCards(page)).toHaveCount(1);
+    await expect(threadCards(page)).toContainText("Shorter, please.");
+    await openComments(page);
     await expect(threadCards(page)).toHaveCount(2);
     const threads = await threadsOf(page, doc.id);
     expect(threads.map(t => [t.anchor.kind, t.quote, t.comments[0]?.body])).toEqual([
@@ -1408,7 +1411,7 @@ test.describe("comments", () => {
     await page.keyboard.type("A clearer chart, please.");
     await page.keyboard.press("Enter");
     await expect(composer).toBeHidden();
-    await expect(threadCards(page)).toHaveCount(3);
+    await expect(threadCards(page)).toHaveCount(1);
     // The image can still be picked afterwards (to comment on another part of it, or to remove it).
     await editorOf(page).focus();
     await caretAfter(page, "Outro line.");
@@ -1428,6 +1431,8 @@ test.describe("comments", () => {
     expect(area?.anchor.rect?.y).toBeCloseTo(0.2, 1);
     expect(area?.anchor.rect?.w).toBeCloseTo(0.4, 1);
     expect(area?.anchor.rect?.h).toBeCloseTo(0.5, 1);
+    await openComments(page);
+    await expect(threadCards(page)).toHaveCount(3);
     await expect(threadCards(page).filter({ hasText: "This bar looks wrong." })).toContainText("Image area");
     await expectMarkdown(page, doc.id, `Intro line.\n\n| Name | Role |\n| --- | --- |\n| Ada | Writer |\n\n![chart](${src})\n\nOutro line.\n`);
     await context.close();
@@ -1439,7 +1444,7 @@ test.describe("comments", () => {
     const created = await ok<Thread>(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "text", quote: "needs work" }, body: "What kind of work?" });
     const thread = async () => (await threadsOf(page, doc.id)).find(t => t.id === created.id)!;
     await openDoc(page, doc.id);
-    await expect(page.getByRole("complementary", { name: "Comments", exact: true })).toBeHidden();
+    await expect(page.getByRole("complementary", { name: "All comments", exact: true })).toBeHidden();
     await openComments(page);
     const card = threadCards(page).filter({ hasText: "What kind of work?" });
     await expect(card).toBeVisible();
@@ -1476,9 +1481,9 @@ test.describe("comments", () => {
     const [resolved] = await threadsOf(page, doc.id, "resolved");
     expect(resolved.resolved_by?.uuid).toBe(account.uuid);
 
-    const panel = page.getByRole("complementary", { name: "Comments", exact: true });
+    const panel = page.getByRole("complementary", { name: "All comments", exact: true });
     await panel.getByRole("button", { name: "Resolved", exact: true }).click();
-    // A resolved thread folds into one line: its quote, "Resolved" and Reopen.
+    // A resolved thread keeps the conversation readable and offers Reopen.
     const resolvedCard = threadCards(page).filter({ hasText: "needs work" });
     await expect(resolvedCard).toBeVisible();
     await expect(resolvedCard).toContainText("Resolved");
@@ -1489,6 +1494,59 @@ test.describe("comments", () => {
     await panel.getByRole("button", { name: "Open", exact: true }).click();
     await expect(threadCards(page).filter({ hasText: "What kind of work?" })).toBeVisible();
     await expect(editorOf(page).locator(".comment-anchor")).toHaveText("needs work");
+    await context.close();
+  });
+
+  test("a photo opens only its conversation in place, with a separate complete list", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Focused comments ${tag()}`, "Alpha paragraph here.\n\nBeta paragraph here.");
+    const first = await ok<Thread>(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "text", quote: "Alpha paragraph" }, body: "Only the first note." });
+    const second = await ok<Thread>(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "text", quote: "Beta paragraph" }, body: "Only the second note." });
+    await openDoc(page, doc.id);
+    const marker = page.locator(`[data-comment-marker="${first.id}"]`);
+    await expect(marker).toBeVisible();
+    const before = await page.evaluate(() => window.scrollY);
+    await marker.click();
+    const focused = page.getByRole("dialog", { name: "Comment thread", exact: true });
+    await expect(focused).toBeVisible();
+    await expect(threadCards(page)).toHaveCount(1);
+    await expect(focused).toContainText("Only the first note.");
+    await expect(focused).not.toContainText("Only the second note.");
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(before);
+    await expect(page.getByRole("complementary", { name: "All comments", exact: true })).toBeHidden();
+
+    // Closing with Escape returns the keyboard to the photo without scrolling.
+    await page.keyboard.press("Escape");
+    await expect(focused).toBeHidden();
+    await expect(marker).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(focused).toBeVisible();
+    await focused.getByRole("button", { name: "All comments", exact: true }).click();
+    const all = page.getByRole("complementary", { name: "All comments", exact: true });
+    await expect(all).toBeVisible();
+    await expect(focused).toBeHidden();
+    await expect(threadCards(page)).toHaveCount(2);
+    await all.getByRole("button", { name: "Close comments" }).click();
+
+    // Text opens the same focused mode. Resolving does not replace it with another thread.
+    await editorOf(page).locator(`[data-thread="${second.id}"]`).click();
+    await expect(focused).toContainText("Only the second note.");
+    await focused.getByRole("button", { name: "Resolve", exact: true }).click();
+    await expect(focused).toContainText("Resolved comment");
+    await expect(threadCards(page)).toHaveCount(1);
+    await expect(focused).toContainText("Only the second note.");
+    await focused.getByRole("button", { name: "Reopen", exact: true }).click();
+    await expect(focused.getByRole("button", { name: "Resolve", exact: true })).toBeVisible();
+    await focused.getByRole("button", { name: "Close comment", exact: true }).click();
+
+    // A narrow screen keeps the single note inside the viewport.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator(`[data-comment-marker="${second.id}"]`).click();
+    await expect(focused).toBeVisible();
+    const box = (await focused.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    await expect(threadCards(page)).toHaveCount(1);
     await context.close();
   });
 
@@ -1503,7 +1561,7 @@ test.describe("comments", () => {
     await openComments(page);
     await expect(threadCards(page)).toHaveCount(3);
     const active = page.locator("[data-thread-card][data-active]");
-    await page.getByRole("heading", { name: "Comments" }).click();
+    await page.getByRole("heading", { name: "All comments" }).click();
     await page.keyboard.press("j");
     await expect(active).toHaveAttribute("data-thread-card", ids[0]);
     await expect(editorOf(page).locator(".comment-anchor-active")).toHaveText("Alpha paragraph");

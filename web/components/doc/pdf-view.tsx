@@ -4,7 +4,7 @@
  * A PDF shown as it is (UNDERSTANDING.md, "Formats"): its pages, comments on areas of them, and, for editors, turning it
  * into a normal doc to edit it (the PDF stays as its original).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/silicon-ui/button/button";
 import { api, seg } from "@/lib/client/api";
@@ -35,8 +35,6 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
   const [drawing, setDrawing] = useState(false);
   const [draft, setDraft] = useState<{ page: number; start: { x: number; y: number }; rect?: Rect } | null>(null);
   const [converting, setConverting] = useState(false);
-  const areaRefs = useRef(new Map<string, HTMLButtonElement>());
-  const scrolledTarget = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,22 +80,6 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
     }
   };
 
-  const activePage = threads.find(thread => thread.id === activeThread)?.anchor.rect?.page;
-  const target = activeThread && activePage ? `${activeThread}:${activePage}` : null;
-  const targetReady = pages.some(page => page.number === activePage);
-  useEffect(() => {
-    if (!target) {
-      scrolledTarget.current = null;
-      return;
-    }
-    if (!targetReady || scrolledTarget.current === target || !activePage) return;
-    const area = activeThread ? areaRefs.current.get(activeThread) : undefined;
-    if (area) {
-      area.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
-      scrolledTarget.current = target;
-    }
-  }, [target, targetReady, activePage, activeThread]);
-
   const areas = threads.filter(t => t.anchor.kind === "pdf" && t.anchor.rect);
 
   return (
@@ -123,6 +105,7 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
         {pages.map(page => (
           <div
             key={page.number}
+            data-pdf-page={page.number}
             className={styles.pdfPage}
             data-drawing={drawing ? "" : undefined}
             style={{ aspectRatio: `${page.width} / ${page.height}` }}
@@ -156,10 +139,6 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
               .map(t => (
                 <button
                   key={t.id}
-                  ref={element => {
-                    if (element) areaRefs.current.set(t.id, element);
-                    else areaRefs.current.delete(t.id);
-                  }}
                   type="button"
                   className={styles.pdfArea}
                   data-active={t.id === activeThread ? "" : undefined}
