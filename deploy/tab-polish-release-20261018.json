@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-10-18T10:38:36.350414+00:00",
+  "revision": "46cb526bd8e39019469caa7a488894b8cd14b709",
+  "release_status": "live",
+  "changes": [
+    "Unified rounded document tab surface includes the close control and keyboard focus",
+    "Plus button opens a searchable document picker without visiting the library",
+    "Plus remains accessible beside overflowing tabs",
+    "Alt/Option+Shift+1-8 selects a document tab; 9 selects the last",
+    "Alt/Option+Shift+O opens the picker; arrow navigation activates focused tabs",
+    "IME composition, editor selection, and modal keyboard handling remain protected"
+  ],
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment_id": "dpl_73M7qprgmhx7hQTQujdJzc4biGha",
+    "deployment_url": "https://silicon-write-f5gigzibc-saketdev12-5675s-projects.vercel.app",
+    "state": "READY",
+    "source_revision": "46cb526bd8e39019469caa7a488894b8cd14b709"
+  },
+  "validation": {
+    "web_unit_tests": 85,
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_build": true,
+    "note": "Full checks passed for the main change; final IME and focus refinements passed typecheck and scoped lint, with production build and TypeScript validation on Vercel.",
+    "local_browser": [
+      "Search and Enter opens an existing doc directly",
+      "New doc creates and opens a blank document",
+      "Alt+Shift+1 works inside the editor",
+      "Active and unavailable numeric shortcuts do not alter text",
+      "Alt+Shift+O opens the picker from the editor",
+      "ArrowRight on the strip activates the next tab",
+      "Escape closes the picker and returns focus to plus",
+      "Picker and strip fit 390x844; plus remains visible while tabs overflow"
+    ],
+    "production_browser": [
+      "Plus picker searched and opened Try without library navigation",
+      "Alt+Shift+1 switched from editor to first document",
+      "Alt+Shift+O opened picker and Escape dismissed it",
+      "Two document tabs survived reload",
+      "Final deployed tab has one parent focus outline, zero child outline and square bottom corners"
+    ],
+    "browser_method": "Manual CUA in the requested authenticated Chrome session",
+    "existing_production_content_changed": false,
+    "screenshots": [
+      ".dev/design-reference/tabs-plus-live-20261018.png",
+      ".dev/design-reference/tab-picker-live-20261018.png"
+    ]
+  },
+  "observations": [
+    "One post-deployment picker load remained pending; closing and reopening showed the list and subsequent search/open succeeded."
+  ],
+  "limitations": [
+    "Standalone Playwright suite was not rerun; browser checks used CUA."
+  ],
+  "source_backup": {
+    "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-46cb526.bundle",
+    "sha256": "54bfd73d76b24c6af5c183f8f222de3990a4be079aee236dbc389145c03814c1",
+    "git_bundle_verified": true,
+    "download_hash_verified": true,
+    "encryption": "AES256"
+  },
+  "secrets_included": false
+}

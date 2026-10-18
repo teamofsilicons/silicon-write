@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-18T10:13:22.008369+00:00",
+  "recorded_at": "2026-10-18T10:38:36.350414+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_5hjEZxCxuL3p1tMdjt91tc9fmB8a",
+    "deployment_id": "dpl_73M7qprgmhx7hQTQujdJzc4biGha",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,12 +13,13 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "0971a8b8901e827369185ac6561176c1c2a22be7",
+    "revision": "46cb526bd8e39019469caa7a488894b8cd14b709",
     "browser_checks": [
-      "Homepage multi-selection and two document tabs",
-      "Tab restoration after refresh",
-      "Focused comment and All comments",
-      "Connected and synced existing document"
+      "Plus picker searched and opened Try without library navigation",
+      "Alt+Shift+1 switched from editor to first document",
+      "Alt+Shift+O opened picker and Escape dismissed it",
+      "Two document tabs survived reload",
+      "Final deployed tab has one parent focus outline, zero child outline and square bottom corners"
     ]
   },
   "api": {
@@ -166,5 +167,6 @@
     "browser_suite": "Manual CUA in requested Chrome session; standalone Playwright suite not rerun"
   },
   "comment_share_release_receipt": "comment-share-release-20261017.json",
-  "folder_tabs_release_receipt": "folder-tabs-release-20261018.json"
+  "folder_tabs_release_receipt": "folder-tabs-release-20261018.json",
+  "tab_polish_release_receipt": "tab-polish-release-20261018.json"
 }
