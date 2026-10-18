@@ -150,11 +150,25 @@ export function SelectionComment({
     };
   }, [pending]);
 
-  // Escape closes the box.
+  // Dismiss on a click away without moving focus from the place being clicked.
+  // Mention suggestions live inside the card, so choosing one keeps it open.
+  useEffect(() => {
+    if (!pending || sending) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || card.current?.contains(event.target)) return;
+      onPending(null);
+      setValue({ text: "", mentions: [] });
+      setPill(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [pending, onPending, sending]);
+
+  // Escape closes the box after a mention picker or input composition has handled it.
   useEffect(() => {
     if (!pending) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229) {
         onPending(null);
         setValue({ text: "", mentions: [] });
         editor?.commands.focus();

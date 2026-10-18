@@ -137,6 +137,10 @@
 .addTab:focus-visible { box-shadow: inset 0 0 0 1px var(--foreground); }
 .addTab:disabled { color: var(--text-muted); cursor: wait; }
 
+.tooltipContent { display: grid; gap: 5px; min-width: 0; }
+.tooltipLabel { overflow-wrap: anywhere; }
+.tooltipShortcut { width: fit-content; color: inherit; opacity: .7; font: 400 .75rem/1.4 var(--font-body); white-space: nowrap; }
+
 .unavailable { width: min(100%, 720px); margin: 72px auto; padding: 0 24px; }
 .unavailable h1 { font: 400 2rem/1.25 var(--font-serif); }
 .unavailable p { color: var(--text-secondary); overflow-wrap: anywhere; }

@@ -9,7 +9,21 @@ import { rememberWorkspaceDoc, setWorkspaceDocScope } from "@/lib/write/workspac
 import type { Doc } from "@/lib/write/types";
 import { OpenDocDialog } from "./open-doc-dialog";
 import { resolveWorkspaceShortcut } from "@/lib/write/workspace-shortcuts";
+import { Tooltip } from "@/components/silicon-ui/tooltip/tooltip";
 import styles from "./workspace-tabs.module.css";
+
+const subscribePlatform = () => () => undefined;
+function applePlatform() {
+  const platform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform;
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+function ShortcutHint({ label, shortcut, apple }: { label: string; shortcut?: string; apple: boolean }) {
+  return <span className={styles.tooltipContent}>
+    <span className={styles.tooltipLabel}>{label}</span>
+    {shortcut ? <kbd className={styles.tooltipShortcut} aria-label={`${apple ? "Option" : "Alt"} Shift ${shortcut}`}>{apple ? `⌥ ⇧ ${shortcut}` : `Alt + Shift + ${shortcut}`}</kbd> : null}
+  </span>;
+}
 
 function createStore(account: string | null) {
   let state = EMPTY_WORKSPACE;
@@ -47,6 +61,7 @@ export const useWorkspaceTabs = () => useContext(WorkspaceContext);
 export function WorkspaceTabsProvider({ account, children }: { account: string | null; children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const isApple = useSyncExternalStore(subscribePlatform, applePlatform, () => false);
   const store = useMemo(() => createStore(account), [account]);
   const state = useSyncExternalStore(store.subscribe, store.snapshot, () => EMPTY_WORKSPACE);
   const active = /^\/d\/(d_[A-Za-z0-9]+)$/.exec(pathname)?.[1] ?? null;
@@ -153,16 +168,23 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
             <button id="workspace-tab-library" type="button" className={`${styles.tab} ${styles.library}`} role="tab" aria-selected={!active} aria-controls="workspace-document" tabIndex={active ? -1 : 0} onClick={() => router.push("/library")}>
               <Library size={15} aria-hidden="true" /><span>My docs</span>
             </button>
-            {state.tabs.map((tab, index) => (
-              <div className={styles.item} key={tab.id} data-active={active === tab.id || undefined} role="presentation" data-sq-native="">
-                <button id={`workspace-tab-${tab.id}`} type="button" className={styles.tab} role="tab" data-doc-id={tab.id} aria-selected={active === tab.id} aria-controls="workspace-document" tabIndex={active === tab.id ? 0 : -1} onClick={() => navigateDoc(tab.id)} title={`${tab.title}${index < 8 ? ` · Alt+Shift+${index + 1}` : index === state.tabs.length - 1 ? " · Alt+Shift+9" : ""}`} aria-keyshortcuts={index < 8 ? `Alt+Shift+${index + 1}` : index === state.tabs.length - 1 ? "Alt+Shift+9" : undefined}>
-                  <FileText size={14} aria-hidden="true" /><span>{tab.title}</span>
-                </button>
-                <button type="button" className={styles.close} aria-label={`Close ${tab.title}`} title={`Close ${tab.title}`} tabIndex={-1} onClick={() => close(tab.id)}><X size={13} aria-hidden="true" /></button>
-              </div>
-            ))}
+            {state.tabs.map((tab, index) => {
+              const shortcut = index < 8 ? String(index + 1) : index === state.tabs.length - 1 ? "9" : undefined;
+              return <div className={styles.item} key={tab.id} data-active={active === tab.id || undefined} role="presentation" data-sq-native="">
+                <Tooltip side="bottom" content={<ShortcutHint label={tab.title} shortcut={shortcut} apple={isApple} />}>
+                  <button id={`workspace-tab-${tab.id}`} type="button" className={styles.tab} role="tab" data-doc-id={tab.id} aria-selected={active === tab.id} aria-controls="workspace-document" tabIndex={active === tab.id ? 0 : -1} onClick={() => navigateDoc(tab.id)} aria-keyshortcuts={shortcut ? `Alt+Shift+${shortcut}` : undefined}>
+                    <FileText size={14} aria-hidden="true" /><span>{tab.title}</span>
+                  </button>
+                </Tooltip>
+                <Tooltip side="bottom" content="Close tab">
+                  <button type="button" className={styles.close} aria-label={`Close ${tab.title}`} tabIndex={-1} onClick={() => close(tab.id)}><X size={13} aria-hidden="true" /></button>
+                </Tooltip>
+              </div>;
+            })}
           </div>
-          <button type="button" data-sq="control" className={styles.addTab} aria-label="Open a doc" title="Open a doc · Alt+Shift+O" aria-keyshortcuts="Alt+Shift+O" onClick={() => setPickerOpen(true)}><Plus size={18} aria-hidden="true" /></button>
+          <Tooltip side="bottom" content={<ShortcutHint label="Open a doc" shortcut="O" apple={isApple} />}>
+            <button type="button" data-sq="control" className={styles.addTab} aria-label="Open a doc" aria-keyshortcuts="Alt+Shift+O" onClick={() => setPickerOpen(true)}><Plus size={18} aria-hidden="true" /></button>
+          </Tooltip>
         </div>
       ) : null}
       <div id="workspace-document" role={show ? "tabpanel" : undefined} aria-labelledby={show ? `workspace-tab-${active ?? "library"}` : undefined}>
