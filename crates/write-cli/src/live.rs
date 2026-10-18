@@ -11,16 +11,28 @@ use crate::ctx::Ctx;
 use crate::error::{CliError, CliResult};
 use crate::resolve;
 
-pub async fn context(ctx: &Ctx, doc: &str) -> CliResult<()> {
+pub async fn context(ctx: &Ctx, doc: &str, revisions: u16) -> CliResult<()> {
     ctx.require_session()?;
     let id = resolve::doc_id(ctx, doc, false).await?;
-    let snapshot = ctx.client.context(&id).await?;
+    let mut snapshot = ctx.client.context(&id).await?;
+    limit_history(&mut snapshot, revisions);
     ctx.emit(&snapshot, || {
         let threads = snapshot.threads.as_array().map_or(0, Vec::len);
         format!("{} ({id})\nRole: {} · seq {} · {} comment threads\nResume cursor: {}\n\n{}\n\nUse --json for passage anchors, comments, authors, permissions and live presence.",
             snapshot.doc.title, snapshot.doc.role, snapshot.seq, threads, snapshot.cursor, snapshot.markdown)
     });
     Ok(())
+}
+
+fn limit_history(context: &mut silicon_write_client::DocumentContext, count: u16) {
+    if let Some(history) = context.revisions.as_array_mut()
+        && history.len() > usize::from(count)
+    {
+        history.truncate(usize::from(count));
+        context
+            .extra
+            .insert("revisions_truncated".into(), json!(true));
+    }
 }
 
 type OutputMessage = (String, tokio::sync::oneshot::Sender<std::io::Result<()>>);
@@ -292,6 +304,27 @@ pub async fn watch(
 mod tests {
     use super::*;
     use silicon_write_client::Error;
+
+    #[test]
+    fn compact_history_preserves_context_and_reports_truncation() {
+        let mut context: silicon_write_client::DocumentContext = serde_json::from_value(json!({
+            "cursor":"e:1","doc":{"id":"d_1"},"seq":42,"markdown":"text","prosemirror":{},
+            "threads":[{"activity_version":2}],"authors":{},"revisions":[{"seq":42},{"seq":41}],
+            "revisions_truncated":false,"presence":[]
+        }))
+        .unwrap();
+        limit_history(&mut context, 1);
+        assert_eq!(context.revisions, json!([{"seq":42}]));
+        assert_eq!(context.extra["revisions_truncated"], true);
+        assert_eq!(context.threads[0]["activity_version"], 2);
+        assert_eq!(context.cursor, "e:1");
+        context.revisions = Value::Null;
+        limit_history(&mut context, 0);
+        assert!(
+            context.revisions.is_null(),
+            "viewer permissions remain explicit"
+        );
+    }
 
     #[test]
     fn access_and_protocol_errors_are_terminal() {

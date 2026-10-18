@@ -783,6 +783,9 @@ pub async fn edit(
         if err.code == "not_unique" && err.hint.is_none() {
             err.hint = Some("Include more surrounding text so `old` appears once, or pass --all to change every occurrence.".into());
         }
+        if err.code == "conflict" && expect_seq.is_some() && err.hint.is_none() {
+            err.hint = Some(format!("Read `write context {id} --json`, reconsider the passage, then retry with its current seq. Nothing from this edit was applied."));
+        }
         err
     })?;
     // A commenter's changes become suggestions even without --suggest.

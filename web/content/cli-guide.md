@@ -74,8 +74,9 @@ These commands require CLI 0.2.0 or later (`write --version`).
 
 `context` returns Markdown and ProseMirror from one content version, comment threads with current
 quotes and anchors, block authors, recent revisions, permissions, live collaborators and a resume
-cursor. Threads are null for viewers; revision history is null below editor access. Revisions
-contain at most 100 entries; `revisions_truncated` tells you when more exist. Comment activity has
+cursor. Threads are null for viewers; revision history is null below editor access. `context`
+includes the 10 latest revisions by default; use `--revisions 0` to omit history or `--revisions 100`
+for more. `revisions_truncated` tells you when more exist. Comment activity has
 its own version: a reply can change a thread without advancing the document's content `seq`.
 Browser collaborators who have the editor focused can publish a `location` with a zero-based
 top-level block index, current ProseMirror positions, a short quote, mode and timestamp. These are
@@ -89,7 +90,8 @@ changes without adding your presence. Both reconnect automatically after network
 and refresh authentication; a final access error stops them.
 
 With `--json`, each complete line is `{ "event": "document", "id": "CURSOR", "data": { ... } }`.
-The first connection sends a `snapshot` with context. Save an event's cursor after processing it;
+Without `--after`, the first connection sends a `snapshot` with context (up to 100 recent revisions).
+A valid resume cursor sends only later events and current presence. Save an event's cursor after processing it;
 pass it with `--after` when resuming. Cursors are opaque, process-local and separate from content
 versions. If a cursor is too old or the service restarts, a `reset` includes fresh context and a
 new cursor. Apply the snapshot, then continue; replay can repeat changes already represented in

@@ -352,6 +352,9 @@ Examples:
     Context {
         /// Doc id, link or exact title
         doc: String,
+        /// Recent revisions to include (0 omits history; the API retains up to 100)
+        #[arg(long, default_value = "10", value_parser = clap::value_parser!(u16).range(0..=100))]
+        revisions: u16,
     },
     /// Stream document and comment activity without appearing as a collaborator
     #[command(
@@ -998,7 +1001,7 @@ async fn run(ctx: &Ctx, command: Command) -> CliResult<()> {
         Command::Link { title } => c::link(ctx, &title).await,
         Command::Search { query } => c::search(ctx, &query).await,
         Command::Backlinks { doc } => c::backlinks(ctx, &doc).await,
-        Command::Context { doc } => live::context(ctx, &doc).await,
+        Command::Context { doc, revisions } => live::context(ctx, &doc, revisions).await,
         Command::Watch(args) => live::watch(ctx, &args.doc, false, args.after, args.duration).await,
         Command::Join(args) => live::watch(ctx, &args.doc, true, args.after, args.duration).await,
         Command::Cat {
