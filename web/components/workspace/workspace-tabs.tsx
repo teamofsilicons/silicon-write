@@ -154,7 +154,7 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
               <Library size={15} aria-hidden="true" /><span>My docs</span>
             </button>
             {state.tabs.map((tab, index) => (
-              <div className={styles.item} key={tab.id} data-active={active === tab.id || undefined} role="presentation" data-sq="surface">
+              <div className={styles.item} key={tab.id} data-active={active === tab.id || undefined} role="presentation" data-sq-native="">
                 <button id={`workspace-tab-${tab.id}`} type="button" className={styles.tab} role="tab" data-doc-id={tab.id} aria-selected={active === tab.id} aria-controls="workspace-document" tabIndex={active === tab.id ? 0 : -1} onClick={() => navigateDoc(tab.id)} title={`${tab.title}${index < 8 ? ` · Alt+Shift+${index + 1}` : index === state.tabs.length - 1 ? " · Alt+Shift+9" : ""}`} aria-keyshortcuts={index < 8 ? `Alt+Shift+${index + 1}` : index === state.tabs.length - 1 ? "Alt+Shift+9" : undefined}>
                   <FileText size={14} aria-hidden="true" /><span>{tab.title}</span>
                 </button>

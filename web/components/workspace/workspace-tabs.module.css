@@ -28,6 +28,9 @@
 
 /* The title and close icon belong to one tab surface. */
 .item {
+  --sq-r: 7px;
+  --sq-br: 0;
+  --sq-bl: 0;
   position: relative;
   display: flex;
   align-items: center;
@@ -61,6 +64,7 @@
 .item:has(+ .item[data-active])::after, .item:has(+ .item:hover)::after { opacity: 0; }
 .item:has(.tab:focus-visible) { box-shadow: inset 0 0 0 1px var(--foreground); }
 .tab {
+  --focus-outline-width: 0px;
   display: flex;
   align-items: center;
   gap: 8px;
