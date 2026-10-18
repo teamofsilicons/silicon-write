@@ -124,7 +124,7 @@ within the strip; the strip scrolls horizontally rather than widening the page. 
 normal document editing shortcuts intact.
 
 Open tab metadata is kept for the current account and browser tab, including across visits to the library. Document
-contents are not stored with tab titles. Editors load when visited; switching between open tabs keeps their live
+contents are not stored with tab titles. Each tab is one rounded surface, including its close control; the active tab joins the document. A + beside the strip opens a searchable document picker without leaving the editor. Alt/Option+Shift+1–8 selects a document tab, 9 selects the last, and O opens the picker. Alt/Option+Shift+Left/Right switches outside editable fields; unmodified arrows activate tabs when the strip has focus. Editors load when visited; switching between open tabs keeps their live
 document state, including edits waiting for the connection to return. Closing a tab never deletes its document.
 
 **Open files** accepts multiple supported files. **Open folder** imports the selected folder and its nested structure

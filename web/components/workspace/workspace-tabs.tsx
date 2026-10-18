@@ -1,12 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { FileText, Library, X } from "lucide-react";
+import { FileText, Library, Plus, X } from "lucide-react";
 import { addWorkspaceTabs, closeWorkspaceTab, EMPTY_WORKSPACE, readWorkspace, workspaceKey, type WorkspaceState } from "@/lib/write/workspace-tabs";
 import { retainWorkspaceDocs, setWorkspaceLiveScope } from "@/lib/write/workspace-live";
 import { rememberWorkspaceDoc, setWorkspaceDocScope } from "@/lib/write/workspace-docs";
 import type { Doc } from "@/lib/write/types";
+import { OpenDocDialog } from "./open-doc-dialog";
+import { resolveWorkspaceShortcut } from "@/lib/write/workspace-shortcuts";
 import styles from "./workspace-tabs.module.css";
 
 function createStore(account: string | null) {
@@ -48,6 +50,7 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
   const store = useMemo(() => createStore(account), [account]);
   const state = useSyncExternalStore(store.subscribe, store.snapshot, () => EMPTY_WORKSPACE);
   const active = /^\/d\/(d_[A-Za-z0-9]+)$/.exec(pathname)?.[1] ?? null;
+  const [pickerOpen, setPickerOpen] = useState(false);
   const bar = useRef<HTMLDivElement>(null);
   const workspaceRoot = useRef<HTMLDivElement>(null);
   const focusAfterClose = useRef<string | null>(null);
@@ -85,6 +88,28 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
     if (active) window.history.pushState(null, "", `/d/${id}`);
     else router.push(`/d/${id}`);
   }, [active, router]);
+  useEffect(() => {
+    if (!account) return;
+    const onShortcut = (event: globalThis.KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const action = resolveWorkspaceShortcut(event, {
+        tabIds: store.snapshot().tabs.map(tab => tab.id),
+        activeId: active,
+        inEditable: Boolean(target?.isContentEditable || target?.closest('input, textarea, select, [role="textbox"], [role="combobox"]')),
+        overlayOpen: pickerOpen || Boolean(document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [aria-modal="true"]')),
+      });
+      if (!action) return;
+      event.preventDefault();
+      if (action.kind === "open") setPickerOpen(true);
+      else if (action.kind === "activate") {
+        focusAfterClose.current = action.id;
+        navigateDoc(action.id);
+      }
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [account, active, store, navigateDoc, pickerOpen]);
+
   const registerDoc = useCallback((doc: Doc) => {
     rememberWorkspaceDoc(doc, account);
     store.update(current => addWorkspaceTabs(current, [doc]));
@@ -103,6 +128,7 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
     if (active === id) { if (result.next) navigateDoc(result.next); else router.push("/library"); }
   };
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const target = event.target as HTMLElement;
     if (target.getAttribute("role") !== "tab") return;
     const tabs = [...(bar.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
@@ -116,6 +142,7 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
     else return;
     event.preventDefault();
     tabs[next]?.focus();
+    tabs[next]?.click();
   };
   return (
     <WorkspaceContext.Provider value={actions}>
@@ -126,21 +153,23 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
             <button id="workspace-tab-library" type="button" className={`${styles.tab} ${styles.library}`} role="tab" aria-selected={!active} aria-controls="workspace-document" tabIndex={active ? -1 : 0} onClick={() => router.push("/library")}>
               <Library size={15} aria-hidden="true" /><span>My docs</span>
             </button>
-            {state.tabs.map(tab => (
-              <div className={styles.item} key={tab.id} data-active={active === tab.id || undefined} role="presentation">
-                <button id={`workspace-tab-${tab.id}`} type="button" className={styles.tab} role="tab" data-doc-id={tab.id} aria-selected={active === tab.id} aria-controls="workspace-document" tabIndex={active === tab.id ? 0 : -1} onClick={() => navigateDoc(tab.id)} title={tab.title}>
+            {state.tabs.map((tab, index) => (
+              <div className={styles.item} key={tab.id} data-active={active === tab.id || undefined} role="presentation" data-sq="surface">
+                <button id={`workspace-tab-${tab.id}`} type="button" className={styles.tab} role="tab" data-doc-id={tab.id} aria-selected={active === tab.id} aria-controls="workspace-document" tabIndex={active === tab.id ? 0 : -1} onClick={() => navigateDoc(tab.id)} title={`${tab.title}${index < 8 ? ` · Alt+Shift+${index + 1}` : index === state.tabs.length - 1 ? " · Alt+Shift+9" : ""}`} aria-keyshortcuts={index < 8 ? `Alt+Shift+${index + 1}` : index === state.tabs.length - 1 ? "Alt+Shift+9" : undefined}>
                   <FileText size={14} aria-hidden="true" /><span>{tab.title}</span>
                 </button>
                 <button type="button" className={styles.close} aria-label={`Close ${tab.title}`} title={`Close ${tab.title}`} tabIndex={-1} onClick={() => close(tab.id)}><X size={13} aria-hidden="true" /></button>
               </div>
             ))}
           </div>
+          <button type="button" data-sq="control" className={styles.addTab} aria-label="Open a doc" title="Open a doc · Alt+Shift+O" aria-keyshortcuts="Alt+Shift+O" onClick={() => setPickerOpen(true)}><Plus size={18} aria-hidden="true" /></button>
         </div>
       ) : null}
       <div id="workspace-document" role={show ? "tabpanel" : undefined} aria-labelledby={show ? `workspace-tab-${active ?? "library"}` : undefined}>
         {children}
       </div>
       </div>
+      {account ? <OpenDocDialog open={pickerOpen} onOpenChange={setPickerOpen} onOpen={openDocs} openDocIds={state.tabs.map(tab => tab.id)} /> : null}
     </WorkspaceContext.Provider>
   );
 }
