@@ -1,0 +1,43 @@
+{
+  "recorded_at": "2026-10-18T16:08:46.054380+00:00",
+  "revision": "fb1e798fb0f9cc67ea2ba7b54161eb2ed54c22e8",
+  "release_status": "live",
+  "changes": [
+    "Use shared portaled Silicon UI Tooltip for collaborator names",
+    "Show presence names below the avatar, clear of workspace tabs",
+    "Support keyboard focus and Escape dismissal"
+  ],
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment_id": "dpl_9ZX31A31ae91BdTA91jvWmkNarrW",
+    "deployment_url": "https://silicon-write-8teqyfbns-saketdev12-5675s-projects.vercel.app",
+    "state": "READY"
+  },
+  "validation": {
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_build": true,
+    "production_browser": [
+      "Full Saket UDD hover label visible below presence avatar",
+      "Shift+Tab from Format focuses the avatar and opens the name",
+      "Escape dismisses tooltip",
+      "Document remains Connected and synced"
+    ],
+    "browser_method": "CUA in authenticated Chrome; fresh verification tab",
+    "existing_production_content_changed": false,
+    "screenshots": [
+      ".dev/design-reference/presence-tooltip-live-20261018.png"
+    ]
+  },
+  "limitations": [
+    "Standalone Playwright suite not run; focused live browser verification used CUA"
+  ],
+  "source_backup": {
+    "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-fb1e798.bundle",
+    "sha256": "428c2f7f6eb2fd739312db4ed1071898dc515a6ba172d1730396c348b1892c41",
+    "git_bundle_verified": true,
+    "download_hash_verified": true,
+    "encryption": "AES256"
+  },
+  "secrets_included": false
+}

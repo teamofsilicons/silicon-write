@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-18T14:23:34.940534+00:00",
+  "recorded_at": "2026-10-18T16:08:46.054380+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_GQEp8wVfDyYhqDJBSugiBMoDoN9J",
+    "deployment_id": "dpl_9ZX31A31ae91BdTA91jvWmkNarrW",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,12 +13,12 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "63d7ea0d288d19ba9eee5e8352dcdba5c41a7793",
+    "revision": "fb1e798fb0f9cc67ea2ba7b54161eb2ed54c22e8",
     "browser_checks": [
-      "Live gutter uses absolute document-relative positioning",
-      "Scrolling moved icon from 305.9453125 to 255.9453125 and paragraph from 304.796875 to 254.796875: both exactly -50px",
-      "Alignment preserved after restoring normal viewport",
-      "Document text unchanged; Connected and synced"
+      "Full Saket UDD hover label visible below presence avatar",
+      "Shift+Tab from Format focuses the avatar and opens the name",
+      "Escape dismisses tooltip",
+      "Document remains Connected and synced"
     ]
   },
   "api": {
@@ -170,5 +170,6 @@
   "tab_polish_release_receipt": "tab-polish-release-20261018.json",
   "comment_dismiss_tooltips_release_receipt": "comment-dismiss-tooltips-release-20261018.json",
   "comment_drafts_release_receipt": "comment-drafts-release-20261018.json",
-  "comment_anchor_release_receipt": "comment-anchor-release-20261018.json"
+  "comment_anchor_release_receipt": "comment-anchor-release-20261018.json",
+  "presence_tooltip_release_receipt": "presence-tooltip-release-20261018.json"
 }
