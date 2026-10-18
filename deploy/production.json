@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-18T14:10:55.794405+00:00",
+  "recorded_at": "2026-10-18T14:23:34.940534+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_6vd4gyjkNuEG4o9vT1siE7DD4NSN",
+    "deployment_id": "dpl_GQEp8wVfDyYhqDJBSugiBMoDoN9J",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,12 +13,12 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "4aecb9c39c053abe72bc78dfc841e9ca2bf3f67f",
+    "revision": "63d7ea0d288d19ba9eee5e8352dcdba5c41a7793",
     "browser_checks": [
-      "Typed an unposted section comment, clicked outside, reopened and observed exact draft text",
-      "Switched to another document tab and back; same passage restored exact draft",
-      "Discard removed the temporary verification draft",
-      "Document content unchanged and Connected and synced"
+      "Live gutter uses absolute document-relative positioning",
+      "Scrolling moved icon from 305.9453125 to 255.9453125 and paragraph from 304.796875 to 254.796875: both exactly -50px",
+      "Alignment preserved after restoring normal viewport",
+      "Document text unchanged; Connected and synced"
     ]
   },
   "api": {
@@ -169,5 +169,6 @@
   "folder_tabs_release_receipt": "folder-tabs-release-20261018.json",
   "tab_polish_release_receipt": "tab-polish-release-20261018.json",
   "comment_dismiss_tooltips_release_receipt": "comment-dismiss-tooltips-release-20261018.json",
-  "comment_drafts_release_receipt": "comment-drafts-release-20261018.json"
+  "comment_drafts_release_receipt": "comment-drafts-release-20261018.json",
+  "comment_anchor_release_receipt": "comment-anchor-release-20261018.json"
 }

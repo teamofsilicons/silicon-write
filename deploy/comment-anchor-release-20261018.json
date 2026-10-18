@@ -1,0 +1,54 @@
+{
+  "recorded_at": "2026-10-18T14:23:34.940534+00:00",
+  "revision": "63d7ea0d288d19ba9eee5e8352dcdba5c41a7793",
+  "release_status": "live",
+  "changes": [
+    "Section comment icon anchored to document column instead of viewport",
+    "Re-measures hovered block after editor transactions, resize and content load",
+    "Resolves current block position when clicked",
+    "Uses shared Silicon UI Button; narrow-screen gutter stays hidden"
+  ],
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment_id": "dpl_GQEp8wVfDyYhqDJBSugiBMoDoN9J",
+    "deployment_url": "https://silicon-write-crecbzgc7-saketdev12-5675s-projects.vercel.app",
+    "state": "READY",
+    "source_revision": "63d7ea0d288d19ba9eee5e8352dcdba5c41a7793"
+  },
+  "validation": {
+    "web_unit_tests": 96,
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_build": true,
+    "note": "Full checks passed for main fix; final mobile selector and observer cleanup passed typecheck and scoped lint plus Vercel production build and TypeScript validation.",
+    "local_browser": [
+      "Scrolling moves gutter and paragraph exactly -30px with constant 1.1484375px top offset",
+      "Resizing viewport keeps gutter 44px left of paragraph",
+      "Clicking after scroll and resize opens comment on original paragraph",
+      "Already-mounted gutter has display:none parent and no client rects at 390px width"
+    ],
+    "production_browser": [
+      "Live gutter uses absolute document-relative positioning",
+      "Scrolling moved icon from 305.9453125 to 255.9453125 and paragraph from 304.796875 to 254.796875: both exactly -50px",
+      "Alignment preserved after restoring normal viewport",
+      "Document text unchanged; Connected and synced"
+    ],
+    "browser_method": "Manual CUA in authenticated Chrome",
+    "existing_production_content_changed": false,
+    "temporary_viewport_reset": true,
+    "screenshots": [
+      ".dev/design-reference/comment-icon-anchored-live-20261018.png"
+    ]
+  },
+  "limitations": [
+    "Standalone Playwright suite not rerun; browser checks used CUA"
+  ],
+  "source_backup": {
+    "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-63d7ea0.bundle",
+    "sha256": "3c65d82001996da3685682819b3150aa8a4e78666558d2619ff9bf6a3a586e80",
+    "git_bundle_verified": true,
+    "download_hash_verified": true,
+    "encryption": "AES256"
+  },
+  "secrets_included": false
+}
