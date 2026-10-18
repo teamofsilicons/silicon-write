@@ -89,7 +89,7 @@ export function OpenDocDialog({ open, onOpenChange, onOpen, openDocIds }: {
       className={styles.dialog}
       title="Open a doc"
       description="Find a doc and open it in a tab."
-      onEscapeKeyDown={event => { event.preventDefault(); onOpenChange(false); }}
+      onEscapeKeyDown={event => { event.preventDefault(); if (!event.isComposing && event.keyCode !== 229) onOpenChange(false); }}
       onOpenAutoFocus={event => {
         event.preventDefault();
         setSearch("");
