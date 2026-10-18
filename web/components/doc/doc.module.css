@@ -344,12 +344,17 @@
 .pdfPageNumber { position: absolute; right: var(--space-3); bottom: var(--space-2); font: 500 .72rem/1 var(--font-pixel); color: var(--text-faint); }
 
 /* The margin button for commenting on a section. */
-.sectionGutter {
+.sectionGutterRail { position: absolute; inset: 0; pointer-events: none; }
+.sectionGutter.sectionGutter {
+  position: absolute;
+  pointer-events: auto;
   z-index: 15;
   display: inline-grid;
   place-items: center;
   width: 30px;
   height: 30px;
+  min-height: 30px;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -358,4 +363,4 @@
   box-shadow: var(--shadow-resting);
 }
 .sectionGutter:hover { color: var(--foreground); border-color: var(--border-strong); }
-@media (max-width: 860px) { .sectionGutter { display: none; } }
+@media (max-width: 860px) { .sectionGutterRail { display: none; } }
