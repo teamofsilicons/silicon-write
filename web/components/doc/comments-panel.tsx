@@ -20,6 +20,7 @@ import { keys, useSuggestions } from "@/lib/write/queries";
 import { displayName, type Account, type Doc, type Thread } from "@/lib/write/types";
 import { useMentionPeople } from "./selection-comment";
 import { useThreadRead } from "./use-thread-read";
+import { useCommentDraft } from "./use-comment-draft";
 import styles from "./doc.module.css";
 import commentStyles from "./comments.module.css";
 
@@ -47,6 +48,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   const ref = useRef<HTMLDivElement>(null);
   useThreadRead(docId, thread, ref);
   const comments = useMemo(() => toThreadComments(thread), [thread]);
+  const replyDraft = useCommentDraft(account.uuid, docId, `reply:${thread.id}`);
   useEffect(() => {
     if (!active || !scrollToActive || !ref.current) return;
     const panel = ref.current.closest("aside");
@@ -61,15 +63,22 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   const refresh = () => client.invalidateQueries({ queryKey: ["threads", docId] });
 
   const onChange = async (_next: ThreadComment[], event: CommentThreadEvent) => {
+    const submittedDraft = replyDraft.value;
     try {
-      if (event.type === "reply") await api.post(`/v1/threads/${seg(thread.id)}/comments`, { body: event.comment.body });
+      if (event.type === "reply") {
+        await api.post(`/v1/threads/${seg(thread.id)}/comments`, { body: event.comment.body });
+        replyDraft.clear(submittedDraft);
+      }
       if (event.type === "edit") await api.patch(`/v1/comments/${seg(event.id)}`, { body: event.body });
       if (event.type === "delete") await api.delete(`/v1/comments/${seg(event.id)}`);
       if (event.type === "react") await api.post(`/v1/comments/${seg(event.id)}/reactions`, { emoji: event.emoji });
     } catch (error) {
       notifyError(error, "That didn't save");
+      refresh();
+      return false;
     }
     refresh();
+    return true;
   };
 
   const quote = thread.orphaned ? thread.quote : thread.current_quote ?? thread.quote;
@@ -87,7 +96,9 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
       {onActivate ? <button type="button" className={commentStyles.threadQuote} title="Show comment in document" onClick={onActivate}>{quoteContent}</button> : <div className={commentStyles.threadQuote}>{quoteContent}</div>}
       <CommentThread
         comments={comments}
-        onCommentsChange={(next, event) => void onChange(next, event)}
+        onCommentsChange={onChange}
+        replyDraft={replyDraft.value.text}
+        onReplyDraftChange={text => replyDraft.setValue({ text, mentions: [] })}
         currentUser={{ id: account.id || account.uuid, name: displayName(account), avatar: account.pfp_url || undefined }}
         people={people.map(p => ({ id: p.id, name: p.id, avatar: p.avatar }))}
         resolved={thread.status === "resolved"}

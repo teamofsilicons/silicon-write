@@ -375,10 +375,10 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               pending={pending}
               onPending={setPending}
               onStart={range => startComment({ range })}
-              onCreated={thread => {
+              onCreated={(thread, activate) => {
                 client.setQueryData<{ threads: Thread[] }>(keys.threads(docId, "all"), current => ({ threads: [...(current?.threads ?? []).filter(item => item.id !== thread.id), thread] }));
                 client.invalidateQueries({ queryKey: ["threads", docId] });
-                openThread(thread.id);
+                if (activate) openThread(thread.id);
               }}
             />
           ) : null}

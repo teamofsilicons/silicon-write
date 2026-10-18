@@ -14,6 +14,8 @@ import { api, seg } from "@/lib/client/api";
 import { notifyError } from "@/lib/notify";
 import { useSharing } from "@/lib/write/queries";
 import type { Account, Anchor, Thread } from "@/lib/write/types";
+import { commentAnchorTarget } from "@/lib/write/comment-drafts";
+import { useCommentDraft } from "./use-comment-draft";
 import styles from "./doc.module.css";
 import commentStyles from "./comments.module.css";
 
@@ -67,16 +69,19 @@ export function SelectionComment({
   pending: PendingComment | null;
   onPending: (pending: PendingComment | null) => void;
   onStart: (range?: { from: number; to: number }) => void;
-  onCreated: (thread: Thread) => void;
+  onCreated: (thread: Thread, activate: boolean) => void;
 }) {
   const [pill, setPill] = useState<{ top: number; left: number } | null>(null);
-  const [value, setValue] = useState<MentionValue>({ text: "", mentions: [] });
+  const { value, setValue, clear } = useCommentDraft(account?.uuid ?? null, docId, pending ? commentAnchorTarget(pending.anchor) : null);
   const [sending, setSending] = useState(false);
   const [maxRows, setMaxRows] = useState(8);
   const [composerPosition, setComposerPosition] = useState<{ pending: PendingComment; top: number; left: number; width: number } | null>(null);
   const input = useRef<MentionInputHandle>(null);
   const card = useRef<HTMLDivElement>(null);
+  const activePending = useRef(pending);
   const people = useMentionPeople(docId, Boolean(account));
+
+  useLayoutEffect(() => { activePending.current = pending; }, [pending]);
 
   // Watch the selection (the page's own, so it works in reading mode too, where the editor isn't editable): readers
   // get the comment box straight away; editors a button.
@@ -153,16 +158,15 @@ export function SelectionComment({
   // Dismiss on a click away without moving focus from the place being clicked.
   // Mention suggestions live inside the card, so choosing one keeps it open.
   useEffect(() => {
-    if (!pending || sending) return;
+    if (!pending) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!(event.target instanceof Node) || card.current?.contains(event.target)) return;
       onPending(null);
-      setValue({ text: "", mentions: [] });
       setPill(null);
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [pending, onPending, sending]);
+  }, [pending, onPending]);
 
   // Escape closes the box after a mention picker or input composition has handled it.
   useEffect(() => {
@@ -170,7 +174,6 @@ export function SelectionComment({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229) {
         onPending(null);
-        setValue({ text: "", mentions: [] });
         editor?.commands.focus();
       }
     };
@@ -184,9 +187,11 @@ export function SelectionComment({
     setSending(true);
     try {
       const thread = await api.post<Thread>(`/v1/docs/${seg(docId)}/threads`, { anchor: pending.anchor, body });
-      onCreated(thread);
-      onPending(null);
-      setValue({ text: "", mentions: [] });
+      // A late response must not erase newer writing or reopen a dismissed composer.
+      const cleared = clear(current);
+      const activate = activePending.current === pending && cleared;
+      onCreated(thread, activate);
+      if (activate) onPending(null);
     } catch (error) {
       notifyError(error, "The comment wasn't posted");
     } finally {
@@ -232,8 +237,8 @@ export function SelectionComment({
           />
           <div className={commentStyles.composerActions}>
             <span className={commentStyles.composerHint}>Enter to post · Shift+Enter for a new line</span>
-            <Button variant="ghost" size="sm" onClick={() => { onPending(null); setValue({ text: "", mentions: [] }); }}>
-              Cancel
+            <Button variant="ghost" size="sm" disabled={sending} onClick={() => { clear(); onPending(null); }}>
+              {value.text ? "Discard" : "Cancel"}
             </Button>
             <Button variant="primary" size="sm" className={commentStyles.inkButton} loading={sending} disabled={!value.text.trim()} onClick={() => void submit()}>
               Comment

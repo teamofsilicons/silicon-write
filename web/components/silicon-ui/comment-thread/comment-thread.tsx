@@ -132,7 +132,7 @@ const withDefaults = <T extends object>(defaults: Required<T>, given?: T): Requi
 export interface CommentThreadProps {
   comments?: ThreadComment[];
   defaultComments?: ThreadComment[];
-  onCommentsChange?: (comments: ThreadComment[], event: CommentThreadEvent) => void;
+  onCommentsChange?: (comments: ThreadComment[], event: CommentThreadEvent) => void | boolean | Promise<void | boolean>;
   /** The person writing. Their comments can be edited and deleted. */
   currentUser: CommentAuthor;
   /** People who can be mentioned. Defaults to everyone in the thread. */
@@ -145,6 +145,9 @@ export interface CommentThreadProps {
   /** Emoji offered by the reaction picker. */
   reactions?: string[];
   placeholder?: string;
+  /** Optional persisted reply text. A controlled caller clears it after the server accepts the reply. */
+  replyDraft?: string;
+  onReplyDraftChange?: (text: string) => void;
   /** Replies deeper than this attach to the deepest allowed parent. Defaults to 2. */
   maxDepth?: number;
   /** Label for comments written now. */
@@ -284,7 +287,9 @@ interface ComposerProps {
   submitLabel: string;
   autoFocus?: boolean;
   focusKey?: number;
-  onSubmit: (body: string) => void;
+  onSubmit: (body: string) => void | boolean | Promise<void | boolean>;
+  value?: string;
+  onValueChange?: (text: string) => void;
   onCancel?: () => void;
   leading?: ReactNode;
   compact?: boolean;
@@ -293,11 +298,21 @@ interface ComposerProps {
 }
 
 /** A growing text field with @mention suggestions. ⌘ or Ctrl + Enter sends; Escape cancels. */
-function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, focusKey, onSubmit, onCancel, leading, compact, cancelLabel, mentionsLabel }: ComposerProps) {
+function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, focusKey, onSubmit, onCancel, leading, compact, cancelLabel, mentionsLabel, value, onValueChange }: ComposerProps) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const reduced = useReducedFlag();
   const field = useRef<HTMLTextAreaElement>(null);
-  const [text, setText] = useState(initial);
+  const [internalText, setInternalText] = useState(initial);
+  const text = value ?? internalText;
+  const latestText = useRef(text);
+  const pending = useRef(false);
+  const [sending, setSending] = useState(false);
+  useLayoutEffect(() => { latestText.current = text; }, [text]);
+  const setText = (next: string) => {
+    latestText.current = next;
+    if (value === undefined) setInternalText(next);
+    onValueChange?.(next);
+  };
   const [query, setQuery] = useState<{ start: number; term: string } | null>(null);
   const [active, setActive] = useState(0);
   const suggestions = useMemo(() => {
@@ -332,12 +347,26 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
     requestAnimationFrame(() => { node.focus(); node.setSelectionRange(at, at); });
   };
 
-  const send = () => {
-    const body = text.trim();
-    if (!body) return;
-    onSubmit(body);
-    setText("");
-    setQuery(null);
+  const send = async () => {
+    const submitted = latestText.current;
+    const body = submitted.trim();
+    if (!body || pending.current) return;
+    pending.current = true;
+    setSending(true);
+    try {
+      const accepted = await onSubmit(body);
+      if (accepted !== false) {
+        // Controlled drafts are cleared by their owner only after acknowledgement.
+        // Keep any newer text typed while this request was in flight.
+        if (value === undefined && latestText.current === submitted) setText("");
+        if (latestText.current === submitted || latestText.current === "") setQuery(null);
+      }
+    } catch {
+      // The caller reports the failure; keep the text available to retry.
+    } finally {
+      pending.current = false;
+      setSending(false);
+    }
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -346,7 +375,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
       if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); insert(suggestions[active]!); return; }
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setQuery(null); return; }
     }
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); send(); return; }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void send(); return; }
     if (event.key === "Escape" && onCancel) { event.preventDefault(); event.stopPropagation(); onCancel(); }
   };
 
@@ -370,7 +399,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
     </div>
     <div className={styles.composerActions}>
       {onCancel && <button type="button" className={styles.ghost} onClick={onCancel}>{cancelLabel}</button>}
-      <button type="button" className={styles.send} disabled={!text.trim() || text.trim() === initial.trim()} onClick={send}>{submitLabel}</button>
+      <button type="button" className={styles.send} disabled={sending || !text.trim() || text.trim() === initial.trim()} onClick={() => void send()}>{submitLabel}</button>
     </div>
   </div>;
 }
@@ -379,7 +408,7 @@ type Ui = { editing: string | null; confirming: string | null; picker: string | 
 
 export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(function CommentThread({
   comments, defaultComments = [], onCommentsChange, currentUser, people, resolved, defaultResolved = false, onResolvedChange,
-  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", maxDepth = 2, nowLabel = "Just now", labels, presentation = "card", className,
+  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", replyDraft, onReplyDraftChange, maxDepth = 2, nowLabel = "Just now", labels, presentation = "card", className,
 }, forwardedRef) {
   const t = withDefaults(DEFAULT_LABELS, labels);
   const reduced = useReducedFlag();
@@ -399,7 +428,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
 
   const commit = useCallback((next: ThreadComment[], event: CommentThreadEvent) => {
     if (comments === undefined) setInternal(next);
-    onCommentsChange?.(next, event);
+    return onCommentsChange?.(next, event);
   }, [comments, onCommentsChange]);
 
   const setResolved = (next: boolean) => {
@@ -410,7 +439,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
     requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(next ? "[data-reopen]" : "[data-resolve]")?.focus({ preventScroll: true }));
   };
 
-  const addReply = (body: string) => {
+  const addReply = async (body: string) => {
     const comment: ThreadComment = { id: newId(), author: currentUser, body, createdAt: nowLabel, reactions: [] };
     let parentId: string | null = null;
     if (replyTo) {
@@ -419,8 +448,9 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
     }
     const next = parentId ? mapTree(list, parentId, parent => ({ ...parent, replies: [...(parent.replies ?? []), comment] })) : [...list, comment];
     if (parentId) setUi(current => ({ ...current, collapsed: { ...current.collapsed, [parentId!]: false } }));
-    commit(next, { type: "reply", comment, parentId });
-    setReplyTo(null);
+    const accepted = await commit(next, { type: "reply", comment, parentId });
+    if (accepted !== false) setReplyTo(current => current === replyTo ? null : current);
+    return accepted;
   };
 
   const edit = (id: string, body: string) => {
@@ -588,7 +618,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
                   </span>
                 </motion.div>}
               </AnimatePresence>
-              <Composer people={mentionable} placeholder={placeholder} submitLabel={t.send} cancelLabel={t.cancel} mentionsLabel={t.mentions} focusKey={focusKey} onSubmit={addReply}
+              <Composer people={mentionable} value={replyDraft} onValueChange={onReplyDraftChange} placeholder={placeholder} submitLabel={t.send} cancelLabel={t.cancel} mentionsLabel={t.mentions} focusKey={focusKey} onSubmit={addReply}
                 onCancel={replyTo ? () => setReplyTo(null) : undefined} leading={presentation === "margin" ? undefined : <Avatar author={currentUser} />} />
             </div>
           </motion.div>}
