@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-10-18T14:10:55.794405+00:00",
+  "revision": "4aecb9c39c053abe72bc78dfc841e9ca2bf3f67f",
+  "release_status": "live",
+  "changes": [
+    "Comment drafts retained when clicking away or pressing Escape",
+    "Drafts isolated by account, document and passage or thread in browser session storage",
+    "Text and structured mentions restore after reload",
+    "Focused and All comments share reply drafts",
+    "Only successful matching submissions clear drafts; late responses preserve newer typing",
+    "Discard explicitly clears an unposted comment draft"
+  ],
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment_id": "dpl_6vd4gyjkNuEG4o9vT1siE7DD4NSN",
+    "deployment_url": "https://silicon-write-px47wrht6-saketdev12-5675s-projects.vercel.app",
+    "state": "READY",
+    "source_revision": "4aecb9c39c053abe72bc78dfc841e9ca2bf3f67f"
+  },
+  "validation": {
+    "web_unit_tests": 96,
+    "new_draft_tests": 11,
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_build": true,
+    "local_browser": [
+      "Text and mention restored after clicking outside and reopening same passage",
+      "Different passage opened empty composer",
+      "Draft restored after full reload",
+      "Discard removed saved draft",
+      "Reply restored after focused thread dismissed and reopened",
+      "Same reply appeared in All comments; other thread reply boxes remained empty"
+    ],
+    "production_browser": [
+      "Typed an unposted section comment, clicked outside, reopened and observed exact draft text",
+      "Switched to another document tab and back; same passage restored exact draft",
+      "Discard removed the temporary verification draft",
+      "Document content unchanged and Connected and synced"
+    ],
+    "browser_method": "Manual CUA in authenticated Chrome",
+    "existing_production_content_changed": false,
+    "production_comments_posted": 0,
+    "temporary_test_draft_removed": true,
+    "screenshots": [
+      ".dev/design-reference/comment-draft-restored-live-20261018.png"
+    ]
+  },
+  "limitations": [
+    "Drafts are local to the browser tab session; no cross-device draft syncing",
+    "Existing-comment edit drafts are unchanged",
+    "Standalone Playwright suite not rerun; browser checks used CUA"
+  ],
+  "source_backup": {
+    "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-4aecb9c.bundle",
+    "sha256": "19647f8c632a33125ee0f605c953b07e0e8867148fe9990f7879566ea38b4030",
+    "git_bundle_verified": true,
+    "download_hash_verified": true,
+    "encryption": "AES256"
+  },
+  "secrets_included": false
+}

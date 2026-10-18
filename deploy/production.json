@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-18T11:41:04.497733+00:00",
+  "recorded_at": "2026-10-18T14:10:55.794405+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_CEtbah41pmABTHPUQjDuT1La9FWq",
+    "deployment_id": "dpl_6vd4gyjkNuEG4o9vT1siE7DD4NSN",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,13 +13,12 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "f18c160c33f41bfe39b2fa8f16e6db308e7d3545",
+    "revision": "4aecb9c39c053abe72bc78dfc841e9ca2bf3f67f",
     "browser_checks": [
-      "Section comment composer stayed open when clicked inside and closed when clicking the document",
-      "Document kept the clicked cursor position after dismissal",
-      "Hovering Try displayed Option Shift 2 while editor retained focus",
-      "Hovering plus displayed Option Shift O",
-      "Document content unchanged and Connected and synced after deployment"
+      "Typed an unposted section comment, clicked outside, reopened and observed exact draft text",
+      "Switched to another document tab and back; same passage restored exact draft",
+      "Discard removed the temporary verification draft",
+      "Document content unchanged and Connected and synced"
     ]
   },
   "api": {
@@ -169,5 +168,6 @@
   "comment_share_release_receipt": "comment-share-release-20261017.json",
   "folder_tabs_release_receipt": "folder-tabs-release-20261018.json",
   "tab_polish_release_receipt": "tab-polish-release-20261018.json",
-  "comment_dismiss_tooltips_release_receipt": "comment-dismiss-tooltips-release-20261018.json"
+  "comment_dismiss_tooltips_release_receipt": "comment-dismiss-tooltips-release-20261018.json",
+  "comment_drafts_release_receipt": "comment-drafts-release-20261018.json"
 }
