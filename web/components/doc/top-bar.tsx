@@ -181,7 +181,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
         {doc.kind === "doc" && !doc.deleted_at ? <SyncState live={live} error={liveError} /> : null}
       </div>
       <div className={styles.topRight}>
-        {people.length ? <div className={styles.presence}><AvatarGroup members={people.map(p => ({ name: p.name, src: p.src, status: "online" }))} max={4} size="sm" label="Here now" /></div> : null}
+        {people.length ? <div className={styles.presence}><AvatarGroup members={people.map(p => ({ name: p.name, src: p.src, status: "online" }))} max={4} size="sm" label="Here now" tooltipSide="bottom" /></div> : null}
         {canFormat ? (
           <Button variant="ghost" size="sm" className={styles.formatToggle} aria-label="Format" aria-expanded={formatOpen} aria-controls="doc-formatting" disabled={!editor} onClick={onFormat}>
             <TypeIcon size={16} aria-hidden="true" /><span className={styles.actionLabel}>Format</span>
