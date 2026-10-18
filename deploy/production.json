@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-17T16:24:37.288340+00:00",
+  "recorded_at": "2026-10-18T10:13:22.008369+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_Ed4S1Kp2DgfcNQgMAd4yposwzsaz",
+    "deployment_id": "dpl_5hjEZxCxuL3p1tMdjt91tc9fmB8a",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -12,9 +12,14 @@
       "/robots.txt",
       "/llms.txt"
     ],
-    "interactive_production_browser_verified": false,
-    "revision": "598895f22d675849170e3f77b070ae31a2e2f7a2",
-    "browser_checks": []
+    "interactive_production_browser_verified": true,
+    "revision": "0971a8b8901e827369185ac6561176c1c2a22be7",
+    "browser_checks": [
+      "Homepage multi-selection and two document tabs",
+      "Tab restoration after refresh",
+      "Focused comment and All comments",
+      "Connected and synced existing document"
+    ]
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
@@ -160,5 +165,6 @@
     ],
     "browser_suite": "Manual CUA in requested Chrome session; standalone Playwright suite not rerun"
   },
-  "comment_share_release_receipt": "comment-share-release-20261017.json"
+  "comment_share_release_receipt": "comment-share-release-20261017.json",
+  "folder_tabs_release_receipt": "folder-tabs-release-20261018.json"
 }

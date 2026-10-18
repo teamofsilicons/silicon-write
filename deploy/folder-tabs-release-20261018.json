@@ -1,0 +1,164 @@
+{
+  "recorded_at": "2026-10-18T10:13:22.007969+00:00",
+  "revision": "0971a8b8901e827369185ac6561176c1c2a22be7",
+  "release_status": "live",
+  "changes": [
+    "Open multiple files or a folder in one selection, preserving nested folders",
+    "Skip unsupported and hidden files, retain successful imports, and retry only known pre-creation failures",
+    "Select multiple library documents and open them together in application tabs",
+    "Retain open documents and pending edits across tab switches with account-scoped caches",
+    "Open a single comment beside its passage or browse all comment conversations",
+    "Preserve unread state until the displayed conversation is read",
+    "Retain rejected local edits and show their save failure after switching tabs"
+  ],
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "source_revision": "0971a8b8901e827369185ac6561176c1c2a22be7",
+    "deployment_id": "dpl_5hjEZxCxuL3p1tMdjt91tc9fmB8a",
+    "deployment_url": "https://silicon-write-om85gescd-saketdev12-5675s-projects.vercel.app",
+    "state": "READY",
+    "interactive_production_browser_verified": true
+  },
+  "api": {
+    "deployment_required": false,
+    "note": "This release changes the web app and uses the existing folders, document import, live sync, comments and thread-read APIs."
+  },
+  "validation": {
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_unit_tests": {
+      "passed": 75,
+      "failed": 0
+    },
+    "web_build": true,
+    "static_checks_evidence": "pnpm typecheck, pnpm lint, pnpm test, and isolated production build exited 0 for the committed source revision.",
+    "local_api": {
+      "status": "passed",
+      "checked_at": "2026-10-18T09:58:04.716Z",
+      "evidence": ".dev/folder-tabs-api.json",
+      "engine": "web/lib/write/import-files.ts planImport + runImportBatch",
+      "counts": {
+        "selected": 6,
+        "imported": 4,
+        "skipped": 2,
+        "folders_created": 3
+      },
+      "checks": [
+        "nested hierarchy via library API",
+        "source strings in each exported Markdown",
+        "file stem titles",
+        "owner and creator attribution",
+        "no hidden or unsupported folders",
+        "same filenames in distinct folders",
+        "root shared as editor"
+      ],
+      "duplicate_filenames_have_distinct_ids_and_folders": true,
+      "root": {
+        "id": "f_ra4h96nidJwdrvhwFoQL",
+        "name": "Field notes",
+        "url": "http://localhost:4370/library/f_ra4h96nidJwdrvhwFoQL"
+      },
+      "comment_fixture": {
+        "doc_id": "d_nSnmBnyUU5hJU24cx9fz",
+        "url": "http://localhost:4370/d/d_nSnmBnyUU5hJU24cx9fz",
+        "author": "c:foldercheck_7664350e",
+        "threads": [
+          {
+            "id": "t_d3sqW8dGSMw3uxXbEjbY",
+            "quote": "good draft",
+            "body": "Keep the opening short and welcoming.",
+            "activity_version": 1
+          },
+          {
+            "id": "t_wxFYGNWBeKAkJDTiHR96",
+            "quote": "Comments belong",
+            "body": "This note should stay unread while the other thread is open.",
+            "activity_version": 1
+          }
+        ]
+      }
+    },
+    "local_browser": {
+      "status": "passed_with_native_folder_picker_limit",
+      "method": "CUA browser checks performed by the root agent",
+      "checks": [
+        {
+          "name": "Multiple-file picker imports files; completed import opens a saved doc in a tab",
+          "status": "passed"
+        },
+        {
+          "name": "Library selection opens multiple documents together",
+          "status": "passed"
+        },
+        {
+          "name": "Two previously opened cached documents remain accessible while offline",
+          "status": "passed"
+        },
+        {
+          "name": "Unsaved text survives switching tabs, then syncs and remains after reload",
+          "status": "passed"
+        },
+        {
+          "name": "A focused comment displays one conversation while All comments displays three cards",
+          "status": "passed"
+        },
+        {
+          "name": "Reading one focused conversation leaves another conversation unread",
+          "status": "passed"
+        },
+        {
+          "name": "Resolve and reopen preserve the comment conversation",
+          "status": "passed"
+        },
+        {
+          "name": "Grouped comment picker supports Enter and Escape",
+          "status": "passed"
+        },
+        {
+          "name": "Focused comment layout fits a 390px viewport without horizontal overflow",
+          "status": "passed"
+        }
+      ],
+      "native_folder_picker": {
+        "status": "not_fully_verified",
+        "reason": "The browser automation directory chooser call returned without populating selected files. The directory selection step was not demonstrated end to end.",
+        "separate_verified_evidence": "The native multiple-file UI worked. The exact import planner and runner imported the directory fixture through the real local API: four Markdown files, two skipped files, and three folders with hierarchy and content verified."
+      }
+    },
+    "production_browser": {
+      "status": "passed",
+      "method": "Authenticated Chrome through CUA",
+      "checks": [
+        "Homepage shows Open files and Open folder controls",
+        "Select all selects two existing documents; Open selected creates both tabs",
+        "Both tabs render their own document and switch back successfully",
+        "Reload restores both document tabs",
+        "Profile-photo marker opens exactly one thread card beside the passage",
+        "All comments displays both production thread cards",
+        "Document returns Connected and synced"
+      ],
+      "screenshot": ".dev/design-reference/folder-tabs-comments-live-20261018.png",
+      "existing_user_content_changed": false
+    },
+    "public_https": {
+      "/": 200,
+      "/docs": 200,
+      "api/readyz": 200
+    }
+  },
+  "limitations": [
+    "Native directory selection has not been fully verified through the browser tool; directory planning, creation, hierarchy and content were verified separately against the local API.",
+    "Ambiguous network or server failures are not automatically retried because the import endpoints do not support idempotency; confirmed successful docs remain available.",
+    "The standalone Playwright suite was not rerun; browser validation used CUA in the requested Chrome session."
+  ],
+  "source_backup": {
+    "status": "verified",
+    "revision": "0971a8b8901e827369185ac6561176c1c2a22be7",
+    "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-0971a8b.bundle",
+    "sha256": "31941535128dd184a7fdebafd1ddae7f6eff5109f9d2e7fd40a16f01652db42e",
+    "git_bundle_verified": true,
+    "download_hash_verified": true,
+    "encryption": "AES256"
+  },
+  "secrets_included": false
+}
