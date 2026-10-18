@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-18T10:38:36.350414+00:00",
+  "recorded_at": "2026-10-18T11:41:04.497733+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_73M7qprgmhx7hQTQujdJzc4biGha",
+    "deployment_id": "dpl_CEtbah41pmABTHPUQjDuT1La9FWq",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,13 +13,13 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "46cb526bd8e39019469caa7a488894b8cd14b709",
+    "revision": "f18c160c33f41bfe39b2fa8f16e6db308e7d3545",
     "browser_checks": [
-      "Plus picker searched and opened Try without library navigation",
-      "Alt+Shift+1 switched from editor to first document",
-      "Alt+Shift+O opened picker and Escape dismissed it",
-      "Two document tabs survived reload",
-      "Final deployed tab has one parent focus outline, zero child outline and square bottom corners"
+      "Section comment composer stayed open when clicked inside and closed when clicking the document",
+      "Document kept the clicked cursor position after dismissal",
+      "Hovering Try displayed Option Shift 2 while editor retained focus",
+      "Hovering plus displayed Option Shift O",
+      "Document content unchanged and Connected and synced after deployment"
     ]
   },
   "api": {
@@ -168,5 +168,6 @@
   },
   "comment_share_release_receipt": "comment-share-release-20261017.json",
   "folder_tabs_release_receipt": "folder-tabs-release-20261018.json",
-  "tab_polish_release_receipt": "tab-polish-release-20261018.json"
+  "tab_polish_release_receipt": "tab-polish-release-20261018.json",
+  "comment_dismiss_tooltips_release_receipt": "comment-dismiss-tooltips-release-20261018.json"
 }

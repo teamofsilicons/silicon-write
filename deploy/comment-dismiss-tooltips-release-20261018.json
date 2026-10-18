@@ -1,0 +1,56 @@
+{
+  "recorded_at": "2026-10-18T11:41:04.497733+00:00",
+  "revision": "f18c160c33f41bfe39b2fa8f16e6db308e7d3545",
+  "release_status": "live",
+  "changes": [
+    "Comment composer dismisses on outside pointer interaction; mention selection remains inside",
+    "Submission in flight retains its draft; Escape respects composition and already-handled events",
+    "Document tabs and plus show platform-aware shortcut tooltips on hover and focus"
+  ],
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment_id": "dpl_CEtbah41pmABTHPUQjDuT1La9FWq",
+    "deployment_url": "https://silicon-write-he2k884t6-saketdev12-5675s-projects.vercel.app",
+    "state": "READY",
+    "source_revision": "f18c160c33f41bfe39b2fa8f16e6db308e7d3545"
+  },
+  "validation": {
+    "web_unit_tests": 85,
+    "web_typecheck": true,
+    "web_lint": true,
+    "web_build": true,
+    "note": "Full checks passed before final submission guard; final source passed typecheck and scoped lint plus Vercel build and TypeScript validation.",
+    "local_browser": [
+      "Composer closes on document click in editing and reading mode",
+      "Mention picker click preserves composer",
+      "Plus click dismisses composer and opens document picker",
+      "Tab and plus hover display Apple shortcut symbols"
+    ],
+    "production_browser": [
+      "Section comment composer stayed open when clicked inside and closed when clicking the document",
+      "Document kept the clicked cursor position after dismissal",
+      "Hovering Try displayed Option Shift 2 while editor retained focus",
+      "Hovering plus displayed Option Shift O",
+      "Document content unchanged and Connected and synced after deployment"
+    ],
+    "browser_method": "Manual CUA in authenticated Chrome",
+    "existing_production_content_changed": false,
+    "screenshots": [
+      ".dev/design-reference/comment-dismiss-and-tab-hint-live-20261018.png"
+    ]
+  },
+  "observations": [
+    "Initial production reload timed out; one retry loaded the deployed document successfully."
+  ],
+  "limitations": [
+    "Standalone Playwright suite not rerun; browser checks used CUA."
+  ],
+  "source_backup": {
+    "s3_uri": "s3://silicon-write-production-backups-qgkxwl8wkwl0/releases/source/silicon-write-source-f18c160.bundle",
+    "sha256": "389708d0fdd0f6f91063ecfb9de9d462d3ac02a77af94612cac697ab707df622",
+    "git_bundle_verified": true,
+    "download_hash_verified": true,
+    "encryption": "AES256"
+  },
+  "secrets_included": false
+}
