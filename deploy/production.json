@@ -4,7 +4,7 @@
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_DbcT3N2MGRkMB68w6wtdsF6WMVUr",
+    "deployment_id": "dpl_Hgm5NssxEXueDYmcPEbJWWGfj1Zt",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,10 +13,11 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "eae448df5dbd2947a8bffffad309ccfa3793b21d",
+    "revision": "3723f85d8ff9503a57212bc3cd48745850f2cce1",
     "browser_checks": [
       "All comments heading and filters stay fixed on desktop and mobile",
-      "Focused browser passage visible to Silicon CLI context; blur clears location"
+      "Focused browser passage visible to Silicon CLI context; blur clears location",
+      "Editor caret matches text color on the live document (rgb(30, 30, 28))"
     ]
   },
   "api": {

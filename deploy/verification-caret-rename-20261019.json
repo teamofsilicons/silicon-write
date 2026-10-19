@@ -1,0 +1,86 @@
+{
+  "checked_at": "2026-10-19T11:08:53.665875+00:00",
+  "source_revision": "3723f85d8ff9503a57212bc3cd48745850f2cce1",
+  "deployment_id": "dpl_Hgm5NssxEXueDYmcPEbJWWGfj1Zt",
+  "url": "https://write.teamofsilicons.com",
+  "previous_deployment_id": "dpl_DbcT3N2MGRkMB68w6wtdsF6WMVUr",
+  "changes": [
+    "Editor caret uses currentColor instead of accent blue.",
+    "Rename uses successful PATCH response immediately; canceled stale reads and background reconciliation cannot hold title in saving state."
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "production_build": "passed",
+    "focused_rename_browser_tests": {
+      "passed": 2,
+      "covers": [
+        "Successful rename finishes while metadata reads are delayed; workspace and browser titles update.",
+        "Failed rename restores old title and retry preserves attempted title."
+      ]
+    },
+    "live_browser": {
+      "document_synced": true,
+      "caret": {
+        "caretColor": "rgb(30, 30, 28)",
+        "color": "rgb(30, 30, 28)"
+      },
+      "document_text_unchanged": true
+    }
+  },
+  "evidence_directory": ".dev/caret-rename-20261019",
+  "full_browser_suite": {
+    "status": "completed_with_failures",
+    "command": "pnpm exec playwright test",
+    "exit_code": 1,
+    "total": 92,
+    "passed": 84,
+    "failed": 8,
+    "duration": "8.6m",
+    "failures": [
+      {
+        "test": "e2e/editor.spec.ts:1359:7 \u203a comments \u203a a table cell, an image and an area drawn on the image take comments too",
+        "observation": "Image comment toolbar does not reappear after image already has a comment (editor.spec.ts:1419)."
+      },
+      {
+        "test": "e2e/editor.spec.ts:1684:7 \u203a suggestions and roles \u203a a commenter comments and proposes text, formatting and paragraph splits for review",
+        "observation": "Desktop commenter drag selection returns empty instead of reads this line (editor.spec.ts:1699)."
+      },
+      {
+        "test": "e2e/editor.spec.ts:2029:7 \u203a PDFs \u203a a comment on a PDF area shows on its page and in the comments",
+        "observation": "PDF area click does not yield an active thread card (editor.spec.ts:2055)."
+      },
+      {
+        "test": "e2e/library.spec.ts:675:5 \u203a opening files makes a new doc from a .md file, in the folder it was opened in",
+        "observation": "Imported-title assertion still locates H1 under banner; current title is in main (library.spec.ts:691)."
+      },
+      {
+        "test": "e2e/library.spec.ts:743:5 \u203a the share dialog: share with the friend by c:id, they open it from Shared with me, change their role, remove them",
+        "observation": "Removed collaborator does not show expected You no longer have access heading (library.spec.ts:822)."
+      },
+      {
+        "test": "e2e/library.spec.ts:832:5 \u203a someone with view access sees who has it, can't share or change roles, and can leave",
+        "observation": "Viewer share assertion is ambiguous: Only people with access matches two text nodes (library.spec.ts:852)."
+      },
+      {
+        "test": "e2e/library.spec.ts:1216:5 \u203a names reach other Carbons exactly as typed: markup in a doc or folder name is shown, never run",
+        "observation": "Markup-title assertion still locates H1 under banner (library.spec.ts:1249)."
+      },
+      {
+        "test": "e2e/library.spec.ts:1595:5 \u203a a public doc opens signed out, read only, and once private again the same link sends to sign in",
+        "observation": "Public-link assertion expects previous share explanatory text (library.spec.ts:1607)."
+      }
+    ],
+    "environment": {
+      "app": "http://127.0.0.1:4380",
+      "api": "http://127.0.0.1:4371",
+      "accounts": "http://localhost:9890",
+      "WRITE_WEB_URL": "http://127.0.0.1:4380"
+    },
+    "note": "Stable full run followed correction of the local asset origin. Both rename regressions passed; remaining failures occur outside the changed paths.",
+    "cleanup": {
+      "local_api_started_for_tests_stopped": true,
+      "existing_accounts_and_web_servers_left_running": true
+    }
+  }
+}
