@@ -117,14 +117,20 @@ below the header. This does not change the shared `Page` primitive's widths for 
 - Search uses the same heading and reading width. Snippets wrap, mark matching text, and open the result without
   a delayed query update cancelling navigation.
 
-Document rows offer selection controls, a select-all control, and **Open selected**. The selection applies to the
-current library view and never includes trashed documents. Opening several docs adds them to one horizontal tab
+The homepage combines your root docs and folders with items shared with you, deduplicated and ordered by name for
+folders and last edit for docs. Shared items identify their owner; their existing permissions still determine actions.
+Opening a folder shows its contents, without mixing in unrelated shared docs.
+
+Document selection controls appear on row hover or keyboard focus, and stay visible while a selection is active.
+The select-all and **Open selected** toolbar appears only after selecting a doc. Cmd/Ctrl-click toggles individual
+docs; Shift-click selects a range. A row's menu also offers selection for touch, and an ordinary title click opens
+the doc. The selection applies to the current library view and never includes trashed documents. Opening several docs adds them to one horizontal tab
 strip. Each tab names its document, shows which one is active, and has a separate close control. Long names truncate
 within the strip; the strip scrolls horizontally rather than widening the page. Keyboard navigation must leave
 normal document editing shortcuts intact.
 
 Open tab metadata is kept for the current account and browser tab, including across visits to the library. Document
-contents are not stored with tab titles. Each tab is one rounded surface, including its close control; the active tab joins the document. A + beside the strip opens a searchable document picker without leaving the editor. Alt/Option+Shift+1–8 selects a document tab, 9 selects the last, and O opens the picker. Alt/Option+Shift+Left/Right switches outside editable fields; unmodified arrows activate tabs when the strip has focus. Editors load when visited; switching between open tabs keeps their live
+contents are not stored with tab titles. Each tab is one rounded surface, including its close control; the active tab joins the document. A + beside the strip opens a searchable document picker without leaving the editor. Previous/next arrows beside it cycle through open docs, with keyboard shortcuts shown on hover. Alt+PageUp/PageDown switches while writing (Option+Fn+Up/Down on Mac keyboards). Alt/Option+Shift+1–8 selects a document tab, 9 selects the last, and O opens the picker. Alt/Option+Shift+Left/Right switches outside editable fields; unmodified arrows activate tabs when the strip has focus. Editors load when visited; switching between open tabs keeps their live
 document state, including edits waiting for the connection to return. Closing a tab never deletes its document.
 
 **Open files** accepts multiple supported files. **Open folder** imports the selected folder and its nested structure

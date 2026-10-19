@@ -1,5 +1,8 @@
 /**
- * In-app tab navigation uses Alt/Option + Shift, avoiding Chrome's own tab shortcuts.
+ * In-app tab navigation uses Alt/Option + PageUp/PageDown while writing (Fn +
+ * Up/Down on Mac laptop keyboards). Unlike Ctrl + PageUp/PageDown these are not
+ * browser-tab commands, and they do not replace word-selection chords.
+ * Existing Alt/Option + Shift commands remain available.
  * Option + Shift + arrows selects words on macOS, so arrows defer to editable focus.
  * Number-row shortcuts and O remain available while writing. Callers identify editable
  * focus (including contenteditable descendants) and open dialogs/menus before resolving.
@@ -31,23 +34,35 @@ export interface WorkspaceShortcutContext {
 
 export type WorkspaceShortcut = { kind: "activate"; id: string } | { kind: "open" } | { kind: "ignore" };
 
+/** Cycle document tabs, entering from the library at the nearest end. */
+export function adjacentWorkspaceTab(tabIds: readonly string[], activeId: string | null, direction: -1 | 1): string | null {
+  if (!tabIds.length) return null;
+  const active = tabIds.indexOf(activeId ?? "");
+  const index = active < 0 ? direction === -1 ? tabIds.length - 1 : 0 : (active + direction + tabIds.length) % tabIds.length;
+  const next = tabIds[index];
+  return next !== activeId ? next : null;
+}
+
 /** Returns an action, or null when the caller must leave the keyboard event alone. */
 export function resolveWorkspaceShortcut(event: WorkspaceShortcutKey, context: WorkspaceShortcutContext): WorkspaceShortcut | null {
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.key === "Process" || event.key === "Dead") return null;
   if (context.overlayOpen) return null;
-  if (!event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return null;
+  if (!event.altKey || event.ctrlKey || event.metaKey) return null;
+  if (!event.shiftKey && (event.key === "PageUp" || event.key === "PageDown")) {
+    if (event.repeat) return { kind: "ignore" };
+    const id = adjacentWorkspaceTab(context.tabIds, context.activeId, event.key === "PageUp" ? -1 : 1);
+    return id ? { kind: "activate", id } : null;
+  }
+  if (!event.shiftKey) return null;
   if (event.code === "KeyO" || !event.code && event.key.toLowerCase() === "o") return { kind: event.repeat ? "ignore" : "open" };
 
   const { tabIds, activeId } = context;
-  const active = tabIds.indexOf(activeId ?? "");
   let next: string | undefined;
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     if (context.inEditable) return null;
     if (!tabIds.length) return null;
     if (event.repeat) return { kind: "ignore" };
-    next = event.key === "ArrowLeft"
-      ? tabIds[active < 0 ? tabIds.length - 1 : (active - 1 + tabIds.length) % tabIds.length]
-      : tabIds[active < 0 ? 0 : (active + 1) % tabIds.length];
+    next = adjacentWorkspaceTab(tabIds, activeId, event.key === "ArrowLeft" ? -1 : 1) ?? undefined;
   }
   else {
     // Alt/Option and Shift often transform event.key (for example "1" into "⁄").

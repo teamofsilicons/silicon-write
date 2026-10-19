@@ -47,7 +47,7 @@ export interface DocPageProps {
 
 export function DocPage({ initialDoc, account }: DocPageProps) {
   const client = useQueryClient();
-  const { registerDoc } = useWorkspaceTabs();
+  const { registerDoc, consumeEditorFocus } = useWorkspaceTabs();
   const docId = initialDoc.id;
   const { data: doc = initialDoc } = useQuery({
     queryKey: keys.doc(docId),
@@ -74,6 +74,15 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const [formatOpen, setFormatOpen] = useState(false);
   const [lostAccess, setLostAccess] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (doc.kind !== "doc" || !canEdit || lostAccess || liveError) {
+      consumeEditorFocus(docId);
+    } else if (editor && consumeEditorFocus(docId)) {
+      // Focus synchronously: a deferred command could override the next click.
+      editor.view.focus();
+    }
+  }, [docId, doc.kind, canEdit, lostAccess, liveError, editor, consumeEditorFocus]);
 
   const threadsQuery = useThreads(docId, "all", canComment, doc.kind === "pdf" ? 2_000 : false);
   const allThreads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data]);

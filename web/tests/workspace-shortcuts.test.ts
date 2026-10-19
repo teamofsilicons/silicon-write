@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveWorkspaceShortcut, type WorkspaceShortcutContext, type WorkspaceShortcutKey } from "../lib/write/workspace-shortcuts";
+import { adjacentWorkspaceTab, resolveWorkspaceShortcut, type WorkspaceShortcutContext, type WorkspaceShortcutKey } from "../lib/write/workspace-shortcuts";
 
 const key = (key: string, extras: Partial<WorkspaceShortcutKey> = {}): WorkspaceShortcutKey => ({ key, altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, ...extras });
 const context = (extras: Partial<WorkspaceShortcutContext> = {}): WorkspaceShortcutContext => ({ tabIds: ["d_a", "d_b", "d_c"], activeId: "d_b", inEditable: false, overlayOpen: false, ...extras });
@@ -45,6 +45,36 @@ test("arrows preserve text selection while numeric shortcuts work from the edito
   assert.equal(workspaceShortcutTarget(key("ArrowLeft"), context({ inEditable: true })), null);
   assert.equal(workspaceShortcutTarget(key("ArrowRight"), context({ inEditable: true })), null);
   assert.equal(workspaceShortcutTarget(key("!", { code: "Digit1" }), context({ inEditable: true })), "d_a");
+});
+
+test("Alt PageUp and PageDown switch while writing without replacing word selection", () => {
+  const writing = context({ inEditable: true });
+  assert.equal(workspaceShortcutTarget(key("PageUp", { shiftKey: false }), writing), "d_a");
+  assert.equal(workspaceShortcutTarget(key("PageDown", { shiftKey: false }), writing), "d_c");
+  assert.equal(workspaceShortcutTarget(key("PageUp", { shiftKey: false }), context({ activeId: "d_a", inEditable: true })), "d_c");
+  assert.equal(workspaceShortcutTarget(key("PageDown", { shiftKey: false }), context({ activeId: "d_c", inEditable: true })), "d_a");
+  for (const arrow of ["ArrowLeft", "ArrowRight"]) {
+    assert.equal(resolveWorkspaceShortcut(key(arrow), writing), null);
+    assert.equal(resolveWorkspaceShortcut(key(arrow, { altKey: false, ctrlKey: true }), writing), null);
+  }
+});
+
+test("navigation buttons and page shortcuts have no destination with no doc or only the active doc", () => {
+  assert.equal(adjacentWorkspaceTab([], null, 1), null);
+  assert.equal(adjacentWorkspaceTab(["d_a"], "d_a", -1), null);
+  assert.equal(adjacentWorkspaceTab(["d_a"], null, 1), "d_a");
+  assert.equal(adjacentWorkspaceTab(["d_a", "d_b"], null, -1), "d_b");
+  assert.equal(workspaceShortcutTarget(key("PageDown", { shiftKey: false }), context({ tabIds: [] })), null);
+  assert.equal(workspaceShortcutTarget(key("PageUp", { shiftKey: false }), context({ tabIds: ["d_b"] })), null);
+});
+
+test("page shortcuts respect overlays, composition, repeats, and other modifier combinations", () => {
+  const pageDown = key("PageDown", { shiftKey: false });
+  assert.equal(resolveWorkspaceShortcut(pageDown, context({ overlayOpen: true, inEditable: true })), null);
+  for (const extras of [{ isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: false }]) {
+    assert.equal(resolveWorkspaceShortcut({ ...pageDown, ...extras }, context({ inEditable: true })), null);
+  }
+  assert.deepEqual(resolveWorkspaceShortcut({ ...pageDown, repeat: true }, context({ inEditable: true })), { kind: "ignore" });
 });
 
 test("the open-doc picker shortcut works while writing, even with no tabs", () => {

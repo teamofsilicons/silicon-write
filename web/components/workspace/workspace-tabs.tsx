@@ -2,13 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { FileText, Library, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Library, Plus, X } from "lucide-react";
 import { addWorkspaceTabs, closeWorkspaceTab, EMPTY_WORKSPACE, readWorkspace, workspaceKey, type WorkspaceState } from "@/lib/write/workspace-tabs";
 import { retainWorkspaceDocs, setWorkspaceLiveScope } from "@/lib/write/workspace-live";
 import { rememberWorkspaceDoc, setWorkspaceDocScope } from "@/lib/write/workspace-docs";
 import type { Doc } from "@/lib/write/types";
 import { OpenDocDialog } from "./open-doc-dialog";
-import { resolveWorkspaceShortcut } from "@/lib/write/workspace-shortcuts";
+import { adjacentWorkspaceTab, resolveWorkspaceShortcut } from "@/lib/write/workspace-shortcuts";
 import { Tooltip } from "@/components/silicon-ui/tooltip/tooltip";
 import styles from "./workspace-tabs.module.css";
 
@@ -22,6 +22,16 @@ function ShortcutHint({ label, shortcut, apple }: { label: string; shortcut?: st
   return <span className={styles.tooltipContent}>
     <span className={styles.tooltipLabel}>{label}</span>
     {shortcut ? <kbd className={styles.tooltipShortcut} aria-label={`${apple ? "Option" : "Alt"} Shift ${shortcut}`}>{apple ? `⌥ ⇧ ${shortcut}` : `Alt + Shift + ${shortcut}`}</kbd> : null}
+  </span>;
+}
+
+function NavigationHint({ direction, apple }: { direction: "previous" | "next"; apple: boolean }) {
+  const previous = direction === "previous";
+  return <span className={styles.tooltipContent}>
+    <span>{previous ? "Previous tab" : "Next tab"}</span>
+    <kbd className={styles.tooltipShortcut} aria-label={`${apple ? "Option Fn" : "Alt"} ${apple ? previous ? "Up" : "Down" : previous ? "Page Up" : "Page Down"}`}>
+      {apple ? `⌥ Fn ${previous ? "↑" : "↓"}` : `Alt + ${previous ? "Page Up" : "Page Down"}`}
+    </kbd>
   </span>;
 }
 
@@ -54,8 +64,9 @@ function createStore(account: string | null) {
 interface WorkspaceActions {
   registerDoc: (doc: Doc) => void;
   openDocs: (docs: readonly Doc[]) => void;
+  consumeEditorFocus: (docId: string) => boolean;
 }
-const WorkspaceContext = createContext<WorkspaceActions>({ registerDoc: () => {}, openDocs: () => {} });
+const WorkspaceContext = createContext<WorkspaceActions>({ registerDoc: () => {}, openDocs: () => {}, consumeEditorFocus: () => false });
 export const useWorkspaceTabs = () => useContext(WorkspaceContext);
 
 export function WorkspaceTabsProvider({ account, children }: { account: string | null; children: ReactNode }) {
@@ -69,13 +80,28 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
   const bar = useRef<HTMLDivElement>(null);
   const workspaceRoot = useRef<HTMLDivElement>(null);
   const focusAfterClose = useRef<string | null>(null);
+  const editorFocusAfterNavigation = useRef<string | null>(null);
   const show = Boolean(account && state.tabs.length);
+  const tabIds = state.tabs.map(tab => tab.id);
+  const previousTab = adjacentWorkspaceTab(tabIds, active, -1);
+  const nextTab = adjacentWorkspaceTab(tabIds, active, 1);
 
   useEffect(() => {
     setWorkspaceLiveScope(account);
     setWorkspaceDocScope(account);
     store.hydrate();
   }, [account, store]);
+  // A deliberate action while a document is opening cancels the focus handoff.
+  // Capture runs before the shortcut handler, so the current chord can set it anew.
+  useEffect(() => {
+    const cancel = () => { editorFocusAfterNavigation.current = null; };
+    window.addEventListener("pointerdown", cancel, true);
+    window.addEventListener("keydown", cancel, true);
+    return () => {
+      window.removeEventListener("pointerdown", cancel, true);
+      window.removeEventListener("keydown", cancel, true);
+    };
+  }, []);
   // Read the store after hydration, not the empty snapshot from the first render.
   useEffect(() => { retainWorkspaceDocs(store.snapshot().tabs.map(tab => tab.id), account); }, [state, account, store]);
   useEffect(() => { bar.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active, state.tabs.length]);
@@ -117,7 +143,10 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
       event.preventDefault();
       if (action.kind === "open") setPickerOpen(true);
       else if (action.kind === "activate") {
-        focusAfterClose.current = action.id;
+        const fromEditor = target?.closest<HTMLElement>('.ProseMirror[contenteditable="true"]');
+        const continueWriting = fromEditor && (event.key === "PageUp" || event.key === "PageDown");
+        editorFocusAfterNavigation.current = continueWriting ? action.id : null;
+        focusAfterClose.current = continueWriting ? null : action.id;
         navigateDoc(action.id);
       }
     };
@@ -135,7 +164,12 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
     store.update(current => addWorkspaceTabs(current, docs));
     navigateDoc(docs[0].id);
   }, [store, account, navigateDoc]);
-  const actions = useMemo(() => ({ registerDoc, openDocs }), [registerDoc, openDocs]);
+  const consumeEditorFocus = useCallback((docId: string) => {
+    if (editorFocusAfterNavigation.current !== docId) return false;
+    editorFocusAfterNavigation.current = null;
+    return true;
+  }, []);
+  const actions = useMemo(() => ({ registerDoc, openDocs, consumeEditorFocus }), [registerDoc, openDocs, consumeEditorFocus]);
   const close = (id: string) => {
     const result = closeWorkspaceTab(store.snapshot(), id, active);
     focusAfterClose.current = result.next ?? "library";
@@ -182,9 +216,17 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
               </div>;
             })}
           </div>
-          <Tooltip side="bottom" content={<ShortcutHint label="Open a doc" shortcut="O" apple={isApple} />}>
-            <button type="button" data-sq="control" className={styles.addTab} aria-label="Open a doc" aria-keyshortcuts="Alt+Shift+O" onClick={() => setPickerOpen(true)}><Plus size={18} aria-hidden="true" /></button>
-          </Tooltip>
+          <div className={styles.tabActions}>
+            <Tooltip side="bottom" content={<NavigationHint direction="previous" apple={isApple} />}>
+              <button type="button" data-sq="control" className={styles.tabAction} aria-label="Previous tab" aria-keyshortcuts="Alt+PageUp" disabled={!previousTab} onClick={() => { if (previousTab) navigateDoc(previousTab); }}><ChevronLeft size={17} aria-hidden="true" /></button>
+            </Tooltip>
+            <Tooltip side="bottom" content={<NavigationHint direction="next" apple={isApple} />}>
+              <button type="button" data-sq="control" className={styles.tabAction} aria-label="Next tab" aria-keyshortcuts="Alt+PageDown" disabled={!nextTab} onClick={() => { if (nextTab) navigateDoc(nextTab); }}><ChevronRight size={17} aria-hidden="true" /></button>
+            </Tooltip>
+            <Tooltip side="bottom" content={<ShortcutHint label="Open a doc" shortcut="O" apple={isApple} />}>
+              <button type="button" data-sq="control" className={styles.tabAction} aria-label="Open a doc" aria-keyshortcuts="Alt+Shift+O" onClick={() => setPickerOpen(true)}><Plus size={18} aria-hidden="true" /></button>
+            </Tooltip>
+          </div>
         </div>
       ) : null}
       <div id="workspace-document" role={show ? "tabpanel" : undefined} aria-labelledby={show ? `workspace-tab-${active ?? "library"}` : undefined}>

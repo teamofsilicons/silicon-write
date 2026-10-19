@@ -22,7 +22,8 @@
 .selectableList { margin-top: 8px; }
 .selectableRow { grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 12px; }
 .selectableRow[data-selected] { background: var(--accent-subtle); }
-.docCheck { display: grid; place-items: center; width: 20px; min-height: 31px; cursor: pointer; }
+.docCheck { display: grid; place-items: center; width: 20px; min-height: 31px; cursor: pointer; opacity: 0; }
+.selectableRow:hover .docCheck, .selectableRow:focus-within .docCheck, .list[data-selecting] .docCheck { opacity: 1; }
 .openSelected { margin-left: auto; }
 .rowTitle { min-width: 0; color: var(--foreground); font: 400 1.5rem/1.3 var(--font-serif); letter-spacing: -.012em; text-decoration: none; overflow-wrap: anywhere; }
 a.rowTitle:hover { color: var(--accent-ink); }

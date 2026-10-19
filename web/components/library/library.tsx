@@ -4,9 +4,9 @@
  * The library: your docs and folders (UNDERSTANDING.md, "Docs and folders"), what's shared with you, recent docs and
  * the trash. One calm list: folders first, then docs, each with its actions in a menu.
  */
-import { useState } from "react";
+import { useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, FilePlus2, FileText, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users } from "lucide-react";
+import { ArrowLeftRight, CheckSquare2, FilePlus2, FileText, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users } from "lucide-react";
 import { Page } from "@/components/foundation/layout/layout";
 import { Button } from "@/components/silicon-ui/button/button";
 import { Breadcrumb } from "@/components/silicon-ui/breadcrumb/breadcrumb";
@@ -20,6 +20,7 @@ import { notify, notifyError } from "@/lib/notify";
 import { formatRelative } from "@/lib/format";
 import { useLibrary, useRefreshLibrary, useTransfers } from "@/lib/write/queries";
 import { atLeast, type Doc, type Folder, type Transfer } from "@/lib/write/types";
+import { homeLibrary } from "@/lib/write/library-home";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { MoveDialog } from "./move-dialog";
 import { ImportFiles } from "./import-files";
@@ -29,7 +30,7 @@ import styles from "./library.module.css";
 export type LibraryView = "mine" | "shared" | "recent" | "trash";
 
 const TITLES: Record<LibraryView, { title: string; description: string }> = {
-  mine: { title: "My docs", description: "A place for your thoughts, drafts and docs. Just yours, until you share them." },
+  mine: { title: "My docs", description: "Your docs and the ones shared with you, together in one place." },
   shared: { title: "Shared with me", description: "Docs and folders other Carbons and Silicons shared with you." },
   recent: { title: "Recent", description: "Your latest docs, most recently changed first." },
   trash: { title: "Trash", description: "Deleted docs and folders stay here, with their full history, until you delete them for good." },
@@ -106,12 +107,18 @@ function Transfers({ transfers, onDone }: { transfers: Transfer[]; onDone: () =>
 export function Library({ view, folderId }: { view: LibraryView; folderId?: string }) {
   const { openDocs } = useWorkspaceTabs();
   const me = useSessionView().account?.uuid;
-  const { data, isLoading, error } = useLibrary(view, folderId ?? null);
+  const includeShared = view === "mine" && !folderId;
+  const library = useLibrary(view, folderId ?? null);
+  const shared = useLibrary("shared", null, includeShared);
+  const data = includeShared ? homeLibrary(library.data, shared.data) : library.data;
+  const isLoading = library.isLoading || (includeShared && shared.isLoading);
+  const error = library.error;
   const transfers = useTransfers();
   const refresh = useRefreshLibrary();
   const [dialog, setDialog] = useState<Dialogs>(null);
   const selectionScope = `${view}:${folderId ?? ""}`;
   const [selection, setSelection] = useState<{ scope: string; ids: Set<string> }>({ scope: selectionScope, ids: new Set() });
+  const selectionAnchor = useRef<{ scope: string; id: string } | null>(null);
   const folder = data?.folder ?? null;
   const inTrash = Boolean(folder?.deleted_at);
   const canAdd = view === "mine" && !error && !inTrash && (!folderId || Boolean(folder && atLeast(folder.role, "editor")));
@@ -151,12 +158,39 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const docs = data?.docs ?? [];
   const selectable = view !== "trash" && !inTrash;
   const selected = selectable && selection.scope === selectionScope ? docs.filter(doc => selection.ids.has(doc.id)) : [];
-  const toggleSelected = (id: string, checked: boolean) => setSelection(current => {
-    const ids = new Set(current.scope === selectionScope ? current.ids : []);
-    if (checked) ids.add(id); else ids.delete(id);
-    return { scope: selectionScope, ids };
-  });
-  const empty = !isLoading && !error && !folders.length && !docs.length;
+  const toggleSelected = (id: string, checked: boolean) => {
+    selectionAnchor.current = { scope: selectionScope, id };
+    setSelection(current => {
+      const ids = new Set(current.scope === selectionScope ? current.ids : []);
+      if (checked) ids.add(id); else ids.delete(id);
+      return { scope: selectionScope, ids };
+    });
+  };
+  const selectRange = (id: string, additive: boolean) => {
+    const anchor = selectionAnchor.current?.scope === selectionScope ? docs.findIndex(doc => doc.id === selectionAnchor.current?.id) : -1;
+    if (anchor < 0) return false;
+    const end = docs.findIndex(doc => doc.id === id);
+    const range = docs.slice(Math.min(anchor, end), Math.max(anchor, end) + 1).map(doc => doc.id);
+    setSelection(current => ({ scope: selectionScope, ids: new Set([...(additive && current.scope === selectionScope ? current.ids : []), ...range]) }));
+    return true;
+  };
+  const selectRow = (event: MouseEvent<HTMLLIElement>, id: string) => {
+    if (!selectable) return;
+    const target = event.target as HTMLElement;
+    // Menus and checkboxes have their own actions; an ordinary title click still opens the doc.
+    if (target.closest("button, input, label, [role='menu']")) return;
+    const modified = event.metaKey || event.ctrlKey || event.shiftKey;
+    if (target.closest("a") && !modified) return;
+    event.preventDefault();
+    if (event.shiftKey && selectRange(id, event.metaKey || event.ctrlKey)) return;
+    if (event.metaKey || event.ctrlKey) {
+      toggleSelected(id, !selected.some(doc => doc.id === id));
+    } else {
+      selectionAnchor.current = { scope: selectionScope, id };
+      setSelection({ scope: selectionScope, ids: new Set([id]) });
+    }
+  };
+  const empty = !isLoading && !error && !(includeShared && shared.error) && !folders.length && !docs.length;
 
   return (
     <Page className={styles.libraryPage}>
@@ -190,6 +224,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
       </div>
       {view === "mine" && !folderId ? <Transfers transfers={transfers.data?.incoming ?? []} onDone={refresh} /> : null}
       {error ? <p className={styles.error}>{(error as Error).message}</p> : null}
+      {includeShared && shared.error ? <p className={styles.error}>Shared docs couldn’t be loaded. <Button variant="ghost" size="sm" onClick={() => void shared.refetch()}>Try again</Button></p> : null}
       {isLoading ? <p className={styles.loading}>Loading…</p> : null}
       {empty ? (
         <EmptyState
@@ -199,19 +234,24 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
           icon={<FileText size={22} aria-hidden="true" />}
         />
       ) : null}
-      {selectable && docs.length ? (
+      {selectable && docs.length && (selected.length > 0 || folder) ? (
         <div className={styles.selectionBar} aria-label="Select documents">
-          <label className={styles.selectAll}>
-            <input type="checkbox" checked={selected.length === docs.length} ref={input => { if (input) input.indeterminate = selected.length > 0 && selected.length < docs.length; }} onChange={event => setSelection({ scope: selectionScope, ids: new Set(event.target.checked ? docs.map(doc => doc.id) : []) })} />
-            <span>{selected.length ? `${selected.length} selected` : "Select all"}</span>
-          </label>
           {selected.length ? <>
+            <label className={styles.selectAll}>
+              <input type="checkbox" aria-label="Select all documents" checked={selected.length === docs.length} ref={input => { if (input) input.indeterminate = selected.length > 0 && selected.length < docs.length; }} onChange={event => setSelection({ scope: selectionScope, ids: new Set(event.target.checked ? docs.map(doc => doc.id) : []) })} />
+              <span>{selected.length} selected</span>
+            </label>
             <Button variant="ghost" size="sm" onClick={() => setSelection({ scope: selectionScope, ids: new Set() })}>Clear</Button>
             <Button className={styles.openSelected} variant="secondary" size="sm" onClick={() => openDocs(selected)}>Open selected <span aria-hidden="true">({selected.length})</span></Button>
           </> : folder ? <Button className={styles.openSelected} variant="ghost" size="sm" onClick={() => openDocs(docs)}>Open all docs</Button> : null}
         </div>
       ) : null}
-      <ul className={`${styles.list} ${selectable && docs.length ? styles.selectableList : ""}`} aria-label={heading.title}>
+      <ul className={`${styles.list} ${selected.length || (folder && selectable && docs.length) ? styles.selectableList : ""}`} data-selecting={selected.length > 0 || undefined} aria-label={heading.title} onKeyDown={event => {
+        if (event.key === "Escape" && selected.length && !(event.target as HTMLElement).closest("[role='menu']")) {
+          event.preventDefault();
+          setSelection({ scope: selectionScope, ids: new Set() });
+        }
+      }}>
         {folders.map(f => (
           <li key={f.id} className={styles.row}>
             <div className={styles.rowText}>
@@ -219,7 +259,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                 <FolderIcon size={18} className={styles.rowIcon} aria-hidden="true" />
                 {view === "trash" ? <span className={styles.rowTitle}>{f.name}</span> : <Link href={`/library/${f.id}`} className={styles.rowTitle}>{f.name}</Link>}
               </div>
-              <span className={styles.rowMeta}>Folder{f.owner.uuid !== me ? ` · ${f.owner.id}` : ""}</span>
+              <span className={styles.rowMeta}>Folder{f.owner.uuid !== me ? ` · Shared by ${f.owner.id}` : ""}</span>
             </div>
             {view === "trash" ? (
               <span className={styles.trashActions}>
@@ -249,13 +289,17 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
           </li>
         ))}
         {docs.map(d => (
-          <li key={d.id} className={`${styles.row} ${selectable ? styles.selectableRow : ""}`} data-selected={selected.some(doc => doc.id === d.id) || undefined}>
-            {selectable ? <label className={styles.docCheck}><input type="checkbox" checked={selected.some(doc => doc.id === d.id)} aria-label={`Select ${d.title}`} onChange={event => toggleSelected(d.id, event.target.checked)} /></label> : null}
+          <li key={d.id} className={`${styles.row} ${selectable ? styles.selectableRow : ""}`} data-selected={selected.some(doc => doc.id === d.id) || undefined} onClickCapture={event => selectRow(event, d.id)}>
+            {selectable ? <label className={styles.docCheck}><input type="checkbox" checked={selected.some(doc => doc.id === d.id)} aria-label={`Select ${d.title}`} onChange={event => {
+              const modifiers = event.nativeEvent as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
+              if (modifiers.shiftKey && selectRange(d.id, Boolean(modifiers.metaKey || modifiers.ctrlKey))) return;
+              toggleSelected(d.id, event.target.checked);
+            }} /></label> : null}
             <div className={styles.rowText}>
               {view === "trash" ? <span className={styles.rowTitle}>{d.title}</span> : <Link href={`/d/${d.id}`} className={styles.rowTitle}>{d.title}</Link>}
               <span className={styles.rowMeta}>
                 {d.kind === "pdf" ? "PDF · " : ""}
-                {d.owner.uuid !== me ? `${d.owner.id} · ` : ""}
+                {d.owner.uuid !== me ? `Shared by ${d.owner.id} · ` : ""}
                 {d.created_by.uuid !== d.owner.uuid ? `created by ${d.created_by.id} · ` : ""}
                 {view === "trash" && d.deleted_at ? `deleted ${formatRelative(d.deleted_at)}` : `edited ${formatRelative(d.updated_at)}`}
               </span>
@@ -273,6 +317,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                   <button type="button" data-sq="surface" className={styles.more} aria-label={`More for ${d.title}`}><MoreHorizontal size={18} /></button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
+                  {selectable ? <DropdownMenuItem icon={<CheckSquare2 size={16} />} onSelect={() => toggleSelected(d.id, !selected.some(doc => doc.id === d.id))}>{selected.some(doc => doc.id === d.id) ? "Deselect" : "Select"}</DropdownMenuItem> : null}
                   <DropdownMenuItem icon={<Share2 size={16} />} onSelect={() => setDialog({ kind: "share", type: "docs", id: d.id, title: d.title })}>Share</DropdownMenuItem>
                   {atLeast(d.role, "editor") ? <DropdownMenuItem icon={<Pencil size={16} />} onSelect={() => setDialog({ kind: "rename", item: { type: "doc", doc: d } })}>Rename</DropdownMenuItem> : null}
                   {atLeast(d.role, "editor") ? <DropdownMenuItem icon={<FolderInput size={16} />} onSelect={() => setDialog({ kind: "move", item: { type: "doc", doc: d } })}>Move</DropdownMenuItem> : null}

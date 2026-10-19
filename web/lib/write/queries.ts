@@ -20,10 +20,11 @@ export const keys = {
   docs: ["docs"] as QueryKey,
 };
 
-export function useLibrary(view: string, folder?: string | null) {
+export function useLibrary(view: string, folder?: string | null, enabled = true) {
   return useQuery({
     queryKey: keys.library(view, folder),
     queryFn: () => api.get<Library>("/v1/library", { query: { view, folder: folder ?? undefined } }),
+    enabled,
   });
 }
 

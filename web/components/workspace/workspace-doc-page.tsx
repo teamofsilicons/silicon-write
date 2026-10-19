@@ -9,10 +9,12 @@ import { api, seg } from "@/lib/client/api";
 import { keys } from "@/lib/write/queries";
 import { allowWorkspaceDoc, denyWorkspaceDoc, getWorkspaceDoc, isWorkspaceDocDenied, rememberWorkspaceDoc } from "@/lib/write/workspace-docs";
 import type { Doc } from "@/lib/write/types";
+import { useWorkspaceTabs } from "./workspace-tabs";
 import styles from "./workspace-tabs.module.css";
 
 /** Initial loading is server-authorized; subsequent tabs load inside this workspace. */
 export function WorkspaceDocPage({ initialDoc, account }: DocPageProps) {
+  const { consumeEditorFocus } = useWorkspaceTabs();
   const pathname = usePathname();
   const id = /^\/d\/(d_[A-Za-z0-9]+)$/.exec(pathname)?.[1] ?? initialDoc.id;
   const scope = account?.uuid ?? null;
@@ -29,6 +31,9 @@ export function WorkspaceDocPage({ initialDoc, account }: DocPageProps) {
   });
   // Keep already authorized metadata for a network outage, never for denied access.
   const unavailable = isWorkspaceDocDenied(id, scope) || Boolean(query.error && !(query.error.isNetwork || query.error.status >= 500));
+  useEffect(() => {
+    if (unavailable || !query.data && query.error) consumeEditorFocus(id);
+  }, [id, unavailable, query.data, query.error, consumeEditorFocus]);
   useEffect(() => {
     if (unavailable) { denyWorkspaceDoc(id); return; }
     if (query.data) {
