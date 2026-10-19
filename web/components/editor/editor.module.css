@@ -14,7 +14,7 @@
   outline: none;
   min-height: 45vh;
   padding-bottom: var(--space-20);
-  caret-color: var(--accent);
+  caret-color: currentColor;
   word-wrap: break-word;
   overflow-wrap: anywhere;
 }

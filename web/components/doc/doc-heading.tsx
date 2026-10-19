@@ -12,8 +12,15 @@ export function DocHeading({ doc, canEdit }: { doc: Doc; canEdit: boolean }) {
   const client = useQueryClient();
   const refreshLibrary = useRefreshLibrary();
   const rename = async (title: string) => {
-    await api.patch(`/v1/docs/${seg(doc.id)}`, { title: title.replace(/\s+/g, " ").trim() });
-    await client.invalidateQueries({ queryKey: keys.doc(doc.id) });
+    const saved = await api.patch<Doc>(`/v1/docs/${seg(doc.id)}`, { title: title.replace(/\s+/g, " ").trim() });
+    // PATCH already returns the saved document. A second read kept the title locked
+    // until metadata refetches (including their retries) finished. Ignore an older
+    // read still in flight, then share the confirmed title with the workspace now.
+    await client.cancelQueries({ queryKey: keys.doc(doc.id), exact: true });
+    client.setQueryData(keys.doc(doc.id), saved);
+    // A collaborator's metadata change may have raced the response. Reconcile in
+    // the background without keeping a successfully saved title locked.
+    void client.invalidateQueries({ queryKey: keys.doc(doc.id), exact: true });
     refreshLibrary();
   };
   return (
