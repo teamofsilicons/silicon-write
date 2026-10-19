@@ -104,7 +104,19 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
   }, []);
   // Read the store after hydration, not the empty snapshot from the first render.
   useEffect(() => { retainWorkspaceDocs(store.snapshot().tabs.map(tab => tab.id), account); }, [state, account, store]);
-  useEffect(() => { bar.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active, state.tabs.length]);
+  useEffect(() => {
+    const strip = bar.current;
+    if (!strip) return;
+    const revealActive = () => {
+      const selected = strip.querySelector<HTMLElement>('[aria-selected="true"]');
+      // Include the close control, which is a sibling of the selected tab button.
+      (selected?.closest<HTMLElement>(`.${styles.item}`) ?? selected)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    revealActive();
+    const observer = new ResizeObserver(revealActive);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [active, state.tabs]);
   useEffect(() => {
     if (focusAfterClose.current !== (active ?? "library")) return;
     const target = bar.current?.querySelector<HTMLElement>('[aria-selected="true"]') ?? document.querySelector<HTMLElement>("main");
@@ -199,7 +211,7 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
       {show ? (
         <div className={styles.workspaceBar}>
           <div ref={bar} className={styles.tabs} role="tablist" aria-label="Open documents" aria-orientation="horizontal" onKeyDown={onKey}>
-            <button id="workspace-tab-library" type="button" className={`${styles.tab} ${styles.library}`} role="tab" aria-selected={!active} aria-controls="workspace-document" tabIndex={active ? -1 : 0} onClick={() => router.push("/library")}>
+            <button id="workspace-tab-library" type="button" className={`${styles.tab} ${styles.library}`} role="tab" aria-label="My docs" aria-selected={!active} aria-controls="workspace-document" tabIndex={active ? -1 : 0} onClick={() => router.push("/library")}>
               <Library size={15} aria-hidden="true" /><span>My docs</span>
             </button>
             {state.tabs.map((tab, index) => {

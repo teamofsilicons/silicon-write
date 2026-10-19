@@ -147,9 +147,10 @@
 .unavailable p { color: var(--text-secondary); overflow-wrap: anywhere; }
 @media (max-width: 640px) {
   .workspaceBar { gap: 6px; padding-inline: 8px; }
-  .item { max-width: 190px; }
+  .item { max-width: min(190px, calc(100vw - 180px)); }
   .tab { max-width: 155px; height: 40px; }
-  .library { height: 41px; }
+  .library { flex: 0 0 36px; width: 36px; height: 41px; padding-inline: 0; justify-content: center; }
+  .library > span { display: none; }
   .close { width: 28px; height: 28px; }
   .tabs { max-width: calc(100% - 112px); }
   .tabAction { flex-basis: 34px; width: 34px; height: 34px; }

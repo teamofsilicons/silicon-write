@@ -1120,8 +1120,8 @@ test("a folder shared as viewer: the friend opens everything in it, can't add, r
   for (const action of ["New doc", "New folder", "Open files", "Open folder", "Share folder"]) await expect(page.getByRole("button", { name: action })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "People" })).toBeVisible();
   await shot(page, "desktop-folder-shared-as-viewer");
-  // Row menus: Share (to see who has it) and, for a doc, a copy of their own. Never rename, move or trash.
-  await expect((await rowMenu(page, doc.title)).getByRole("menuitem")).toHaveText(["Share", "Make a copy"]);
+  // Selecting a doc is available to viewers too; editing and ownership actions remain absent.
+  await expect((await rowMenu(page, doc.title)).getByRole("menuitem")).toHaveText(["Select", "Share", "Make a copy"]);
   await page.keyboard.press("Escape");
   await expect((await rowMenu(page, inner.name)).getByRole("menuitem")).toHaveText(["Share"]);
   await page.keyboard.press("Escape");
