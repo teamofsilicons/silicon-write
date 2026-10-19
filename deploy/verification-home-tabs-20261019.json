@@ -1,0 +1,144 @@
+{
+  "checked_at": "2026-10-19T17:09:52.066529+00:00",
+  "source_revision": "8e465a2b384619984c33b044f754dfff46e7feb4",
+  "deployment_id": "dpl_46fRvaoi4ZoSynFXyjLNUJjQiVXT",
+  "url": "https://write.teamofsilicons.com",
+  "previous_deployment_id": "dpl_Hgm5NssxEXueDYmcPEbJWWGfj1Zt",
+  "deployment_status": "live_ready",
+  "changes": [
+    "Homepage combines owned root docs/folders with directly shared docs/folders; descendants remain inside shared folders and existing role checks are preserved.",
+    "Selection checkboxes appear on hover/focus or during selection; bulk controls appear only after selection. Cmd/Ctrl-click toggles, Shift-click selects a range, and row-menu selection supports touch.",
+    "Previous/next controls cycle document tabs. Alt+PageUp/PageDown works from the editor; Mac hover hints show Option+Fn+Up/Down. Existing text-selection shortcuts are preserved."
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "production_build": "passed",
+    "web_unit_tests": {
+      "passed": 99,
+      "failed": 0
+    },
+    "focused_homepage_browser_scenarios": {
+      "passed": 2,
+      "failed": 0
+    },
+    "focused_navigation_browser_scenarios": {
+      "passed": 1,
+      "failed": 0
+    },
+    "full_browser_suite": {
+      "source_revision": "6bf94ad7a5d8c6e4e923406c0ca81c819f6e6229",
+      "exit_code": 1,
+      "total": 95,
+      "passed": 85,
+      "failed": 10,
+      "duration": "9.2m",
+      "known_baseline_count": 8,
+      "new_failure_count": 2,
+      "failures": [
+        {
+          "test": "e2e/editor.spec.ts:1359:7 \u203a comments \u203a a table cell, an image and an area drawn on the image take comments too",
+          "classification": "known_baseline",
+          "observation": "Image comment toolbar does not reappear after image already has a comment (editor.spec.ts:1419)."
+        },
+        {
+          "test": "e2e/editor.spec.ts:1684:7 \u203a suggestions and roles \u203a a commenter comments and proposes text, formatting and paragraph splits for review",
+          "classification": "known_baseline",
+          "observation": "Desktop commenter drag selection returns empty instead of reads this line (editor.spec.ts:1699)."
+        },
+        {
+          "test": "e2e/editor.spec.ts:2029:7 \u203a PDFs \u203a a comment on a PDF area shows on its page and in the comments",
+          "classification": "known_baseline",
+          "observation": "PDF area click does not yield an active thread card (editor.spec.ts:2055)."
+        },
+        {
+          "test": "e2e/library.spec.ts:675:5 \u203a opening files makes a new doc from a .md file, in the folder it was opened in",
+          "classification": "known_baseline",
+          "observation": "Imported-title assertion still locates H1 under banner; current title is in main (library.spec.ts:691)."
+        },
+        {
+          "test": "e2e/library.spec.ts:743:5 \u203a the share dialog: share with the friend by c:id, they open it from Shared with me, change their role, remove them",
+          "classification": "known_baseline",
+          "observation": "Removed collaborator does not show expected You no longer have access heading (library.spec.ts:822)."
+        },
+        {
+          "test": "e2e/library.spec.ts:832:5 \u203a someone with view access sees who has it, can't share or change roles, and can leave",
+          "classification": "known_baseline",
+          "observation": "Viewer share assertion is ambiguous: Only people with access matches two text nodes (library.spec.ts:852)."
+        },
+        {
+          "test": "e2e/library.spec.ts:1096:5 \u203a a folder shared as viewer: the friend opens everything in it, can't add, rename, move or trash anything, never sees the folder above it, and can leave",
+          "classification": "changed_expectation",
+          "observation": "Changed expected menu action: assertion expects [Share, Make a copy], actual [Select, Share, Make a copy]; exact error at library.spec.ts:1124. Parent will update expectation and rerun.",
+          "resolution": "Updated viewer menu expectation for intentional Select action. Full viewer permissions scenario passed on rerun."
+        },
+        {
+          "test": "e2e/library.spec.ts:1216:5 \u203a names reach other Carbons exactly as typed: markup in a doc or folder name is shown, never run",
+          "classification": "known_baseline",
+          "observation": "Markup-title assertion still locates H1 under banner (library.spec.ts:1249)."
+        },
+        {
+          "test": "e2e/library.spec.ts:1595:5 \u203a a public doc opens signed out, read only, and once private again the same link sends to sign in",
+          "classification": "known_baseline",
+          "observation": "Public-link assertion expects previous share explanatory text (library.spec.ts:1607)."
+        },
+        {
+          "test": "e2e/library.spec.ts:1766:7 \u203a every library page and dialog at 390\u00d7844: no sideways scrolling, nothing cut off",
+          "classification": "new_layout_failure",
+          "observation": "Active long-title tab close button is clipped at strip right edge. Autoscroll targets title button rather than full item. Generic layout assertion also flags My docs in intentional scroller; parent informed to fix active-tab visibility and verify scroll behavior.",
+          "resolution": "Compact phone home tab, constrain tab width and scroll the entire active item. Existing phone layout scenario and new 390/320px active-tab checks passed on rerun."
+        }
+      ],
+      "note": "Initial full run. The two new failures were corrected and their scenarios rerun successfully; eight failures match the prior baseline. Full suite was not rerun after these focused corrections."
+    },
+    "focused_reruns": [
+      {
+        "name": "viewer permissions and menu actions",
+        "passed": 2,
+        "failed": 0,
+        "includes_accounts_setup": true,
+        "duration": "13.8s",
+        "log": ".dev/home-tabs-20261019/viewer-rerun.log"
+      },
+      {
+        "name": "desktop/editor navigation and mobile active controls at 390px/320px",
+        "passed": 3,
+        "failed": 0,
+        "includes_accounts_setup": true,
+        "duration": "16.8s"
+      },
+      {
+        "name": "homepage, contextual selection, and existing full phone layout scenario",
+        "passed": 4,
+        "failed": 0,
+        "includes_accounts_setup": true,
+        "duration": "27.4s",
+        "log": ".dev/home-tabs-20261019/mobile-home-rerun.log"
+      }
+    ],
+    "live_browser": {
+      "url": "https://write.teamofsilicons.com/library",
+      "shared_document_visible_with_owned_documents": true,
+      "shared_owner_label_visible": true,
+      "default_checkbox_checked": false,
+      "default_checkbox_container_opacity": "0",
+      "bulk_controls_absent_before_selection": true,
+      "cmd_click_selected_owned_and_shared_docs": true,
+      "open_selected_created_two_workspace_tabs": true,
+      "next_and_previous_buttons_verified": true,
+      "alt_page_up_switched_from_editor_and_focused_destination": true,
+      "both_documents_connected_and_synced": true,
+      "document_text_not_edited": true,
+      "screenshot": ".dev/home-tabs-20261019/live-home.png"
+    }
+  },
+  "limitations": [
+    "Switching tabs restores editor focus, but prior cursor position is not retained by the existing keyed editor lifecycle."
+  ],
+  "evidence_directory": ".dev/home-tabs-20261019",
+  "cleanup": {
+    "test_api_started_for_this_task_stopped": true,
+    "preexisting_services_untouched": true,
+    "original_user_document_tab_untouched": true
+  }
+}

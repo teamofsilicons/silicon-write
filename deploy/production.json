@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-18T16:58:17.434540+00:00",
+  "recorded_at": "2026-10-19T17:09:52.066529+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_Hgm5NssxEXueDYmcPEbJWWGfj1Zt",
+    "deployment_id": "dpl_46fRvaoi4ZoSynFXyjLNUJjQiVXT",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,11 +13,13 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "3723f85d8ff9503a57212bc3cd48745850f2cce1",
+    "revision": "8e465a2b384619984c33b044f754dfff46e7feb4",
     "browser_checks": [
       "All comments heading and filters stay fixed on desktop and mobile",
       "Focused browser passage visible to Silicon CLI context; blur clears location",
-      "Editor caret matches text color on the live document (rgb(30, 30, 28))"
+      "Editor caret matches text color on the live document (rgb(30, 30, 28))",
+      "Owned and shared docs visible together on homepage; selection controls hidden by default",
+      "Cmd-click multi-open and previous/next workspace navigation verified live"
     ]
   },
   "api": {
@@ -189,5 +191,6 @@
     "native_verified": true,
     "catalog_published": false,
     "blocker": "Apps requires Windows x86_64 and macOS aarch64 packages, but both live upload validation runners are not_configured. Existing0.1.0 remains published."
-  }
+  },
+  "home_tabs_release_receipt": "verification-home-tabs-20261019.json"
 }
