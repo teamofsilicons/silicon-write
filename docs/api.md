@@ -187,8 +187,8 @@ file is the technical reference.
   the same author and doc, and can be attached once. `body` may be empty when audio is attached.
   Comment responses include `voice: VoiceRecording | null`; `body` is the reviewed transcript, while
   `voice.transcript` is the original automatic transcript. Editing the body keeps the recording.
-- `GET /v1/recordings/{id}` streams audio and supports a single byte `Range`. Requires signed-in viewer access
-  to the doc; unpublished drafts are author-only. Deleted-comment recordings are unavailable. Responses are
+- `GET /v1/recordings/{id}` streams audio and supports a single byte `Range`. Requires signed-in commenter access
+  to the doc, matching comment visibility; unpublished drafts are author-only. Deleted-comment recordings are unavailable. Responses are
   private/no-store. Unattached drafts older than seven days are cleaned up when their author next uploads.
   Recordings are included in encrypted database backups and removed with their document.
 - Recording limits: 60 uploads per account per hour, two simultaneous processing jobs per server.

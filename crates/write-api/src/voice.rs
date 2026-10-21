@@ -357,7 +357,7 @@ pub async fn audio(
     let row: Option<(String,String,String,Option<bool>)>=sqlx::query_as("select r.doc_id,r.author_uuid,r.content_type,(select c.deleted_at is null from comments c where c.recording_id=r.id) from comment_recordings r where r.id=$1").bind(&id).fetch_optional(&state.db).await?;
     let (doc_id, author, mime, published) =
         row.ok_or_else(|| ApiError::not_found("This recording"))?;
-    access::require_doc(&state, Some(&caller), &doc_id, Role::Viewer).await?;
+    access::require_doc(&state, Some(&caller), &doc_id, Role::Commenter).await?;
     if published == Some(false) || (published.is_none() && author != caller.uuid) {
         return Err(ApiError::not_found("This recording"));
     }
