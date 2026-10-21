@@ -177,8 +177,13 @@ file is the technical reference.
 - `POST /v1/threads/{id}/comments` `{ "body" }` → `Comment`. `PATCH /v1/comments/{id}` `{ "body" }` (author).
   `DELETE /v1/comments/{id}` (author) → kept in history as deleted.
 - Voice comments: `POST /v1/docs/{id}/recordings` accepts one multipart `audio` field (WebM, MP4, Ogg or WAV;
-  at most 3 MiB and 3 minutes). Requires commenter access. Returns `VoiceRecording = { "id": "r_…",
+  at most 3 MiB and 30 minutes). Requires commenter access. Returns `VoiceRecording = { "id": "r_…",
   "duration_ms", "transcript": null }`. The server validates/decodes audio and stores a private, seekable WAV.
+- For larger recordings, `POST /v1/docs/{id}/recording-uploads` → `{ "id": "ru_…" }`, then
+  `PUT /v1/recording-uploads/{id}?offset=N` with raw audio chunks of up to 3 MiB, in order (64 MiB total).
+  `POST /v1/recording-uploads/{id}/finish` validates and atomically consumes the upload, returning `VoiceRecording`.
+  `DELETE /v1/recording-uploads/{id}` discards it. Uploads are author-only, require current commenter access,
+  expire after one day and are limited to two per author. Expired uploads are removed on the author's next start.
 - `POST /v1/recordings/{id}/transcribe` `{}` → `{ "transcript" }`. Only the recording's author can transcribe,
   with current commenter access. Deepgram Nova-3 multilingual STT runs server-side; successful transcripts are
   cached and failed attempts may be retried up to five times. A failure preserves the audio. The browser inserts
@@ -192,7 +197,10 @@ file is the technical reference.
   private/no-store. Unattached drafts older than seven days are cleaned up when their author next uploads.
   Recordings are included in encrypted database backups and removed with their document.
 - Recording limits: 60 uploads per account per hour, two simultaneous processing jobs per server.
+  Comments and transcripts allow up to 100,000 characters. The recorder allows 30 minutes of active audio;
+  pause does not count, and a visual and audible warning occurs once at 25 minutes.
   The web editor stops recording when a comment is dismissed, keeps the draft, and never posts automatically.
+  Discard during recording stops the microphone without uploading and preserves the text draft.
 
 - `POST /v1/comments/{id}/reactions` `{ "emoji" }` → `Comment`: toggles the caller's reaction.
 - `POST /v1/threads/{id}/resolve`, `POST /v1/threads/{id}/reopen` → `Thread`.

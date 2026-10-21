@@ -25,7 +25,7 @@ use crate::state::AppState;
 
 mod anchoring;
 
-const MAX_BODY: usize = 20_000;
+const MAX_BODY: usize = 100_000;
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 // Revisit unresolved results cached before structural review and section recovery were available.
 const ANCHOR_RECOVERY_VERSION: i64 = 2;

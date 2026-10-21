@@ -5,7 +5,7 @@
  * the formatting bar for people who can write, the comments beside it, and versions, links and find on demand.
  * A PDF shown as it is opens in the PDF view instead. Signed-out readers of a public doc see it read only.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -38,6 +38,13 @@ import { ImageAreas } from "./image-areas";
 import { SectionGutter } from "./section-gutter";
 import { CommentMarkers } from "./comment-markers";
 import styles from "./doc.module.css";
+
+const formatFallback = new Map<string, boolean>();
+const FORMAT_EVENT = "silicon-write:format-preference";
+function subscribeFormat(listener: () => void) {
+  window.addEventListener("storage", listener); window.addEventListener(FORMAT_EVENT, listener);
+  return () => { window.removeEventListener("storage", listener); window.removeEventListener(FORMAT_EVENT, listener); };
+}
 
 export type Panel = "comments" | "versions" | "links" | null;
 
@@ -72,7 +79,16 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const [focusedThreadId, setFocusedThreadId] = useState<string | null>(canComment ? wantedThread : null);
   const [pending, setPending] = useState<PendingComment | null>(null);
   const [findOpen, setFindOpen] = useState(false);
-  const [formatOpen, setFormatOpen] = useState(true);
+  const formatKey = `silicon-write:format:${account?.uuid ?? "guest"}`;
+  const formatOpen = useSyncExternalStore(subscribeFormat, () => {
+    try { return localStorage.getItem(formatKey) !== "closed"; } catch { return formatFallback.get(formatKey) ?? true; }
+  }, () => true);
+  const setFormatOpen = useCallback((open: boolean) => {
+    formatFallback.set(formatKey, open);
+    try { localStorage.setItem(formatKey, open ? "open" : "closed"); } catch { /* Keep the in-memory preference. */ }
+    window.dispatchEvent(new Event(FORMAT_EVENT));
+  }, [formatKey]);
+  const toggleFormat = () => setFormatOpen(!formatOpen);
   const [lostAccess, setLostAccess] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
@@ -245,7 +261,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editor, mode, canEdit, canComment]);
+  }, [editor, mode, canEdit, canComment, setFormatOpen]);
 
   /** A comment on an area of an image. */
   const startImageAreaComment = useCallback(
@@ -332,7 +348,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
         onFind={() => setFindOpen(true)}
         openThreads={threads.length}
         formatOpen={formatOpen}
-        onFormat={() => setFormatOpen(value => !value)}
+        onFormat={toggleFormat}
         liveError={liveError}
       />
       {writable && editor && doc.kind === "doc" && mode !== "viewing" ? (

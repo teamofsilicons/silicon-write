@@ -149,6 +149,7 @@ export interface CommentThreadProps {
   /** Optional persisted reply text. A controlled caller clears it after the server accepts the reply. */
   replyDraft?: string;
   replyAccessory?: ReactNode;
+  renderReplyField?: (field: ReactNode) => ReactNode;
   replyCanSendEmpty?: boolean;
   replyDisabled?: boolean;
   onReplyDraftChange?: (text: string) => void;
@@ -297,6 +298,7 @@ interface ComposerProps {
   onCancel?: () => void;
   leading?: ReactNode;
   accessory?: ReactNode;
+  renderField?: (field: ReactNode) => ReactNode;
   allowEmpty?: boolean;
   disabled?: boolean;
   compact?: boolean;
@@ -305,7 +307,7 @@ interface ComposerProps {
 }
 
 /** A growing text field with @mention suggestions. ⌘ or Ctrl + Enter sends; Escape cancels. */
-function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, focusKey, onSubmit, onCancel, leading, compact, cancelLabel, mentionsLabel, value, onValueChange, accessory, allowEmpty = false, disabled = false }: ComposerProps) {
+function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, focusKey, onSubmit, onCancel, leading, compact, cancelLabel, mentionsLabel, value, onValueChange, accessory, renderField = field => field, allowEmpty = false, disabled = false }: ComposerProps) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const reduced = useReducedFlag();
   const field = useRef<HTMLTextAreaElement>(null);
@@ -390,11 +392,11 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
     {accessory && <div className={styles.composerAccessory}>{accessory}</div>}
     {leading}
     <div className={styles.fieldWrap}>
-      <textarea ref={field} className={styles.field} value={text} placeholder={placeholder} rows={1} aria-label={placeholder}
+      {renderField(<textarea ref={field} className={styles.field} value={text} placeholder={placeholder} rows={1} aria-label={placeholder}
         role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={`${uid}-people`} aria-activedescendant={open ? `${uid}-person-${active}` : undefined}
         onChange={event => { setText(event.target.value); readQuery(event.target.value, event.target.selectionStart); }}
         onSelect={event => readQuery(event.currentTarget.value, event.currentTarget.selectionStart)}
-        onBlur={() => setQuery(null)} onKeyDown={onKeyDown} />
+        onBlur={() => setQuery(null)} onKeyDown={onKeyDown} />)}
       <AnimatePresence>
         {open && <motion.ul key="people" id={`${uid}-people`} role="listbox" aria-label={mentionsLabel} className={styles.suggestions}
           initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={reduced ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, height: 0, transition: { duration: motionTokens.duration.instant, ease: standard } }} transition={reduced ? { duration: 0 } : { height: HEIGHT, opacity: { duration: motionTokens.duration.fast, ease: enter } }}>
@@ -416,7 +418,7 @@ type Ui = { editing: string | null; confirming: string | null; picker: string | 
 
 export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(function CommentThread({
   comments, defaultComments = [], onCommentsChange, currentUser, people, resolved, defaultResolved = false, onResolvedChange,
-  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", replyDraft, onReplyDraftChange, replyAccessory, replyCanSendEmpty, replyDisabled, maxDepth = 2, nowLabel = "Just now", labels, presentation = "card", className,
+  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", replyDraft, onReplyDraftChange, replyAccessory, renderReplyField, replyCanSendEmpty, replyDisabled, maxDepth = 2, nowLabel = "Just now", labels, presentation = "card", className,
 }, forwardedRef) {
   const t = withDefaults(DEFAULT_LABELS, labels);
   const reduced = useReducedFlag();
@@ -627,7 +629,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
                   </span>
                 </motion.div>}
               </AnimatePresence>
-              <Composer people={mentionable} accessory={replyAccessory} allowEmpty={replyCanSendEmpty} disabled={replyDisabled} value={replyDraft} onValueChange={onReplyDraftChange} placeholder={placeholder} submitLabel={t.send} cancelLabel={t.cancel} mentionsLabel={t.mentions} focusKey={focusKey} onSubmit={addReply}
+              <Composer people={mentionable} accessory={replyAccessory} renderField={renderReplyField} allowEmpty={replyCanSendEmpty} disabled={replyDisabled} value={replyDraft} onValueChange={onReplyDraftChange} placeholder={placeholder} submitLabel={t.send} cancelLabel={t.cancel} mentionsLabel={t.mentions} focusKey={focusKey} onSubmit={addReply}
                 onCancel={replyTo ? () => setReplyTo(null) : undefined} leading={presentation === "margin" ? undefined : <Avatar author={currentUser} />} />
             </div>
           </motion.div>}

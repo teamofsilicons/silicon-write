@@ -4,17 +4,21 @@ import { api, seg } from "@/lib/client/api";
 import type { VoiceRecording } from "./types";
 
 export type VoiceDraft = {
-  status: "empty" | "requesting" | "recording" | "uploading" | "transcribing" | "ready" | "error";
+  status: "empty" | "requesting" | "recording" | "paused" | "uploading" | "transcribing" | "ready" | "error";
   recording?: VoiceRecording;
   blob?: Blob;
-  startedAt?: number;
+  elapsedMs?: number;
+  stream?: MediaStream;
+  warned?: boolean;
   error?: string;
 };
 const EMPTY: VoiceDraft = { status: "empty" };
 const drafts = new Map<string, VoiceDraft>();
 const listeners = new Set<() => void>();
 const jobs = new Map<string, Promise<void>>();
-type Capture = { cancelled: boolean; recorder?: MediaRecorder; stream?: MediaStream; timer?: ReturnType<typeof setTimeout> };
+export const RECORDING_LIMIT_MS = 30 * 60 * 1000;
+export const RECORDING_WARNING_MS = 25 * 60 * 1000;
+type Capture = { cancelled: boolean; discarded?: boolean; recorder?: MediaRecorder; stream?: MediaStream; timer?: ReturnType<typeof setInterval>; elapsed: number; tick: number; warned: boolean; audio?: AudioContext };
 const captures = new Map<string, Capture>();
 const storageKey = (key: string) => `silicon-write:voice-draft:v1:${key}`;
 
@@ -58,9 +62,44 @@ function stop(key: string) {
   const capture = captures.get(key);
   if (!capture) return;
   capture.cancelled = true;
-  if (capture.timer) clearTimeout(capture.timer);
-  if (capture.recorder?.state === "recording") capture.recorder.stop();
+  if (capture.timer) clearInterval(capture.timer);
+  if (capture.recorder && capture.recorder.state !== "inactive") capture.recorder.stop();
   capture.stream?.getTracks().forEach(track => track.stop());
+}
+function discard(key: string) {
+  const capture = captures.get(key);
+  if (!capture) return;
+  capture.discarded = true;
+  stop(key);
+}
+function pause(key: string) {
+  const capture = captures.get(key);
+  if (!capture?.recorder) return;
+  if (capture.recorder.state === "recording") {
+    capture.elapsed += performance.now() - capture.tick;
+    if (capture.elapsed >= RECORDING_LIMIT_MS) { stop(key); return; }
+    if (!capture.warned && capture.elapsed >= RECORDING_WARNING_MS) { capture.warned = true; chime(capture); }
+    capture.recorder.pause();
+    write(key, { ...read(key), status: "paused", elapsedMs: capture.elapsed, warned: capture.warned });
+  } else if (capture.recorder.state === "paused") {
+    capture.tick = performance.now();
+    capture.recorder.resume();
+    write(key, { ...read(key), status: "recording" });
+  }
+}
+function chime(capture: Capture) {
+  const audio = capture.audio;
+  if (!audio) return;
+  // One short two-tone warning, using the context unlocked by the Record gesture.
+  void audio.resume().then(() => {
+    for (const [delay, frequency] of [[0, 660], [.28, 880]]) {
+      const tone = audio.createOscillator(), gain = audio.createGain(), at = audio.currentTime + delay;
+      tone.frequency.value = frequency;
+      gain.gain.setValueAtTime(0, at); gain.gain.linearRampToValueAtTime(.16, at + .02);
+      gain.gain.exponentialRampToValueAtTime(.001, at + .24);
+      tone.connect(gain); gain.connect(audio.destination); tone.start(at); tone.stop(at + .25);
+    }
+  }).catch(() => undefined);
 }
 async function process(key: string, docId: string, onTranscript: (text: string) => void) {
   if (jobs.has(key)) return jobs.get(key);
@@ -70,10 +109,25 @@ async function process(key: string, docId: string, onTranscript: (text: string) 
       if (!draft.recording) {
         const blob = draft.blob ?? await blobStore(key);
         if (!blob) throw new Error("The recording couldn't be restored. Please record it again.");
-        if (blob.size > 3 * 1024 * 1024) throw new Error("This recording is too large. Please record a shorter comment.");
+        if (blob.size > 64 * 1024 * 1024) throw new Error("This recording is too large. Please record a shorter comment.");
         write(key, { ...draft, blob, status: "uploading", error: undefined });
-        const data = new FormData(); data.append("audio", blob, "voice-comment");
-        const recording = await api.post<VoiceRecording>(`/v1/docs/${seg(docId)}/recordings`, undefined, { raw: data });
+        let recording: VoiceRecording;
+        if (blob.size <= 3 * 1024 * 1024) {
+          const data = new FormData(); data.append("audio", blob, "voice-comment");
+          recording = await api.post<VoiceRecording>(`/v1/docs/${seg(docId)}/recordings`, undefined, { raw: data });
+        } else {
+          const upload = await api.post<{ id: string }>(`/v1/docs/${seg(docId)}/recording-uploads`, {});
+          try {
+            for (let offset = 0; offset < blob.size; offset += 3 * 1024 * 1024) {
+              await api.put(`/v1/recording-uploads/${seg(upload.id)}`, undefined, {
+                raw: blob.slice(offset, offset + 3 * 1024 * 1024), contentType: "application/octet-stream", query: { offset },
+              });
+            }
+            recording = await api.post<VoiceRecording>(`/v1/recording-uploads/${seg(upload.id)}/finish`, {});
+          } finally {
+            void api.delete(`/v1/recording-uploads/${seg(upload.id)}`).catch(() => undefined);
+          }
+        }
         draft = { recording, status: "transcribing" };
         write(key, draft);
         await blobStore(key, null).catch(() => undefined);
@@ -94,13 +148,14 @@ async function start(key: string, docId: string, onTranscript: (text: string) =>
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
     write(key, { status: "error", error: "This browser can't record audio. Try a recent Chrome, Safari, Firefox or Edge browser." }); return;
   }
-  const capture: Capture = { cancelled: false };
+  const capture: Capture = { cancelled: false, elapsed: 0, tick: 0, warned: false };
+  try { capture.audio = new AudioContext(); void capture.audio.resume().catch(() => undefined); } catch { /* Recording still works without a sound output. */ }
   captures.set(key, capture);
   write(key, { status: "requesting" });
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     capture.stream = stream;
-    if (capture.cancelled) { stream.getTracks().forEach(track => track.stop()); captures.delete(key); write(key, EMPTY); return; }
+    if (capture.cancelled) { stream.getTracks().forEach(track => track.stop()); captures.delete(key); void capture.audio?.close(); write(key, EMPTY); return; }
     const mimeType = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus", "audio/webm"].find(type => MediaRecorder.isTypeSupported(type));
     const recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 32000 });
     capture.recorder = recorder;
@@ -108,8 +163,10 @@ async function start(key: string, docId: string, onTranscript: (text: string) =>
     recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
     recorder.onstop = () => {
       stream.getTracks().forEach(track => track.stop());
-      if (capture.timer) clearTimeout(capture.timer);
+      if (capture.timer) clearInterval(capture.timer);
       captures.delete(key);
+      void capture.audio?.close();
+      if (capture.discarded) { write(key, EMPTY); return; }
       const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
       if (!blob.size) { write(key, { status: "error", error: "No audio was captured. Check your microphone and try again." }); return; }
       write(key, { blob, status: "uploading" });
@@ -117,15 +174,23 @@ async function start(key: string, docId: string, onTranscript: (text: string) =>
     };
     recorder.onerror = () => stop(key);
     recorder.start(1000);
-    write(key, { status: "recording", startedAt: Date.now() });
-    capture.timer = setTimeout(() => stop(key), 179000);
+    capture.tick = performance.now();
+    write(key, { status: "recording", elapsedMs: 0, stream });
+    capture.timer = setInterval(() => {
+      if (recorder.state !== "recording") return;
+      const now = performance.now();
+      capture.elapsed += now - capture.tick; capture.tick = now;
+      if (!capture.warned && capture.elapsed >= RECORDING_WARNING_MS) { capture.warned = true; chime(capture); }
+      write(key, { status: "recording", elapsedMs: Math.min(capture.elapsed, RECORDING_LIMIT_MS), stream, warned: capture.warned });
+      if (capture.elapsed >= RECORDING_LIMIT_MS) stop(key);
+    }, 250);
   } catch (error) {
-    capture.stream?.getTracks().forEach(track => track.stop()); captures.delete(key);
+    capture.stream?.getTracks().forEach(track => track.stop()); captures.delete(key); void capture.audio?.close();
     write(key, { status: "error", error: error instanceof DOMException && error.name === "NotAllowedError" ? "Microphone access was denied. Allow the microphone in your browser, then try again." : "The microphone couldn't be opened. Check that it's connected and try again." });
   }
 }
 export const voiceDrafts = {
-  read, empty: EMPTY, start, stop, process,
+  read, empty: EMPTY, start, stop, pause, discard, process,
   subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
   async restore(key: string) {
     const value = read(key);

@@ -107,7 +107,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
       <CommentThread
         comments={comments}
         onCommentsChange={onChange}
-        replyAccessory={<VoiceComment voice={voice} disabled={replySending} />}
+        renderReplyField={field => <VoiceComment voice={voice} disabled={replySending}>{field}</VoiceComment>}
         replyCanSendEmpty={voice.ready}
         replyDisabled={voice.postingBlocked || replySending}
         replyDraft={replyDraft.value.text}

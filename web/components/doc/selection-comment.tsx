@@ -225,7 +225,7 @@ export function SelectionComment({
         <div ref={card} className={`${styles.composerCard} ${commentStyles.composerCard}`} style={composerStyle} role="dialog" aria-label="New comment" data-sq="panel">
           {pending.anchor.quote ? <p className={commentStyles.composerQuote}>“{pending.anchor.quote.slice(0, 160)}{pending.anchor.quote.length > 160 ? "…" : ""}”</p> : null}
           {pending.anchor.kind !== "text" ? <p className={commentStyles.composerKind}>{pending.anchor.kind === "block" ? "On this section" : pending.anchor.kind === "cell" ? "On this cell" : pending.anchor.kind === "pdf" ? "On this area of the page" : pending.anchor.rect ? "On this area of the image" : "On this image"}</p> : null}
-          <VoiceComment voice={voice} disabled={sending} />
+          <VoiceComment voice={voice} disabled={sending}>
           <MentionInput
             className={commentStyles.composerInput}
             ref={input}
@@ -239,7 +239,8 @@ export function SelectionComment({
             maxRows={maxRows}
             aria-label="Comment"
           />
-          <div className={commentStyles.composerActions}>
+          </VoiceComment>
+          {voice.draft.status !== "recording" && voice.draft.status !== "paused" ? <div className={commentStyles.composerActions}>
             <span className={commentStyles.composerHint}>Enter to post · Shift+Enter for a new line</span>
             <Button variant="ghost" size="sm" disabled={sending || voice.busy} onClick={() => { clear(); voice.clear(); onPending(null); }}>
               {value.text || voice.draft.recording || voice.draft.blob ? "Discard" : "Cancel"}
@@ -247,7 +248,7 @@ export function SelectionComment({
             <Button variant="primary" size="sm" className={commentStyles.inkButton} loading={sending} disabled={voice.postingBlocked || (!value.text.trim() && !voice.ready)} onClick={() => void submit()}>
               Comment
             </Button>
-          </div>
+          </div> : null}
         </div>
       ) : null}
     </>

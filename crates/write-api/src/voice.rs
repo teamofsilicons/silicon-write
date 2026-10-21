@@ -8,8 +8,8 @@ use crate::{
 };
 use axum::{
     Json,
-    body::Body,
-    extract::{Multipart, Path, State},
+    body::{Body, Bytes},
+    extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -17,7 +17,8 @@ use serde_json::{Value, json};
 use std::{io::Write, time::Duration};
 
 const MAX_BYTES: usize = 3 * 1024 * 1024;
-const MAX_PCM: usize = 180 * 16000 * 2;
+const MAX_UPLOAD: usize = 64 * 1024 * 1024;
+const MAX_PCM: usize = 1800 * 16000 * 2;
 
 fn media_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x1a\x45\xdf\xa3") {
@@ -55,10 +56,10 @@ async fn normalize(state: &AppState, bytes: &[u8]) -> ApiResult<Vec<u8>> {
         ])
         .arg(input.path())
         .args([
-            "-map", "0:a:0", "-t", "181", "-ac", "1", "-ar", "16000", "-f", "s16le", "pipe:1",
+            "-map", "0:a:0", "-t", "1801", "-ac", "1", "-ar", "16000", "-f", "s16le", "pipe:1",
         ])
         .kill_on_drop(true);
-    let output = tokio::time::timeout(Duration::from_secs(20), command.output())
+    let output = tokio::time::timeout(Duration::from_secs(60), command.output())
         .await
         .map_err(|_| {
             ApiError::invalid("The recording took too long to read. Record a shorter comment.")
@@ -71,12 +72,15 @@ async fn normalize(state: &AppState, bytes: &[u8]) -> ApiResult<Vec<u8>> {
             "This file doesn't contain a readable audio recording.",
         ));
     }
-    if output.stdout.len() > MAX_PCM {
+    // Allow half a second for browser stop scheduling and codec padding, then trim.
+    if output.stdout.len() > MAX_PCM + 16000 {
         return Err(ApiError::invalid(
-            "Voice comments can be up to 3 minutes long.",
+            "Voice comments can be up to 30 minutes long.",
         ));
     }
-    Ok(output.stdout)
+    let mut pcm = output.stdout;
+    pcm.truncate(MAX_PCM);
+    Ok(pcm)
 }
 
 /// A seekable, consistently playable WAV with a real duration, including Safari.
@@ -145,16 +149,28 @@ pub async fn upload(
             bytes.extend_from_slice(&chunk);
         }
     }
-    media_type(&bytes)
-        .ok_or_else(|| ApiError::invalid("Use a WebM, MP4, Ogg or WAV audio recording."))?;
-    let pcm = normalize(&state, &bytes).await?;
-    let duration_ms = (pcm.len() as i64 * 1000 / 32000).max(1);
     let mut tx = state.db.begin().await?;
+    let result = save_recording(&state, &caller, &doc_id, &bytes, &mut tx).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+async fn save_recording(
+    state: &AppState,
+    caller: &Caller,
+    doc_id: &str,
+    bytes: &[u8],
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    media_type(bytes)
+        .ok_or_else(|| ApiError::invalid("Use a WebM, MP4, Ogg or WAV audio recording."))?;
+    let pcm = normalize(state, bytes).await?;
+    let duration_ms = (pcm.len() as i64 * 1000 / 32000).max(1);
     sqlx::query("select pg_advisory_xact_lock(hashtextextended($1, 71))")
         .bind(&caller.uuid)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
-    let recent: i64 = sqlx::query_scalar("select count(*) from comment_recordings where author_uuid=$1 and created_at > now() - interval '1 hour'").bind(&caller.uuid).fetch_one(&mut *tx).await?;
+    let recent: i64 = sqlx::query_scalar("select count(*) from comment_recordings where author_uuid=$1 and created_at > now() - interval '1 hour'").bind(&caller.uuid).fetch_one(&mut **tx).await?;
     if recent >= 60 {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -162,15 +178,134 @@ pub async fn upload(
             "You've recorded 60 voice comments in the last hour. Try again later.",
         ));
     }
-    sqlx::query("delete from comment_recordings r where r.author_uuid=$1 and r.created_at < now() - interval '7 days' and not exists (select 1 from comments c where c.recording_id=r.id)").bind(&caller.uuid).execute(&mut *tx).await?;
+    sqlx::query("delete from comment_recordings r where r.author_uuid=$1 and r.created_at < now() - interval '7 days' and not exists (select 1 from comments c where c.recording_id=r.id)").bind(&caller.uuid).execute(&mut **tx).await?;
     let id = ids::new_id("r");
     sqlx::query("insert into comment_recordings(id, doc_id, author_uuid, audio, content_type, duration_ms) values($1,$2,$3,$4,$5,$6)")
-        .bind(&id).bind(&doc_id).bind(&caller.uuid).bind(wave(&pcm)).bind("audio/wav").bind(duration_ms).execute(&mut *tx).await?;
-    tx.commit().await?;
+        .bind(&id).bind(doc_id).bind(&caller.uuid).bind(wave(&pcm)).bind("audio/wav").bind(duration_ms).execute(&mut **tx).await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"id":id,"duration_ms":duration_ms,"transcript":null})),
     ))
+}
+
+// Each request stays below the web host's body limit. Incomplete uploads are private,
+// bounded to two per author, expire after a day, and are consumed atomically.
+pub async fn begin_upload(
+    State(state): State<AppState>,
+    Auth(caller): Auth,
+    Path(doc_id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let (doc, _) = access::require_doc(&state, Some(&caller), &doc_id, Role::Commenter).await?;
+    if doc.deleted_at.is_some() {
+        return Err(ApiError::conflict("Restore this doc before recording."));
+    }
+    let mut tx = state.db.begin().await?;
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1, 71))")
+        .bind(&caller.uuid)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("delete from comment_recording_uploads where author_uuid=$1 and created_at < now() - interval '1 day'").bind(&caller.uuid).execute(&mut *tx).await?;
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from comment_recording_uploads where author_uuid=$1")
+            .bind(&caller.uuid)
+            .fetch_one(&mut *tx)
+            .await?;
+    if count >= 2 {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "upload_limit",
+            "Finish your other recording uploads before starting another.",
+        ));
+    }
+    let id = ids::new_id("ru");
+    sqlx::query(
+        "insert into comment_recording_uploads(id,doc_id,author_uuid,audio) values($1,$2,$3,$4)",
+    )
+    .bind(&id)
+    .bind(doc_id)
+    .bind(&caller.uuid)
+    .bind(Vec::<u8>::new())
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({"id":id})))
+}
+
+#[derive(serde::Deserialize)]
+pub struct UploadOffset {
+    offset: i64,
+}
+
+async fn upload_doc(state: &AppState, caller: &Caller, id: &str) -> ApiResult<String> {
+    let doc_id: Option<String> = sqlx::query_scalar("select doc_id from comment_recording_uploads where id=$1 and author_uuid=$2 and created_at > now() - interval '1 day'").bind(id).bind(&caller.uuid).fetch_optional(&state.db).await?;
+    let doc_id = doc_id.ok_or_else(|| ApiError::not_found("This recording upload"))?;
+    let (doc, _) = access::require_doc(state, Some(caller), &doc_id, Role::Commenter).await?;
+    if doc.deleted_at.is_some() {
+        return Err(ApiError::conflict("Restore this doc before recording."));
+    }
+    Ok(doc_id)
+}
+pub async fn upload_part(
+    State(state): State<AppState>,
+    Auth(caller): Auth,
+    Path(id): Path<String>,
+    Query(query): Query<UploadOffset>,
+    bytes: Bytes,
+) -> ApiResult<Json<Value>> {
+    upload_doc(&state, &caller, &id).await?;
+    if bytes.is_empty()
+        || bytes.len() > MAX_BYTES
+        || query.offset < 0
+        || query.offset > MAX_UPLOAD as i64 - bytes.len() as i64
+    {
+        return Err(ApiError::invalid(
+            "Recording uploads must be at most 64 MiB, in chunks of at most 3 MiB.",
+        ));
+    }
+    let updated = sqlx::query("update comment_recording_uploads set audio=audio || $3 where id=$1 and author_uuid=$2 and octet_length(audio)=$4")
+        .bind(&id).bind(&caller.uuid).bind(bytes.as_ref()).bind(query.offset).execute(&state.db).await?;
+    if updated.rows_affected() != 1 {
+        return Err(ApiError::conflict(
+            "This upload changed. Retry uploading the recording.",
+        ));
+    }
+    Ok(Json(json!({"offset":query.offset + bytes.len() as i64})))
+}
+pub async fn finish_upload(
+    State(state): State<AppState>,
+    Auth(caller): Auth,
+    Path(id): Path<String>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let doc_id = upload_doc(&state, &caller, &id).await?;
+    let _permit = state.voice_slots.try_acquire().map_err(|_| busy())?;
+    let mut tx = state.db.begin().await?;
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1, 71))")
+        .bind(&caller.uuid)
+        .execute(&mut *tx)
+        .await?;
+    let bytes: Option<Vec<u8>> = sqlx::query_scalar(
+        "delete from comment_recording_uploads where id=$1 and author_uuid=$2 returning audio",
+    )
+    .bind(&id)
+    .bind(&caller.uuid)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let bytes = bytes.ok_or_else(|| ApiError::not_found("This recording upload"))?;
+    let result = save_recording(&state, &caller, &doc_id, &bytes, &mut tx).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+pub async fn cancel_upload(
+    State(state): State<AppState>,
+    Auth(caller): Auth,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    sqlx::query("delete from comment_recording_uploads where id=$1 and author_uuid=$2")
+        .bind(id)
+        .bind(&caller.uuid)
+        .execute(&state.db)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn transcribe(
@@ -236,7 +371,7 @@ pub async fn transcribe(
             ])
             .header(header::AUTHORIZATION, format!("Token {key}"))
             .header(header::CONTENT_TYPE, "application/octet-stream")
-            .timeout(Duration::from_secs(90))
+            .timeout(Duration::from_secs(240))
             .body(pcm)
             .send()
             .await
@@ -256,7 +391,7 @@ pub async fn transcribe(
             .await
             .map_err(|_| ApiError::unavailable("The transcript couldn't be read. Try again."))?
         {
-            if data.len() + chunk.len() > 1024 * 1024 {
+            if data.len() + chunk.len() > 8 * 1024 * 1024 {
                 return Err(ApiError::unavailable(
                     "The transcription response was too large.",
                 ));
@@ -270,7 +405,7 @@ pub async fn transcribe(
             .and_then(Value::as_str)
             .ok_or_else(|| ApiError::unavailable("The transcription response was incomplete."))?
             .trim();
-        if text.chars().count() > 20000 || text.contains('\0') {
+        if text.chars().count() > 100000 || text.contains('\0') {
             return Err(ApiError::unavailable(
                 "The transcript was too long. You can type a shorter transcript.",
             ));

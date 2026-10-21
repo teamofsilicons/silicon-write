@@ -129,3 +129,6 @@ export const POST = handle;
 export const PUT = handle;
 export const PATCH = handle;
 export const DELETE = handle;
+
+// Long voice notes may need several minutes for speech recognition.
+export const maxDuration = 300;
