@@ -78,7 +78,7 @@ export function VoiceComment({ voice, disabled = false, children }: { voice: Ret
       <Waveform stream={draft.stream} paused={draft.status === "paused"} />
       <div className={styles.recordingControls}>
         <Button variant="ghost" size="sm" aria-label="Discard recording" title="Discard recording" onClick={voice.discard}><Trash2 size={17} /></Button>
-        <Button key={draft.status} variant="secondary" size="sm" aria-label={draft.status === "paused" ? "Resume recording" : "Pause recording"} onClick={voice.pause}>{draft.status === "paused" ? <Play size={16} /> : <Pause size={16} />} {draft.status === "paused" ? "Resume" : "Pause"}</Button>
+        <Button key={draft.status} variant="secondary" size="sm" aria-label={draft.status === "paused" ? "Resume recording" : "Pause recording"} title={draft.status === "paused" ? "Resume recording" : "Pause recording"} onClick={voice.pause}>{draft.status === "paused" ? <Play size={16} /> : <Pause size={16} />}</Button>
         <Button variant="primary" size="sm" aria-label="Stop recording" onClick={voice.stop}><Square size={14} fill="currentColor" /> Stop</Button>
       </div>
     </div> : <div className={styles.field} data-mic={!draft.recording && !draft.blob || undefined}>

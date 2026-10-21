@@ -10,11 +10,11 @@
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
 .field { position: relative; min-width: 0; }
-.field[data-mic] textarea { padding-right: 42px; padding-bottom: 34px; }
+.field[data-mic] textarea { padding-right: 42px !important; padding-bottom: 34px !important; }
 .mic { position: absolute; right: 6px; bottom: 6px; padding: 6px !important; min-width: 30px; }
 .recorder { padding: 12px; background: var(--surface-secondary, #f7f7f7); border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
 .recordingHeader { display: flex; justify-content: space-between; gap: 8px; font-size: .75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .waveform { display: block; width: 100%; height: 64px; color: var(--foreground); }
-.recordingControls { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.recordingControls { display: flex; justify-content: flex-end; align-items: center; gap: 6px; flex-wrap: wrap; }
 .recordingControls > :first-child { margin-right: auto; }
 .warning { margin: 0; font-size: .75rem; line-height: 1.45; color: var(--text-secondary); }
