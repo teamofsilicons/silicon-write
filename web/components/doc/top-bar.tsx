@@ -209,6 +209,11 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
             </Button>
           </Tooltip>
         ) : null}
+        {canComment && pendingSuggestions > 0 ? (
+          <Button variant="ghost" size="sm" aria-label={`Review ${pendingSuggestions} suggestions`} onClick={() => onPanel("comments")}>
+            <PencilLine size={16} aria-hidden="true" /><span className={styles.actionLabel}>Suggestions</span><span className={styles.count}>{pendingSuggestions}</span>
+          </Button>
+        ) : null}
         {canComment ? (
           <Tooltip content={`${panel === "comments" ? "Hide comments" : "Comments"} · ${reviewDescription}`}>
             <Button variant="ghost" size="sm" aria-pressed={panel === "comments"} aria-label="Comments" aria-description={reviewDescription} onClick={() => onPanel(panel === "comments" ? null : "comments")}>

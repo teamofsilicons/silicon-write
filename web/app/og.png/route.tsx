@@ -1,6 +1,6 @@
 /**
  * GET /og.png: the app's Open Graph image (1200 by 630), in the look of Silicon Writings and the store's images: the
- * mark on its cream square and the name in the pixel face, the landing page's headline in the blue serif, and its
+ * mark on its white square and the name in the pixel face, the landing page's headline in the blue serif, and its
  * tagline, on warm paper. Everything comes from lib/app.config.ts, so it is drawn once at build time. The faces are
  * read from assets/og (TrueType: next/og cannot read the site's WOFF2 files; SIL OFL 1.1).
  */
@@ -12,7 +12,7 @@ import { markSvg, svgDataUri } from "@/lib/brand-svg";
 
 export const dynamic = "force-static";
 
-const PAPER = "#FFFDF9";
+const PAPER = "#FFFFFF";
 const INK = "#1E1E1C";
 const SECONDARY = "#57544D";
 const BLUE = "#1F5CB1";

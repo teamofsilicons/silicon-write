@@ -7,7 +7,7 @@
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, minHeight: "100vh", display: "grid", placeItems: "center", background: "#FFFDF9", color: "#1E1E1C", font: "16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif" }}>
+      <body style={{ margin: 0, minHeight: "100vh", display: "grid", placeItems: "center", background: "#FFFFFF", color: "#1E1E1C", font: "16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif" }}>
         <main style={{ maxWidth: 460, padding: 24, textAlign: "center" }}>
           <h1 style={{ margin: "0 0 12px", fontSize: 28, letterSpacing: "-0.02em" }}>This site stopped working</h1>
           <p style={{ margin: "0 0 20px", color: "#4C5260" }}>Something failed before the page could load. Try again in a moment.{error.digest ? ` Reference ${error.digest}.` : ""}</p>

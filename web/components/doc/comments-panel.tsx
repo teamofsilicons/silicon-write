@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { LiveDoc } from "@/lib/write/live";
 import type { Editor } from "@tiptap/react";
 import { Check, ChevronDown, ChevronUp, X } from "lucide-react";
 import { CommentThread, type ThreadComment, type CommentThreadEvent } from "@/components/silicon-ui/comment-thread/comment-thread";
@@ -118,18 +119,24 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   );
 }
 
-function SuggestionCards({ docId, editor, canEdit }: { docId: string; editor: Editor | null; canEdit: boolean }) {
+export function SuggestionCards({ docId, editor, canEdit, live, only, onDecided }: { docId: string; editor: Editor | null; canEdit: boolean; live: LiveDoc | null; only?: string; onDecided?: () => void }) {
   const client = useQueryClient();
-  const { data } = useSuggestions(docId);
-  const suggestions = data?.suggestions ?? [];
-  if (!suggestions.length) return null;
+  const { data, refetch, isFetching, error } = useSuggestions(docId);
+  useEffect(() => { if (only) void refetch(); }, [only, refetch]);
+  const [busy, setBusy] = useState(false);
+  const suggestions = (data?.suggestions ?? []).filter(s => !only || s.id === only);
+  if (!suggestions.length) return only ? <p role="status">{isFetching ? "Loading suggestion…" : error ? "The suggestion couldn’t be loaded." : "This suggestion has already been reviewed."}</p> : null;
   const decide = async (path: string) => {
+    if (busy) return;
+    setBusy(true);
     try {
+      if (!live || !await live.flush() || live.hasPendingChanges()) throw new Error("Your changes are still syncing. Try again when connected.");
       await api.post(`/v1/docs/${seg(docId)}/suggestions/${path}`);
       client.invalidateQueries({ queryKey: keys.suggestions(docId) });
+      onDecided?.();
     } catch (error) {
       notifyError(error, "That didn't work");
-    }
+    } finally { setBusy(false); }
   };
   const reveal = (id: string) => {
     if (!editor) return;
@@ -142,8 +149,8 @@ function SuggestionCards({ docId, editor, canEdit }: { docId: string; editor: Ed
         <span>{suggestions.length === 1 ? "1 suggestion" : `${suggestions.length} suggestions`}</span>
         {canEdit && suggestions.length > 1 ? (
           <span className={commentStyles.subheadActions}>
-            <button type="button" className={commentStyles.textButton} onClick={() => void decide("accept-all")}>Accept all</button>
-            <button type="button" className={commentStyles.textButton} onClick={() => void decide("reject-all")}>Reject all</button>
+            <button type="button" className={commentStyles.textButton} disabled={busy} onClick={() => void decide("accept-all")}>Accept all</button>
+            <button type="button" className={commentStyles.textButton} disabled={busy} onClick={() => void decide("reject-all")}>Reject all</button>
           </span>
         ) : null}
       </div>
@@ -159,10 +166,10 @@ function SuggestionCards({ docId, editor, canEdit }: { docId: string; editor: Ed
           </button>
           {canEdit ? (
             <div className={commentStyles.suggestionActions}>
-              <Button variant="secondary" size="sm" onClick={() => void decide(`${seg(s.id)}/accept`)}>
+              <Button variant="secondary" size="sm" disabled={busy} onClick={() => void decide(`${seg(s.id)}/accept`)}>
                 <Check size={14} aria-hidden="true" /> Accept
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => void decide(`${seg(s.id)}/reject`)}>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void decide(`${seg(s.id)}/reject`)}>
                 <X size={14} aria-hidden="true" /> Reject
               </Button>
             </div>
@@ -173,7 +180,7 @@ function SuggestionCards({ docId, editor, canEdit }: { docId: string; editor: Ed
   );
 }
 
-export function CommentsPanel({ docId, doc, account, threads, activeThread, onActivate, editor, canEdit, onClose }: {
+export function CommentsPanel({ docId, doc, account, threads, activeThread, onActivate, editor, canEdit, live, onClose }: {
   docId: string;
   doc: Doc;
   account: Account;
@@ -182,6 +189,7 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, onAc
   onActivate: (id: string | null) => void;
   editor: Editor | null;
   canEdit: boolean;
+  live: LiveDoc | null;
   onClose: () => void;
 }) {
   const [show, setShow] = useState<"open" | "resolved">(() => threads.find(thread => thread.id === activeThread)?.status ?? "open");
@@ -234,7 +242,7 @@ export function CommentsPanel({ docId, doc, account, threads, activeThread, onAc
       </div>
       <SegmentedControl className={commentStyles.tabs} options={[{ value: "open", label: "Open" }, { value: "resolved", label: "Resolved" }]} value={show} onValueChange={(v: string) => setShow(v as "open" | "resolved")} label="Show" size="xs" />
       <div className={commentStyles.panelBody} data-comment-scroll>
-        {doc.kind === "doc" ? <SuggestionCards docId={docId} editor={editor} canEdit={canEdit} /> : null}
+        {doc.kind === "doc" ? <SuggestionCards docId={docId} editor={editor} canEdit={canEdit} live={live} /> : null}
         <div className={commentStyles.threadList}>
           {list.length === 0 ? (
             <p className={commentStyles.panelEmpty}>{show === "open" ? "No open comments. Select text to comment on it." : "No resolved comments yet."}</p>

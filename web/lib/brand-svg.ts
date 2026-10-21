@@ -1,17 +1,17 @@
 /**
  * The app's mark as an SVG document, for the places that need a file rather than a component: the browser icon
  * (app/icon.tsx), the home-screen icon (app/apple-icon.tsx) and the Open Graph image (app/og.png). The glyph is
- * lib/app.config.ts `mark` (lucide-style strokes on a 24 by 24 grid) in #181818 on a cream square, the way the family's
+ * lib/app.config.ts `mark` (lucide-style strokes on a 24 by 24 grid) in #181818 on a white square, the way the family's
  * icons are drawn (Silicon Apps, Silicon Accounts, Silicon Developer). The system rounds a home-screen icon itself.
  */
 import { appConfig } from "./app.config";
 
-export const ICON_PAPER = "#EDE8E0";
+export const ICON_PAPER = "#FFFFFF";
 export const ICON_INK = "#181818";
 
 const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-/** The mark on its cream square. `glyph` is the share of the side the glyph spans. `shape` is kept for callers. */
+/** The mark on its white square. `glyph` is the share of the side the glyph spans. `shape` is kept for callers. */
 export function markSvg({ glyph = 0.56 }: { shape?: "squircle" | "square"; glyph?: number } = {}): string {
   const scale = (64 * glyph) / 24;
   const offset = (64 - 24 * scale) / 2;

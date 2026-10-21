@@ -1,7 +1,7 @@
 /**
  * The app's mark: its glyph (lib/app.config.ts `mark`, lucide-style paths on a 24 by 24 grid) in ink, beside the name in
  * the pixel face, as Silicon Writings, Silicon Apps and Silicon Accounts draw theirs. The icons (app/icon.tsx,
- * app/apple-icon.tsx) and the Open Graph image draw the same glyph in #181818 on a cream square (lib/brand-svg.ts).
+ * app/apple-icon.tsx) and the Open Graph image draw the same glyph in #181818 on a white square (lib/brand-svg.ts).
  * Plain SVG, server-rendered, shared by the landing page, the sign-in page and the signed-in shell.
  *
  *   <AppMark />                 the bare glyph at 22 px

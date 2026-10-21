@@ -205,6 +205,8 @@
 
 /* The typing menus (/ and [[). */
 .menu {
+  position: relative;
+  overscroll-behavior: contain;
   width: 284px;
   max-height: 340px;
   overflow-y: auto;

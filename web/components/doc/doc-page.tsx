@@ -23,6 +23,7 @@ import { DocEditor, type EditMode } from "@/components/editor/editor";
 import { anchorFor } from "@/components/editor/anchors";
 import { TopBar } from "./top-bar";
 import { Toolbar } from "./toolbar";
+import { EditorMenu } from "./editor-menu";
 import { CommentsPanel } from "./comments-panel";
 import { FocusedComment } from "./focused-comment";
 import { revealThreadAnchor } from "./thread-anchor";
@@ -60,7 +61,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const role = doc.role;
   const canEdit = atLeast(role, "editor") && !doc.deleted_at;
   const canComment = atLeast(role, "commenter") && Boolean(account);
-  const [mode, setMode] = useState<EditMode>(canEdit ? "editing" : "viewing");
+  const [mode, setMode] = useState<EditMode>(canEdit ? "editing" : canComment ? "suggesting" : "viewing");
   const [live, setLive] = useState<LiveDoc | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -71,7 +72,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const [focusedThreadId, setFocusedThreadId] = useState<string | null>(canComment ? wantedThread : null);
   const [pending, setPending] = useState<PendingComment | null>(null);
   const [findOpen, setFindOpen] = useState(false);
-  const [formatOpen, setFormatOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(true);
   const [lostAccess, setLostAccess] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
@@ -368,6 +369,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
                 onUploadImage={uploadImage}
                 pickImage={pickImage}
               />
+              {editor ? <EditorMenu editor={editor} docId={docId} live={live} canEdit={canEdit} canComment={canComment} writable={writable && mode !== "viewing"} onComment={() => startComment()} onReview={() => showPanel("comments")} /> : null}
               {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={activeThread} onActivate={openThread} /> : null}
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
@@ -393,7 +395,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
           ) : null}
         </main>
         {panel === "comments" && canComment ? (
-          <CommentsPanel docId={docId} doc={doc} account={account!} threads={allThreads} activeThread={activeThread} onActivate={revealThread} editor={editor} canEdit={canEdit} onClose={() => showPanel(null)} />
+          <CommentsPanel docId={docId} doc={doc} account={account!} threads={allThreads} activeThread={activeThread} onActivate={revealThread} editor={editor} canEdit={canEdit} live={live} onClose={() => showPanel(null)} />
         ) : null}
         {panel === "versions" && canEdit ? <VersionsPanel doc={doc} editor={editor} live={live} onClose={() => showPanel(null)} /> : null}
         {panel === "links" && account ? <LinksPanel doc={doc} onClose={() => showPanel(null)} /> : null}

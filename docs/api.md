@@ -224,3 +224,5 @@ file is the technical reference.
 
 - `GET /healthz`, `GET /readyz`. `POST /v1/webhooks/accounts`: Silicon Accounts updates (signed).
 - `GET /v1/dev/outbox` (development only): the emails and notifications that would have been sent.
+
+The web invitation role **Suggester** maps to API role `commenter`: read, comment, and propose changes; only editors and owners may accept or reject.

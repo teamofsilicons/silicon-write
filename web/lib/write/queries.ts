@@ -54,7 +54,7 @@ export function useThreads(id: string, status: "open" | "resolved" | "all", enab
 }
 
 export function useSuggestions(id: string, enabled = true) {
-  return useQuery({ queryKey: keys.suggestions(id), queryFn: () => api.get<{ suggestions: Suggestion[] }>(`/v1/docs/${seg(id)}/suggestions`), enabled });
+  return useQuery({ queryKey: keys.suggestions(id), staleTime: 0, queryFn: () => api.get<{ suggestions: Suggestion[] }>(`/v1/docs/${seg(id)}/suggestions`), enabled });
 }
 
 export function useVersions(id: string, enabled = true) {

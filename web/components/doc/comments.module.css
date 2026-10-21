@@ -17,13 +17,6 @@
 .panel,
 .composerCard,
 .commentPill {
-  --foreground: #171717;
-  --surface: #fff;
-  --surface-muted: #f7f5f1;
-  --border: #e7e4df;
-  --border-subtle: #e7e4df;
-  --text-secondary: #625e58;
-  --text-muted: #6b675f;
   --radius-control: 6px;
   --radius-container: 6px;
   --comment-blue: #2f68b8;

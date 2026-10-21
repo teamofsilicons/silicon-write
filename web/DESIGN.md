@@ -1,7 +1,7 @@
 # Silicon Write design
 
 Write follows the layout and visual language of [Silicon Writings](https://writings.teamofsilicons.com/p/mv2o9xtfokwzjv6f),
-reviewed on 17 October 2026: warm paper, a restrained header, a generous reading column, and notes in the margin.
+reviewed on 17 October 2026: neutral Silicon UI surfaces, a restrained header, a generous reading column, and notes in the margin.
 It keeps Write's document model and operations: private docs, folders, sharing, suggestions, version history, imports,
 exports, and collaboration between Carbons and Silicons. The reference's publishing and timeline concepts do not
 become Write features.
@@ -15,7 +15,7 @@ page composition lives in `components/doc/`, `components/editor/`, `components/l
 1. **The writing comes first.** Keep the document centered and its title with its text. Navigation and tools should
    leave room for reading rather than surround it with persistent controls.
 2. **One quiet header.** Use compact navigation and actions on the paper background. Make the available writing mode
-   clear; reveal detailed formatting when requested.
+   clear; show formatting by default when writing, with a toggle to tuck it away.
 3. **Few boxes.** Lists and conversations use whitespace and hairlines. Menus, dialogs, fields, and floating panels
    have edges; ordinary document content does not look like a card.
 4. **A restrained palette.** Ink carries the document and primary actions. Blue carries library titles, links, and
@@ -42,7 +42,7 @@ writing to a different column on a wide screen.
   Grotesk at medium weight; blockquotes use an italic serif and a simple vertical rule. Code retains its monospace
   face and horizontal scrolling where necessary. Tables, images, equations, and imported formatting keep their
   document meaning.
-- **Formatting:** collapsed initially. Format reveals the existing toolbar beneath the header; it can be hidden
+- **Formatting:** visible initially in writing modes. Format toggles the toolbar beneath the header; it can be hidden
   again without changing the document. Keyboard formatting remains available. The link shortcut reveals its
   toolbar anchor before opening the link popover. Formatting is available in Editing and Suggesting when the
   document role allows it, and absent in Reading or Commenting.
@@ -130,7 +130,7 @@ within the strip; the strip scrolls horizontally rather than widening the page. 
 normal document editing shortcuts intact.
 
 Open tab metadata is kept for the current account and browser tab, including across visits to the library. Document
-contents are not stored with tab titles. Each tab is one rounded surface, including its close control; the active tab joins the document. A + beside the strip opens a searchable document picker without leaving the editor. Previous/next arrows beside it cycle through open docs, with keyboard shortcuts shown on hover. Alt+PageUp/PageDown switches while writing (Option+Fn+Up/Down on Mac keyboards). Alt/Option+Shift+1–8 selects a document tab, 9 selects the last, and O opens the picker. Alt/Option+Shift+Left/Right switches outside editable fields; unmodified arrows activate tabs when the strip has focus. Editors load when visited; switching between open tabs keeps their live
+contents are not stored with tab titles. Each tab is one rounded surface, including its close control; the active tab joins the document. A + beside the strip opens a searchable document picker without leaving the editor. Tab arrows are omitted; tab and picker shortcuts remain visible on hover. Alt+PageUp/PageDown switches while writing (Option+Fn+Up/Down on Mac keyboards). Alt/Option+Shift+1–8 selects a document tab, 9 selects the last, and O opens the picker. Alt/Option+Shift+Left/Right switches outside editable fields; unmodified arrows activate tabs when the strip has focus. Editors load when visited; switching between open tabs keeps their live
 document state, including edits waiting for the connection to return. Closing a tab never deletes its document.
 
 **Open files** accepts multiple supported files. **Open folder** imports the selected folder and its nested structure
@@ -146,14 +146,14 @@ these tokens to match the reference, but every foreground/background pair must s
 
 | Token | Light value | Use |
 | --- | --- | --- |
-| `--background` | `#FFFDF9` | Warm page paper |
+| `--background` | `var(--neutral-0)` | Neutral white page |
 | `--surface` | `#FFFFFF` | Fields and raised conversation surfaces |
-| `--surface-muted` | `#F6F2EA` | Quiet fills and hover feedback |
-| `--surface-pressed` | `#EDE8E0` | Selected and pressed fills |
-| `--foreground` | `#1E1E1C` | Body text, important icons, ink actions |
-| `--text-secondary` | `#57544D` | Descriptions and secondary content |
-| `--text-muted` | `#6B675F` | Hints, timestamps, and placeholders |
-| `--border` / `--border-subtle` / `--border-strong` | `#E7E3D8` / `#EFEBE2` / `#D6D0C1` | Edges and hairlines |
+| `--surface-muted` | `var(--neutral-2)` | Quiet fills and hover feedback |
+| `--surface-pressed` | `var(--neutral-3)` | Selected and pressed fills |
+| `--foreground` | `var(--neutral-11)` | Body text, important icons, ink actions |
+| `--text-secondary` | `var(--neutral-8)` | Descriptions and secondary content |
+| `--text-muted` | `var(--neutral-7)` | Hints, timestamps, and placeholders |
+| `--border` / `--border-subtle` / `--border-strong` | `oklch(93.5% 0 0)` / `oklch(96.5% 0 0)` / `oklch(82% 0 0)` | Edges and hairlines |
 | `--accent` / `--accent-ink` | `#1F5CB1` | Links, library titles, selected content |
 | `--success` / `--warning` / `--danger` | `#2B7148` / `#8F560D` / `#B42318` | Status and review meaning |
 
@@ -232,3 +232,16 @@ Link access is a separate section with concise permission copy and Copy link. On
 access or other members’ roles; inherited access stays read-only. Ownership transfer is tucked into a collapsed,
 owner-only **Transfer ownership** disclosure and still requires the recipient to accept. Link-only visitors never
 see membership. Long titles and identities wrap without pushing controls outside the dialog.
+
+
+### Selection and suggestion review
+
+Double-clicking text or right-clicking in the document opens a Silicon UI text menu. It retains the editor selection
+for copying, formatting, and comments; permission checks hide writing actions from readers. Escape returns focus to
+the editor, while an outside click keeps focus at its destination. The insert menu tracks the typed slash as the page
+scrolls, flips above the caret near the lower edge, and scrolls its own options without scrolling the page.
+
+Invitations label the existing `commenter` permission **Suggester**: it permits comments and proposed edits, never direct
+edits or review decisions. Suggesters start in Suggesting mode. Clicking suggested text opens an anchored review card;
+editors accept or reject there or through the visible Suggestions action. Decisions await acknowledgement of local
+edits and disable duplicate submissions. The accepted text becomes ordinary content through the existing service API.

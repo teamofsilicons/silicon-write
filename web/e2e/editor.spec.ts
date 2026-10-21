@@ -1688,6 +1688,8 @@ test.describe("suggestions and roles", () => {
     await share(owner.page, doc.id, friend.account.id, "commenter");
     const page = friend.page;
     await openDoc(page, doc.id);
+    await expect(page.getByRole("button", { name: "Mode: Suggesting", exact: true })).toBeVisible();
+    await chooseDocMode(page, "Commenting");
     const mode = page.getByRole("button", { name: "Mode: Commenting", exact: true });
     await mode.click();
     await expect(page.getByRole("menuitemradio")).toHaveText(["Commenting", "Suggesting"]);

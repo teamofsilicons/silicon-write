@@ -809,8 +809,8 @@ test("the share dialog: share with the friend by c:id, they open it from Shared 
   await expect(friend.page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
 
   // Then a commenter.
-  await choose(page, friendRole, "Commenter");
-  await expect(friendRole).toContainText("Commenter");
+  await choose(page, friendRole, "Suggester");
+  await expect(friendRole).toContainText("Suggester");
   sharing = await must<Sharing>(page, "GET", `/v1/docs/${doc.id}/sharing`);
   expect(sharing.members.map(m => m.role)).toEqual(["commenter"]);
   expect((await must<Doc>(friend.page, "GET", `/v1/docs/${doc.id}`)).role).toBe("commenter");
@@ -878,13 +878,13 @@ test("inviting an email that isn't on Silicon Accounts yet keeps a pending invit
   await page.goto("/library");
   const dialog = await shareFromRow(page, doc.title);
   await dialog.getByRole("textbox", { name: "Who to share with" }).fill(email);
-  await choose(page, dialog.getByRole("combobox", { name: "Role", exact: true }), "Commenter");
+  await choose(page, dialog.getByRole("combobox", { name: "Role", exact: true }), "Suggester");
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
   await expect(page.getByText(`Invited ${email}`)).toBeVisible();
   await expect(page.getByText("They get access when they sign in with this email.")).toBeVisible();
   const invited = dialog.getByRole("list", { name: "People with access" }).getByRole("listitem").filter({ hasText: email });
   await expect(invited).toContainText("Invited, not signed in yet");
-  await expect(dialog.getByRole("combobox", { name: `Role of ${email}` })).toContainText("Commenter");
+  await expect(dialog.getByRole("combobox", { name: `Role of ${email}` })).toContainText("Suggester");
   const member = (await must<Sharing>(page, "GET", `/v1/docs/${doc.id}/sharing`)).members.find(m => m.email === email);
   expect(member?.pending).toBe(true);
   expect(member?.role).toBe("commenter");
@@ -933,10 +933,10 @@ test("an editor's share dialog: they invite people, but can't change or remove a
   // They invite someone new, as a commenter: the owner sees it, with the editor as who invited them.
   const newcomer = `write-newcomer-${RUN}${(++made).toString(36)}@example.test`;
   await dialog.getByRole("textbox", { name: "Who to share with" }).fill(newcomer);
-  await choose(page, dialog.getByRole("combobox", { name: "Role", exact: true }), "Commenter");
+  await choose(page, dialog.getByRole("combobox", { name: "Role", exact: true }), "Suggester");
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
   await expect(page.getByText(`Invited ${newcomer}`)).toBeVisible();
-  await expect(people.getByRole("listitem").filter({ hasText: newcomer })).toContainText("Commenter");
+  await expect(people.getByRole("listitem").filter({ hasText: newcomer })).toContainText("Suggester");
   const newcomerMember = (await must<Sharing>(carbon.page, "GET", `/v1/docs/${doc.id}/sharing`)).members.find(m => m.email === newcomer);
   expect(newcomerMember?.role).toBe("commenter");
   expect(newcomerMember?.invited_by?.id).toBe(friend.id);

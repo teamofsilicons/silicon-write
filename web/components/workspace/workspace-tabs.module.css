@@ -18,7 +18,7 @@
   flex: 0 1 auto;
   min-width: 0;
   width: max-content;
-  max-width: calc(100% - 108px);
+  max-width: calc(100% - 40px);
   overflow-x: auto;
   scrollbar-width: none;
   padding: 0;
@@ -58,7 +58,7 @@
   z-index: 1;
   background: var(--background);
   border-color: var(--border);
-  box-shadow: 0 -1px 3px rgb(40 30 15 / 3%);
+  box-shadow: 0 -1px 3px rgb(0 0 0 / 3%);
 }
 .item[data-active]::after, .item:hover::after, .item:focus-within::after,
 .item:has(+ .item[data-active])::after, .item:has(+ .item:hover)::after { opacity: 0; }
@@ -96,7 +96,7 @@
   height: 38px;
 }
 .library:hover { background: var(--surface-pressed); }
-.library[aria-selected="true"] { background: var(--background); border-color: var(--border); box-shadow: 0 -1px 3px rgb(40 30 15 / 3%); }
+.library[aria-selected="true"] { background: var(--background); border-color: var(--border); box-shadow: 0 -1px 3px rgb(0 0 0 / 3%); }
 .library:focus-visible { box-shadow: inset 0 0 0 1px var(--foreground); }
 .close {
   display: grid;
@@ -147,12 +147,12 @@
 .unavailable p { color: var(--text-secondary); overflow-wrap: anywhere; }
 @media (max-width: 640px) {
   .workspaceBar { gap: 6px; padding-inline: 8px; }
-  .item { max-width: min(190px, calc(100vw - 180px)); }
+  .item { max-width: min(190px, calc(100vw - 108px)); }
   .tab { max-width: 155px; height: 40px; }
   .library { flex: 0 0 36px; width: 36px; height: 41px; padding-inline: 0; justify-content: center; }
   .library > span { display: none; }
   .close { width: 28px; height: 28px; }
-  .tabs { max-width: calc(100% - 112px); }
+  .tabs { max-width: calc(100% - 40px); }
   .tabAction { flex-basis: 34px; width: 34px; height: 34px; }
 }
 @media (prefers-reduced-motion: reduce) { .item { transition: none; } }

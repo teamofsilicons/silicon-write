@@ -2,13 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, FileText, Library, Plus, X } from "lucide-react";
+import { FileText, Library, Plus, X } from "lucide-react";
 import { addWorkspaceTabs, closeWorkspaceTab, EMPTY_WORKSPACE, readWorkspace, workspaceKey, type WorkspaceState } from "@/lib/write/workspace-tabs";
 import { retainWorkspaceDocs, setWorkspaceLiveScope } from "@/lib/write/workspace-live";
 import { rememberWorkspaceDoc, setWorkspaceDocScope } from "@/lib/write/workspace-docs";
 import type { Doc } from "@/lib/write/types";
 import { OpenDocDialog } from "./open-doc-dialog";
-import { adjacentWorkspaceTab, resolveWorkspaceShortcut } from "@/lib/write/workspace-shortcuts";
+import { resolveWorkspaceShortcut } from "@/lib/write/workspace-shortcuts";
 import { Tooltip } from "@/components/silicon-ui/tooltip/tooltip";
 import styles from "./workspace-tabs.module.css";
 
@@ -22,16 +22,6 @@ function ShortcutHint({ label, shortcut, apple }: { label: string; shortcut?: st
   return <span className={styles.tooltipContent}>
     <span className={styles.tooltipLabel}>{label}</span>
     {shortcut ? <kbd className={styles.tooltipShortcut} aria-label={`${apple ? "Option" : "Alt"} Shift ${shortcut}`}>{apple ? `⌥ ⇧ ${shortcut}` : `Alt + Shift + ${shortcut}`}</kbd> : null}
-  </span>;
-}
-
-function NavigationHint({ direction, apple }: { direction: "previous" | "next"; apple: boolean }) {
-  const previous = direction === "previous";
-  return <span className={styles.tooltipContent}>
-    <span>{previous ? "Previous tab" : "Next tab"}</span>
-    <kbd className={styles.tooltipShortcut} aria-label={`${apple ? "Option Fn" : "Alt"} ${apple ? previous ? "Up" : "Down" : previous ? "Page Up" : "Page Down"}`}>
-      {apple ? `⌥ Fn ${previous ? "↑" : "↓"}` : `Alt + ${previous ? "Page Up" : "Page Down"}`}
-    </kbd>
   </span>;
 }
 
@@ -82,9 +72,6 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
   const focusAfterClose = useRef<string | null>(null);
   const editorFocusAfterNavigation = useRef<string | null>(null);
   const show = Boolean(account && state.tabs.length);
-  const tabIds = state.tabs.map(tab => tab.id);
-  const previousTab = adjacentWorkspaceTab(tabIds, active, -1);
-  const nextTab = adjacentWorkspaceTab(tabIds, active, 1);
 
   useEffect(() => {
     setWorkspaceLiveScope(account);
@@ -229,12 +216,6 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
             })}
           </div>
           <div className={styles.tabActions}>
-            <Tooltip side="bottom" content={<NavigationHint direction="previous" apple={isApple} />}>
-              <button type="button" data-sq="control" className={styles.tabAction} aria-label="Previous tab" aria-keyshortcuts="Alt+PageUp" disabled={!previousTab} onClick={() => { if (previousTab) navigateDoc(previousTab); }}><ChevronLeft size={17} aria-hidden="true" /></button>
-            </Tooltip>
-            <Tooltip side="bottom" content={<NavigationHint direction="next" apple={isApple} />}>
-              <button type="button" data-sq="control" className={styles.tabAction} aria-label="Next tab" aria-keyshortcuts="Alt+PageDown" disabled={!nextTab} onClick={() => { if (nextTab) navigateDoc(nextTab); }}><ChevronRight size={17} aria-hidden="true" /></button>
-            </Tooltip>
             <Tooltip side="bottom" content={<ShortcutHint label="Open a doc" shortcut="O" apple={isApple} />}>
               <button type="button" data-sq="control" className={styles.tabAction} aria-label="Open a doc" aria-keyshortcuts="Alt+Shift+O" onClick={() => setPickerOpen(true)}><Plus size={18} aria-hidden="true" /></button>
             </Tooltip>

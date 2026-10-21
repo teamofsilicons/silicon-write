@@ -23,7 +23,7 @@ import styles from "./share.module.css";
 
 const ROLES = [
   { value: "editor", label: "Editor" },
-  { value: "commenter", label: "Commenter" },
+  { value: "commenter", label: "Suggester" },
   { value: "viewer", label: "Viewer" },
 ];
 
@@ -138,6 +138,7 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
                   Share
                 </Button>
               </div>
+              {role === "commenter" ? <p className={styles.note}>Can comment and suggest changes. Editors accept or reject them.</p> : null}
             </form>
           ) : data ? (
             <p className={styles.note}>Only the owner and editors can share this.</p>
@@ -171,7 +172,7 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
                           <Select label={`Role of ${member.account?.id ?? member.email}`} options={ROLES} value={member.role} onValueChange={v => void change(member, v)} className={styles.roleSelectSmall} />
                         </div>
                       ) : (
-                        <span className={styles.role}>{member.role[0].toUpperCase() + member.role.slice(1)}</span>
+                        <span className={styles.role}>{member.role === "commenter" ? "Suggester" : member.role[0].toUpperCase() + member.role.slice(1)}</span>
                       )}
                       {isOwner || (me && member.account?.uuid === me) ? (
                         <button type="button" className={styles.remove} aria-label={member.account?.uuid === me ? "Leave" : `Remove ${member.account?.id ?? member.email}`} onClick={() => void remove(member)}>
@@ -190,7 +191,7 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
                         {member.account?.id ?? member.email} · {typeof member.via === "object" && member.via.folder ? `through the folder “${member.via.folder.name}”` : "through a folder above it"}
                       </span>
                     </span>
-                    <span className={styles.role}>{member.role[0].toUpperCase() + member.role.slice(1)}</span>
+                    <span className={styles.role}>{member.role === "commenter" ? "Suggester" : member.role[0].toUpperCase() + member.role.slice(1)}</span>
                   </li>
                 ))}
               </ul>

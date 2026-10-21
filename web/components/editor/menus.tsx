@@ -8,9 +8,9 @@
 import { Extension } from "@tiptap/core";
 import type { Editor, Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
-import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
+import Suggestion, { exitSuggestion, type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
-import { forwardRef, useEffect, useImperativeHandle, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import {
   CheckSquare, Code2, FileText, Heading1, Heading2, Heading3, Image as ImageIcon, List, ListOrdered, ListTree, Minus, Quote, Sigma, Superscript, Table as TableIcon, Text,
 } from "lucide-react";
@@ -37,6 +37,14 @@ export interface MenuListHandle {
 
 const MenuList = forwardRef<MenuListHandle, MenuListProps>(function MenuList({ items, command, empty }, ref) {
   const [selected, setSelected] = useState(0);
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const menu = list.current;
+    const item = menu?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!menu || !item) return;
+    if (item.offsetTop < menu.scrollTop) menu.scrollTop = item.offsetTop;
+    else if (item.offsetTop + item.offsetHeight > menu.scrollTop + menu.clientHeight) menu.scrollTop = item.offsetTop + item.offsetHeight - menu.clientHeight;
+  }, [selected]);
   useEffect(() => setSelected(0), [items]);
   useImperativeHandle(ref, () => ({
     onKeyDown: ({ event }) => {
@@ -57,7 +65,7 @@ const MenuList = forwardRef<MenuListHandle, MenuListProps>(function MenuList({ i
     },
   }));
   return (
-    <div className={styles.menu} role="listbox" aria-label="Insert">
+    <div ref={list} data-sq="container" className={styles.menu} role="listbox" aria-label="Insert">
       {items.length === 0 ? <p className={styles.menuEmpty}>{empty}</p> : null}
       {items.map((item, index) => (
         <button
@@ -85,43 +93,90 @@ const MenuList = forwardRef<MenuListHandle, MenuListProps>(function MenuList({ i
 });
 
 /** Renders a suggestion's menu next to the text being typed. */
-function popupRenderer(empty: string) {
+function popupRenderer(empty: string, key: PluginKey) {
   return () => {
     let component: ReactRenderer<MenuListHandle, MenuListProps> | null = null;
     let host: HTMLDivElement | null = null;
-    const place = (props: SuggestionProps<MenuItem>) => {
-      const rect = props.clientRect?.();
-      if (!rect || !host) return;
-      host.style.position = "fixed";
-      host.style.left = `${Math.min(rect.left, window.innerWidth - 300)}px`;
-      host.style.top = `${rect.bottom + 6}px`;
-      host.style.zIndex = "60";
+    let current: SuggestionProps<MenuItem> | null = null;
+    let observer: ResizeObserver | null = null;
+    let frame = 0;
+    const place = () => {
+      const rect = current?.clientRect?.();
+      const menu = host?.firstElementChild as HTMLElement | null;
+      if (!rect || !host || !menu) return;
+      const viewport = window.visualViewport;
+      const left = viewport?.offsetLeft ?? 0;
+      const top = viewport?.offsetTop ?? 0;
+      const width = viewport?.width ?? window.innerWidth;
+      const height = viewport?.height ?? window.innerHeight;
+      const bottom = top + height;
+      // Keep the menu attached to the text, never floating over unrelated content.
+      host.hidden = rect.bottom < top || rect.top > bottom;
+      const below = bottom - rect.bottom - 14;
+      const above = rect.top - top - 14;
+      const upwards = below < Math.min(340, menu.scrollHeight) && above > below;
+      menu.style.maxHeight = `${Math.max(0, Math.min(340, upwards ? above : below))}px`;
+      menu.style.width = `${Math.min(284, width - 16)}px`;
+      host.style.left = `${Math.max(left + 8, Math.min(rect.left, left + width - menu.offsetWidth - 8))}px`;
+      host.style.top = `${upwards ? rect.top - menu.offsetHeight - 6 : rect.bottom + 6}px`;
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(place);
+    };
+    const scroll = (event: Event) => {
+      if (host?.contains(event.target as Node)) return;
+      schedule();
+    };
+    const outside = (event: PointerEvent) => {
+      if (!host?.contains(event.target as Node) && current) exitSuggestion(current.editor.view, key);
+    };
+    const cleanup = () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("resize", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
+      window.visualViewport?.removeEventListener("scroll", schedule);
+      document.removeEventListener("pointerdown", outside, true);
+      host?.remove();
+      component?.destroy();
+      host = null;
+      component = null;
+      current = null;
     };
     return {
       onStart: (props: SuggestionProps<MenuItem>) => {
+        current = props;
         component = new ReactRenderer(MenuList, { props: { items: props.items, command: props.command, empty }, editor: props.editor });
         host = document.createElement("div");
+        host.style.position = "fixed";
+        host.style.zIndex = "60";
         host.appendChild(component.element);
         document.body.appendChild(host);
-        place(props);
+        observer = new ResizeObserver(schedule);
+        observer.observe(component.element);
+        window.addEventListener("scroll", scroll, true);
+        window.addEventListener("resize", schedule);
+        window.visualViewport?.addEventListener("resize", schedule);
+        window.visualViewport?.addEventListener("scroll", schedule);
+        document.addEventListener("pointerdown", outside, true);
+        place();
+        schedule();
       },
       onUpdate: (props: SuggestionProps<MenuItem>) => {
+        current = props;
         component?.updateProps({ items: props.items, command: props.command, empty });
-        place(props);
+        schedule();
       },
       onKeyDown: (props: SuggestionKeyDownProps) => {
         if (props.event.key === "Escape") {
-          host?.remove();
+          if (current) exitSuggestion(current.editor.view, key);
           return true;
         }
         return component?.ref?.onKeyDown(props) ?? false;
       },
-      onExit: () => {
-        host?.remove();
-        component?.destroy();
-        host = null;
-        component = null;
-      },
+      onExit: cleanup,
     };
   };
 }
@@ -151,6 +206,9 @@ export function blockItems(actions: BlockActions): MenuItem[] {
   ];
 }
 
+const slashKey = new PluginKey("slash-menu");
+const docLinkKey = new PluginKey("doc-link-menu");
+
 export const SlashMenu = Extension.create<{ actions: BlockActions }>({
   name: "slashMenu",
   addOptions() {
@@ -161,16 +219,16 @@ export const SlashMenu = Extension.create<{ actions: BlockActions }>({
     return [
       Suggestion<MenuItem>({
         editor: this.editor,
-        pluginKey: new PluginKey("slash-menu"),
+        pluginKey: slashKey,
         char: "/",
         startOfLine: true,
         allowSpaces: false,
         items: ({ query }) => {
           const q = query.toLowerCase();
-          return items.filter(i => !q || i.title.toLowerCase().includes(q) || i.keywords?.some(k => k.includes(q))).slice(0, 12);
+          return items.filter(i => !q || i.title.toLowerCase().includes(q) || i.keywords?.some(k => k.includes(q)));
         },
         command: ({ editor, range, props }) => props.run(editor, range),
-        render: popupRenderer("Nothing matches."),
+        render: popupRenderer("Nothing matches.", slashKey),
       }),
     ];
   },
@@ -195,7 +253,7 @@ export const DocLinkMenu = Extension.create({
     return [
       Suggestion<MenuItem>({
         editor: this.editor,
-        pluginKey: new PluginKey("doc-link-menu"),
+        pluginKey: docLinkKey,
         char: "[[",
         allowSpaces: true,
         items: async ({ query }) => {
@@ -212,7 +270,7 @@ export const DocLinkMenu = Extension.create({
           return items;
         },
         command: ({ editor, range, props }) => props.run(editor, range),
-        render: popupRenderer("Type a doc's title."),
+        render: popupRenderer("Type a doc's title.", docLinkKey),
       }),
     ];
   },

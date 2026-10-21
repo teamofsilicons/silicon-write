@@ -6,6 +6,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import { ESCAPE_LAYER_ATTRIBUTE, layerEscape } from "../lib/escape";
 import styles from "./popover.module.css";
 
+export const PopoverAnchor = PopoverPrimitive.Anchor;
 export const Popover = PopoverPrimitive.Root;
 export const PopoverClose = PopoverPrimitive.Close;
 

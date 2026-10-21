@@ -1,18 +1,4 @@
-/*
- * The Silicon look, mapped onto Silicon UI's semantic tokens (components/silicon-ui/foundation.css, imported first): the
- * look of Silicon Writings (writings.teamofsilicons.com), teamofsilicons.com and the Silicon Apps store. Warm paper,
- * near-black ink, one calm blue, Hedvig Letters Serif for titles, BDO Grotesk for everything you read and press, and
- * Geist Pixel Square for small labels.
- *
- * The site is light only: lib/theme.ts pins <html data-theme="light">. The dark block below is kept for any subtree that
- * sets data-theme="dark" itself; it is the same paper at night, a warm near-black (#151412), never a cool navy.
- *
- * Contrast (WCAG 2.2): every text token clears 4.5:1 on --background, --surface and --surface-muted in its mode. The
- * lowest pairs are light --text-muted #6B675F (5.0:1 on --surface-muted) and dark --text-muted #9A958A (5.6:1).
- * --text-faint is for decoration only (rules, separators), never for text.
- *   --accent-ink   accent-coloured text. #1F5CB1 on the dark page is 2.9:1, so dark uses a lighter blue.
- *   --primary*     the filled button: the calm blue under white text (6.4:1) in light, paper on ink in dark.
- */
+/* Silicon UI neutral surfaces, with Write typography and its blue action accent. */
 :root {
   /* Application layout compatibility. Registry components use Silicon UI's semantic scale. */
   --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem;
@@ -25,19 +11,18 @@
 :root, [data-theme="light"] {
   color-scheme: light;
 
-  --background: #FFFDF9;
+  --background: var(--neutral-0);
   --surface: #FFFFFF;
   --surface-raised: #FFFFFF;
-  --surface-muted: #F6F2EA;
-  /* The beige of the nav pill's current item and of quiet fills (Writings' #EDE8E0). */
-  --surface-pressed: #EDE8E0;
-  --foreground: #1E1E1C;
-  --text-secondary: #57544D;
-  --text-muted: #6B675F;
-  --text-faint: #A29D92;
-  --border: #E7E3D8;
-  --border-subtle: #EFEBE2;
-  --border-strong: #D6D0C1;
+  --surface-muted: var(--neutral-2);
+  --surface-pressed: var(--neutral-3);
+  --foreground: var(--neutral-11);
+  --text-secondary: var(--neutral-8);
+  --text-muted: var(--neutral-7);
+  --text-faint: var(--neutral-6);
+  --border: oklch(93.5% 0 0);
+  --border-subtle: oklch(96.5% 0 0);
+  --border-strong: oklch(82% 0 0);
 
   --accent: #1F5CB1;
   --accent-strong: #184A94;
@@ -52,11 +37,11 @@
 
   --control-on: #1F5CB1;
   --control-glyph: #FFFFFF;
-  --control-track: #E5E0D5;
-  --control-track-hover: #DAD4C7;
+  --control-track: oklch(89.5% 0 0);
+  --control-track-hover: oklch(86% 0 0);
   --control-thumb: #FFFFFF;
   --control-thumb-on: #FFFFFF;
-  --control-thumb-shadow: 0 0 0 .5px rgb(30 30 28 / .08), 0 1px 2px rgb(30 30 28 / .14), 0 2px 6px rgb(30 30 28 / .06);
+  --control-thumb-shadow: 0 0 0 .5px rgb(0 0 0 / .08), 0 1px 2px rgb(0 0 0 / .14), 0 2px 6px rgb(0 0 0 / .06);
   --control-fill: var(--control-on);
   --control-on-subtle: color-mix(in oklab, var(--control-on) 10%, transparent);
   --focus-ring: transparent;
@@ -67,10 +52,10 @@
   /* Stars and the rating bars: an ochre that sits on paper. */
   --star: #B7791F;
 
-  /* Warm, faint shadows, as on teamofsilicons.com. Only floating layers and the nav pill use them. */
-  --shadow-resting: 0 1px 2px rgb(30 30 28 / .04);
-  --shadow-raised: 0 6px 18px rgb(30 30 28 / .06), 0 1px 3px rgb(30 30 28 / .04);
-  --shadow-floating: 0 20px 48px rgb(30 30 28 / .1), 0 3px 10px rgb(30 30 28 / .05);
+  /* Neutral, faint shadows. Only floating layers and the nav pill use them. */
+  --shadow-resting: 0 1px 2px rgb(0 0 0 / .04);
+  --shadow-raised: 0 6px 18px rgb(0 0 0 / .06), 0 1px 3px rgb(0 0 0 / .04);
+  --shadow-floating: 0 20px 48px rgb(0 0 0 / .1), 0 3px 10px rgb(0 0 0 / .05);
 
   --series-1: #1F5CB1; --series-2: #7A4FC4; --series-3: #B7791F; --series-4: #2B7148;
 
@@ -90,7 +75,7 @@
   /* No dot grids or glows: paper is flat. Kept as tokens so older rules resolve to nothing. */
   --grain-opacity: 0;
   --dot-color: transparent;
-  --overlay: rgb(30 30 28 / .28);
+  --overlay: rgb(0 0 0 / .28);
   --wash: none;
 
   /* Page chrome. No floating dock here (the account site's --dock-height is 0); the clearance keeps the last content of
@@ -129,7 +114,7 @@
   --accent-ink: #8FB5EE;
 
   --primary: #EDE9E0;
-  --primary-hover: #FFFDF9;
+  --primary-hover: var(--neutral-0);
   --primary-pressed: #D9D4C9;
   --primary-foreground: #151412;
 

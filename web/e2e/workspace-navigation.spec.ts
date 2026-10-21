@@ -8,7 +8,7 @@ async function expectMobileTabControls(page: Page, doc: Doc, width: number) {
   await expect(active).toContainText(doc.title);
   await expect(active).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("button", { name: `Close ${doc.title}`, exact: true })).toBeInViewport({ ratio: 1 });
-  for (const name of ["Previous tab", "Next tab", "Open a doc"]) {
+  for (const name of ["Open a doc"]) {
     const control = page.getByRole("button", { name, exact: true });
     await expect(control).toBeInViewport({ ratio: 1 });
     const bounds = await control.boundingBox();
@@ -18,7 +18,7 @@ async function expectMobileTabControls(page: Page, doc: Doc, width: number) {
   }
 }
 
-test("previous and next tabs work with buttons and while writing, without changing text selection shortcuts", async ({ browser }) => {
+test("previous and next tabs work with shortcuts while writing, without changing text selection shortcuts", async ({ browser }) => {
   const context = await accountsSession(browser, "carbon", { reducedMotion: "reduce" });
   const page = await context.newPage();
   try {
@@ -36,23 +36,14 @@ test("previous and next tabs work with buttons and while writing, without changi
     const next = page.getByRole("button", { name: "Next tab", exact: true });
     const editor = page.locator('.ProseMirror[contenteditable="true"]:visible');
     const selected = () => page.getByRole("tab", { selected: true });
-    for (const [index, doc] of docs.entries()) {
+    for (const doc of docs) {
       await page.goto(`/d/${doc.id}`);
       await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced");
       await expect(selected()).toContainText(doc.title);
-      if (index === 0) {
-        await expect(previous).toBeDisabled();
-        await expect(next).toBeDisabled();
-      }
     }
-    await previous.hover();
-    await expect(page.getByRole("tooltip")).toContainText(/Previous tab.*(?:Fn ↑|Page Up)/s);
-    await previous.click();
-    await expect(selected()).toContainText(docs[1].title);
-    await next.click();
-    await expect(selected()).toContainText(docs[2].title);
-    await next.click();
-    await expect(selected()).toContainText(docs[0].title);
+    await expect(previous).toHaveCount(0);
+    await expect(next).toHaveCount(0);
+    await page.getByRole("tab", { name: docs[0].title, exact: true }).click();
 
     // The new chord works with the writing surface focused, including at either end.
     await editor.click();
@@ -112,9 +103,9 @@ test("phone tabs keep their title, close control, and navigation visible at 390 
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
       await expectMobileTabControls(page, docs[2], width);
-      await page.getByRole("button", { name: "Next tab", exact: true }).click();
+      await page.getByRole("tab", { selected: true }).press("Alt+PageDown");
       await expectMobileTabControls(page, docs[0], width);
-      await page.getByRole("button", { name: "Previous tab", exact: true }).click();
+      await page.getByRole("tab", { selected: true }).press("Alt+PageUp");
       await expectMobileTabControls(page, docs[2], width);
     }
   } finally {
