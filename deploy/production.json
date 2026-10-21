@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-21T20:27:43.707471+00:00",
+  "recorded_at": "2026-10-21T21:36:17.238862+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_EgXyPuFxsFkQE8vNXrzSjF6riygk",
+    "deployment_id": "dpl_Y5H6mwie5LvYCGrCxYdVEyorkvPB",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,21 +13,24 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "e03939a4caf6969e0681da6f705998783d4b8b68",
+    "revision": "ba8085fbeeefdfdfcf849bba9355c03595050425",
     "browser_checks": [
       "Neutral Silicon UI surfaces and text-colored caret verified live",
       "Formatting toolbar visible by default and workspace plus retained without arrow buttons",
       "Suggester role visible in invite options",
       "Custom double-click text menu verified live",
       "Download submenu focus stays separate from unrelated main-menu items",
-      "Voice recording control and Deepgram disclosure visible in new comments and replies; no production microphone used"
-    ]
+      "Format preference persists across documents and reloads",
+      "Mic-only bottom-right recording control verified in new comments and replies; padding prevents text overlap",
+      "Live waveform, pause/resume, discard, 25-minute sound warning and 30-minute stop verified with synthetic audio"
+    ],
+    "custom_domain_verified": true
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "1d3340d9780a5e6ff3276cd4e07634dc162db83f",
-    "archive_sha256": "14c9b34c51bcab6eba48c51ea7dca398e2029c11103abe85ac6f1b639dff0f01",
-    "install_ssm_command": "36c59f3e-17a8-4192-871c-615c69986870",
+    "revision": "9497871f84cd163dd3b217c422041efb82ebefcc",
+    "archive_sha256": "a6546302645ee899cc6871ceeb00efe76a356f05b12688a7016c8e109d8fdf03",
+    "install_ssm_command": "e36726db-e304-4581-8117-df0b70dc38f9",
     "readiness": true,
     "private_document_journey": [
       "ordinary device sign-in authorizes production API",
@@ -96,7 +99,8 @@
       "anonymous_denied": 401,
       "existing_docx_export_bytes": 10470,
       "fixture_moved_to_trash": true
-    }
+    },
+    "predeploy_backup": "predeploy-20261021T212737Z"
   },
   "infrastructure": {
     "aws_account": "234951665042",
@@ -210,5 +214,6 @@
     "blocker": "Apps requires Windows x86_64 and macOS aarch64 packages, but both live upload validation runners are not_configured. Existing0.1.0 remains published."
   },
   "home_tabs_release_receipt": "verification-home-tabs-20261019.json",
-  "writing_polish_release_receipt": "verification-writing-polish-20261022.json"
+  "writing_polish_release_receipt": "verification-writing-polish-20261022.json",
+  "voice_recorder_verification": "deploy/verification-voice-recorder-20261022.json"
 }

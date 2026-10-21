@@ -1,0 +1,115 @@
+{
+  "recorded_at": "2026-10-21T21:36:17.238862+00:00",
+  "web": {
+    "revision": "ba8085fbeeefdfdfcf849bba9355c03595050425",
+    "deployment_id": "dpl_Y5H6mwie5LvYCGrCxYdVEyorkvPB",
+    "url": "https://write.teamofsilicons.com",
+    "custom_domain_verified": true
+  },
+  "api": {
+    "revision": "9497871f84cd163dd3b217c422041efb82ebefcc",
+    "archive_sha256": "a6546302645ee899cc6871ceeb00efe76a356f05b12688a7016c8e109d8fdf03",
+    "install_ssm_command": "e36726db-e304-4581-8117-df0b70dc38f9",
+    "predeploy_backup": "predeploy-20261021T212737Z"
+  },
+  "behavior": {
+    "format_preference": "Account-scoped browser preference persists across document navigation and reloads; initially open.",
+    "idle_recorder": "Mic icon in the bottom-right of new-comment and reply textareas; no label or disclosure row.",
+    "recording": "Live waveform replaces the text field, with pause/resume, discard and stop. Paused time is excluded.",
+    "warning": "Once at 25 minutes: inline warning below the recorder and a two-tone sound.",
+    "duration_seconds": 1800,
+    "chunk_bytes": 3145728,
+    "total_upload_bytes": 67108864,
+    "comment_and_transcript_characters": 100000,
+    "drafts": "Closing saves the recording; discarding active audio preserves existing typed text."
+  },
+  "checks": {
+    "typecheck": "passed",
+    "eslint": "passed",
+    "production_web_build": "passed",
+    "web_unit_tests": 99,
+    "api_unit_tests": 27,
+    "clippy": "passed",
+    "linux_arm64_build": "passed",
+    "focused_browser_suite": {
+      "passed": 9,
+      "includes_setup": true,
+      "checks": [
+        "mic placement and text padding",
+        "outside-click and reload drafts",
+        "reviewed transcription and replies",
+        "permission refusal and provider retry",
+        "author/access/media/byte-range enforcement",
+        "native MediaRecorder and waveform",
+        "pause/resume active time",
+        "one 25-minute warning and two sound tones",
+        "30-minute automatic stop",
+        "discard without transcription",
+        "30-minute chunk upload and playback",
+        "Format preference across docs and reloads",
+        "large browser recording chunk upload"
+      ]
+    },
+    "full_browser_suite": {
+      "passed": 97,
+      "failed": 8,
+      "known_prior_failures": [
+        "e2e/editor.spec.ts:1359:7 \u203a comments \u203a a table cell, an image and an area drawn on the image take comments too (7.5s)",
+        "e2e/editor.spec.ts:1684:7 \u203a suggestions and roles \u203a a commenter comments and proposes text, formatting and paragraph splits for review (21.6s)",
+        "e2e/editor.spec.ts:2031:7 \u203a PDFs \u203a a comment on a PDF area shows on its page and in the comments (21.1s)",
+        "e2e/library.spec.ts:674:5 \u203a opening files makes a new doc from a .md file, in the folder it was opened in (16.5s)",
+        "e2e/library.spec.ts:742:5 \u203a the share dialog: share with the friend by c:id, they open it from Shared with me, change their role, remove them (18.7s)",
+        "e2e/library.spec.ts:831:5 \u203a someone with view access sees who has it, can't share or change roles, and can leave (17.6s)",
+        "e2e/library.spec.ts:1215:5 \u203a names reach other Carbons exactly as typed: markup in a doc or folder name is shown, never run (18.9s)",
+        "e2e/library.spec.ts:1594:5 \u203a a public doc opens signed out, read only, and once private again the same link sends to sign in (17.8s)"
+      ],
+      "note": "Final mic spacing and large browser upload checks were rerun in the focused suite after the full suite."
+    },
+    "production_transcription": {
+      "synthetic_only": true,
+      "identity": "si:udd-saket",
+      "provider": "Deepgram nova-3",
+      "started_at": "2026-10-21T21:28:16Z",
+      "document_id": "d_M9uUTjfRaRYAYBHk55eG",
+      "chunked_upload": true,
+      "recording_id": "r_cbvus79Fy2DPsaELGmcL",
+      "duration_ms": 4073,
+      "transcription_seconds": 1.513,
+      "transcript": "This is a voice comment test. Please make the next paragraph shorter.",
+      "persisted_comment": true,
+      "playback_byte_range": "bytes 0-43/130396",
+      "anonymous_denied": 401,
+      "existing_docx_export_bytes": 10469,
+      "fixture_moved_to_trash": true
+    },
+    "production_30_minute_audio": {
+      "synthetic_silence_only": true,
+      "identity": "si:udd-saket",
+      "stt_called": false,
+      "duration_ms": 1800000,
+      "upload_bytes": 821652,
+      "decode_seconds": 6.289,
+      "playback_byte_range": "bytes 0-43/57600044",
+      "fixture_moved_to_trash": true
+    },
+    "live_browser": {
+      "new_comment_and_reply_mic_verified": true,
+      "reserved_text_padding_verified": true,
+      "microphone_not_used": true,
+      "screenshots": [
+        ".dev/production/voice-mic-composer-live.png",
+        ".dev/production/voice-mic-replies-live.png",
+        ".dev/production/voice-recording-waveform.png",
+        ".dev/production/voice-recording-warning.png"
+      ]
+    }
+  },
+  "cleanup": {
+    "production_fixtures_moved_to_trash": true,
+    "original_user_tab_untouched": true,
+    "verification_tab_closed": true,
+    "test_services_stopped": true,
+    "test_postgres_stopped": true
+  },
+  "secrets_included": false
+}
