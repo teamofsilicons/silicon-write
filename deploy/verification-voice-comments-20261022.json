@@ -1,0 +1,116 @@
+{
+  "recorded_at": "2026-10-21T20:27:43.707471+00:00",
+  "web": {
+    "revision": "e03939a4caf6969e0681da6f705998783d4b8b68",
+    "deployment_id": "dpl_EgXyPuFxsFkQE8vNXrzSjF6riygk",
+    "url": "https://write.teamofsilicons.com",
+    "custom_domain_verified": true,
+    "microphone_policy": "self"
+  },
+  "api": {
+    "revision": "1d3340d9780a5e6ff3276cd4e07634dc162db83f",
+    "archive_sha256": "14c9b34c51bcab6eba48c51ea7dca398e2029c11103abe85ac6f1b639dff0f01",
+    "install_ssm_command": "36c59f3e-17a8-4192-871c-615c69986870",
+    "sandbox_probe_ssm_command": "7143ac40-77a8-4990-92c2-b5f69229208f",
+    "predeploy_backup": "predeploy-20261021T202141Z"
+  },
+  "credential": {
+    "source": "Waveform live native environment verified against Waveform Secrets Manager",
+    "live_and_stored_key_match": true,
+    "destination": "silicon-write/production/runtime",
+    "browser_exposure": false,
+    "waveform_unchanged": true
+  },
+  "checks": {
+    "typecheck": "passed",
+    "eslint": "passed",
+    "production_web_build": "passed",
+    "web_unit_tests": 99,
+    "api_unit_tests": 27,
+    "clippy": "passed",
+    "deployment_tests": 12,
+    "linux_arm64_build": "passed",
+    "new_voice_browser_tests": {
+      "passed": 4,
+      "setup_passed": true,
+      "coverage": [
+        "new comments and replies",
+        "automatic transcription and editable text",
+        "outside-click stops recording and keeps draft",
+        "reload restores draft and posted playback",
+        "permission denial",
+        "upload failure blocks accidental text-only posting",
+        "provider failure and retry",
+        "WebM Opus and MP4 AAC decode",
+        "actual browser MediaRecorder with generated audio input",
+        "320 and 390 pixel layouts",
+        "recording author and document binding",
+        "viewer and anonymous refusal",
+        "revoked/deleted access refusal",
+        "byte ranges and seekable duration",
+        "invalid/overlong/oversized media refusal",
+        "cached transcripts and bounded provider retries"
+      ]
+    },
+    "full_browser_suite": {
+      "passed": 93,
+      "failed": 8,
+      "known_prior_failures": [
+        "e2e/editor.spec.ts:1359:7 \u203a comments \u203a a table cell, an image and an area drawn on the image take comments too (7.5s)",
+        "e2e/editor.spec.ts:1684:7 \u203a suggestions and roles \u203a a commenter comments and proposes text, formatting and paragraph splits for review (21.6s)",
+        "e2e/editor.spec.ts:2031:7 \u203a PDFs \u203a a comment on a PDF area shows on its page and in the comments (21.1s)",
+        "e2e/library.spec.ts:674:5 \u203a opening files makes a new doc from a .md file, in the folder it was opened in (16.5s)",
+        "e2e/library.spec.ts:742:5 \u203a the share dialog: share with the friend by c:id, they open it from Shared with me, change their role, remove them (18.6s)",
+        "e2e/library.spec.ts:831:5 \u203a someone with view access sees who has it, can't share or change roles, and can leave (17.5s)",
+        "e2e/library.spec.ts:1215:5 \u203a names reach other Carbons exactly as typed: markup in a doc or folder name is shown, never run (18.7s)",
+        "e2e/library.spec.ts:1594:5 \u203a a public doc opens signed out, read only, and once private again the same link sends to sign in (17.7s)"
+      ],
+      "note": "Full suite ran while final voice hardening was in progress; all final voice changes were then rerun successfully in the focused suite."
+    },
+    "rust_formatting": "New voice module formatted. Repository-wide cargo fmt check reports pre-existing differences; no unrelated formatting applied.",
+    "live_journey": {
+      "synthetic_only": true,
+      "identity": "si:udd-saket",
+      "provider": "Deepgram nova-3",
+      "started_at": "2026-10-21T20:22:42Z",
+      "document_id": "d_8YGwvRNxxcaJsfFHhuYK",
+      "recording_id": "r_8BVFCbQbuT6rzfnmB5HK",
+      "duration_ms": 4073,
+      "transcription_seconds": 2.042,
+      "transcript": "This is a voice comment test. Please make the next paragraph shorter.",
+      "persisted_comment": true,
+      "playback_byte_range": "bytes 0-43/130396",
+      "anonymous_denied": 401,
+      "existing_docx_export_bytes": 10470,
+      "fixture_moved_to_trash": true
+    },
+    "live_browser": {
+      "new_comment_voice_control": true,
+      "reply_voice_control": true,
+      "document_connected_and_synced": true,
+      "document_content_unchanged": true,
+      "microphone_not_used": true,
+      "screenshots": [
+        ".dev/production/voice-comments-live.png",
+        ".dev/production/voice-comment-composer-live.png",
+        ".dev/production/voice-comments-local.png"
+      ]
+    }
+  },
+  "limits": {
+    "recording_seconds": 180,
+    "upload_bytes": 3145728,
+    "uploads_per_account_per_hour": 60,
+    "processing_jobs_per_server": 2,
+    "failed_transcription_attempts": 5
+  },
+  "secrets_included": false,
+  "cleanup": {
+    "test_services_stopped": true,
+    "test_postgres_stopped": true,
+    "production_fixture_moved_to_trash": true,
+    "verification_browser_tab_closed": true,
+    "original_user_tab_untouched": true
+  },
+  "test_revision": "c89ac1fdd3b07f15db657aac293247293c27c1c9"
+}

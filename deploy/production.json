@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-21T19:58:15.077303+00:00",
+  "recorded_at": "2026-10-21T20:27:43.707471+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_Br3GrFk4S6NNatNnUp5rvXjUZ2Vh",
+    "deployment_id": "dpl_EgXyPuFxsFkQE8vNXrzSjF6riygk",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,20 +13,21 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "70397ff95668198dbfb4c6413997b353e878dc63",
+    "revision": "e03939a4caf6969e0681da6f705998783d4b8b68",
     "browser_checks": [
       "Neutral Silicon UI surfaces and text-colored caret verified live",
       "Formatting toolbar visible by default and workspace plus retained without arrow buttons",
       "Suggester role visible in invite options",
       "Custom double-click text menu verified live",
-      "Download submenu focus stays separate from unrelated main-menu items"
+      "Download submenu focus stays separate from unrelated main-menu items",
+      "Voice recording control and Deepgram disclosure visible in new comments and replies; no production microphone used"
     ]
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "aa1cd0b261b45bc4c1456a125cc805dcd4021199",
-    "archive_sha256": "54ae55d2e539172c3e807858436ed633e6b76b89f796c6c3e09484c90176a2c8",
-    "install_ssm_command": "f9b80c04-971e-4d0a-9037-2ac3ee4cb489",
+    "revision": "1d3340d9780a5e6ff3276cd4e07634dc162db83f",
+    "archive_sha256": "14c9b34c51bcab6eba48c51ea7dca398e2029c11103abe85ac6f1b639dff0f01",
+    "install_ssm_command": "36c59f3e-17a8-4192-871c-615c69986870",
     "readiness": true,
     "private_document_journey": [
       "ordinary device sign-in authorizes production API",
@@ -79,7 +80,23 @@
     },
     "comment_read_state_verified": true,
     "co_writing_live_verified": true,
-    "co_writing_production_check_count": 16
+    "co_writing_production_check_count": 16,
+    "voice_comment_journey": {
+      "synthetic_only": true,
+      "identity": "si:udd-saket",
+      "provider": "Deepgram nova-3",
+      "started_at": "2026-10-21T20:22:42Z",
+      "document_id": "d_8YGwvRNxxcaJsfFHhuYK",
+      "recording_id": "r_8BVFCbQbuT6rzfnmB5HK",
+      "duration_ms": 4073,
+      "transcription_seconds": 2.042,
+      "transcript": "This is a voice comment test. Please make the next paragraph shorter.",
+      "persisted_comment": true,
+      "playback_byte_range": "bytes 0-43/130396",
+      "anonymous_denied": 401,
+      "existing_docx_export_bytes": 10470,
+      "fixture_moved_to_trash": true
+    }
   },
   "infrastructure": {
     "aws_account": "234951665042",
