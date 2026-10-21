@@ -152,7 +152,7 @@ these tokens to match the reference, but every foreground/background pair must s
 | `--surface-pressed` | `var(--neutral-3)` | Selected and pressed fills |
 | `--foreground` | `var(--neutral-11)` | Body text, important icons, ink actions |
 | `--text-secondary` | `var(--neutral-8)` | Descriptions and secondary content |
-| `--text-muted` | `var(--neutral-7)` | Hints, timestamps, and placeholders |
+| `--text-muted` | `var(--neutral-8)` | Hints, timestamps, and placeholders; AA contrast for small labels |
 | `--border` / `--border-subtle` / `--border-strong` | `oklch(93.5% 0 0)` / `oklch(96.5% 0 0)` / `oklch(82% 0 0)` | Edges and hairlines |
 | `--accent` / `--accent-ink` | `#1F5CB1` | Links, library titles, selected content |
 | `--success` / `--warning` / `--danger` | `#2B7148` / `#8F560D` / `#B42318` | Status and review meaning |

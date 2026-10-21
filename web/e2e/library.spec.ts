@@ -310,8 +310,7 @@ test("New doc opens the editor, and My docs then lists the doc by its first line
   const editor = page.locator(".ProseMirror");
   await expect(editor).toBeVisible();
   await expect(editor).toHaveAttribute("contenteditable", "true");
-  await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeHidden();
-  await openFormatting(page);
+  await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
   await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced", { timeout: 20_000 });
   const doc = await must<Doc>(page, "GET", `/v1/docs/${id}`);
   expect(doc.role).toBe("owner");
@@ -1694,7 +1693,8 @@ test("a public doc's Sign in button signs the reader in and brings them back to 
   // "Anyone with the link can comment": signed in, they can.
   await expect(page.getByRole("button", { name: "Comments", exact: true })).toBeVisible();
   expect((await must<Doc>(page, "GET", `/v1/docs/${doc.id}`)).role).toBe("commenter");
-  await expect(page.locator(".ProseMirror")).toHaveAttribute("contenteditable", "false");
+  await expect(page.getByRole("button", { name: "Mode: Suggesting" })).toBeVisible();
+  await expect(page.locator(".ProseMirror")).toHaveAttribute("contenteditable", "true");
   await shot(page, "desktop-public-doc-after-sign-in");
   // The link let them in; nothing lists the doc for them.
   expect((await must<Library>(page, "GET", "/v1/library?view=shared")).docs.map(d => d.id)).not.toContain(doc.id);

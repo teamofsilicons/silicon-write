@@ -39,6 +39,18 @@ test("Suggester invitation, inline accept and reject, and persisted normal text"
     const editRefused = await friend.request.patch(`/api/v1/docs/${doc.id}`, { headers: sameOrigin(), data: { title: 'Cannot rename as suggester' } });
     expect(editRefused.status()).toBe(403);
     expect((await (await page.request.get(`/api/v1/docs/${doc.id}/markdown`)).json()).markdown).toBe('The original line.\n');
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect.poll(async () => {
+        const more = await page.getByRole('button', { name: 'More', exact: true }).boundingBox();
+        return more!.x + more!.width;
+      }).toBeLessThanOrEqual(width);
+      await page.getByRole('button', { name: 'More', exact: true }).click();
+      await expect(page.getByRole('menuitem', { name: 'Review suggestions (1)', exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('button', { name: 'More', exact: true })).toBeFocused();
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.locator('.ProseMirror ins').first().click();
     const card = page.getByRole('dialog', { name: 'Review suggestion' });
     await expect(card).toContainText('Added thought.');
@@ -93,6 +105,7 @@ test("selection menu, neutral surfaces, independent submenu highlights, and anch
     const highlight = await main.evaluate(el => { const parent=el.closest('[role="menu"]')!; const h=parent.querySelector('[class*="highlight"]')!; return { actual: h.getBoundingClientRect().top, expected: el.getBoundingClientRect().top }; });
     expect(Math.abs(highlight.actual-highlight.expected)).toBeLessThan(2);
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'More', exact: true })).toBeFocused();
     await editor.click(); await editor.press('ControlOrMeta+End'); await editor.press('Enter'); await page.keyboard.type('/');
     const list = page.getByRole('listbox', { name: 'Insert', exact: true });
     await expect(list).toBeVisible();

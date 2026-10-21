@@ -210,7 +210,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
           </Tooltip>
         ) : null}
         {canComment && pendingSuggestions > 0 ? (
-          <Button variant="ghost" size="sm" aria-label={`Review ${pendingSuggestions} suggestions`} onClick={() => onPanel("comments")}>
+          <Button variant="ghost" size="sm" className={styles.reviewButton} aria-label={`Review ${pendingSuggestions} suggestions`} onClick={() => onPanel("comments")}>
             <PencilLine size={16} aria-hidden="true" /><span className={styles.actionLabel}>Suggestions</span><span className={styles.count}>{pendingSuggestions}</span>
           </Button>
         ) : null}
@@ -239,6 +239,11 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            {canComment && pendingSuggestions > 0 ? (
+              <DropdownMenuItem icon={<PencilLine size={16} />} onSelect={() => onPanel("comments")}>
+                Review suggestions ({pendingSuggestions})
+              </DropdownMenuItem>
+            ) : null}
             {(canEdit || canComment) && doc.kind === "doc" && !doc.deleted_at ? (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>Mode</DropdownMenuSubTrigger>

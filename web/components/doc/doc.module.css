@@ -55,7 +55,7 @@
 .readTitle { font: 400 clamp(2.25rem, 4.2vw, 3.5rem)/1.12 var(--font-serif); letter-spacing: -.025em; text-wrap: balance; }
 
 @media (max-width: 820px) {
-  .presence, .actionLabel, .modeChevron { display: none; }
+  .presence, .actionLabel, .modeChevron, .reviewButton { display: none; }
   .topBar { gap: var(--space-2); }
   .topRight { gap: var(--space-1); }
 }
@@ -67,7 +67,7 @@
   .docHeading { margin-bottom: var(--space-8); }
 }
 
-/* Formatting stays available without occupying the page until it is requested. */
+/* Formatting starts visible while writing and can be collapsed from the doc bar. */
 .formattingWrap { position: sticky; top: calc(var(--workspace-tabs-height, 0px) + var(--doc-bar-height)); z-index: 25; }
 .formattingWrap[hidden] { display: none; }
 .toolbar {
