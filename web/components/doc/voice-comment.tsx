@@ -15,7 +15,7 @@ export function useVoiceDraft(key: string | null, docId: string, onTranscript: (
   }, [key]);
   const busy = ["requesting", "recording", "uploading", "transcribing"].includes(draft.status);
   return {
-    draft, busy, ready: Boolean(draft.recording) && !busy,
+    draft, busy, postingBlocked: busy || Boolean(draft.blob && !draft.recording), ready: Boolean(draft.recording) && !busy,
     start: () => { if (key) void voiceDrafts.start(key, docId, onTranscript); },
     stop: () => { if (key) voiceDrafts.stop(key); },
     retry: () => { if (key) void voiceDrafts.process(key, docId, onTranscript); },
@@ -51,7 +51,7 @@ export function VoiceComment({ voice, disabled = false }: { voice: ReturnType<ty
         <span role="timer">{duration(Math.max(0, now - (draft.startedAt || now)))} / 3:00</span>
       </> : voice.busy ? <span role="status" className={styles.status}><Loader2 size={14} className={styles.spin} /> {draft.status === "requesting" ? "Opening microphone…" : draft.status === "uploading" ? "Saving recording…" : "Transcribing…"}</span> : <>
         {!draft.recording && !draft.blob ? <Button variant="ghost" size="sm" disabled={disabled} onClick={voice.start}><Mic size={15} /> Record voice comment</Button> : null}
-        {draft.status === "error" && (draft.recording || draft.blob) ? <Button variant="ghost" size="sm" disabled={disabled} onClick={voice.retry}><RotateCcw size={14} /> Retry transcription</Button> : null}
+        {draft.status === "error" && (draft.recording || draft.blob) ? <Button variant="ghost" size="sm" disabled={disabled} onClick={voice.retry}><RotateCcw size={14} /> {draft.recording ? "Retry transcription" : "Retry upload"}</Button> : null}
         {draft.recording || draft.blob ? <Button variant="ghost" size="sm" disabled={disabled} aria-label="Remove recording" onClick={voice.clear}><X size={14} /></Button> : null}
       </>}
     </div>

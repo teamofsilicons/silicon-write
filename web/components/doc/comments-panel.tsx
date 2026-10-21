@@ -51,6 +51,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   const ref = useRef<HTMLDivElement>(null);
   useThreadRead(docId, thread, ref);
   const comments = useMemo(() => toThreadComments(thread), [thread]);
+  const [replySending, setReplySending] = useState(false);
   const replyDraft = useCommentDraft(account.uuid, docId, `reply:${thread.id}`);
   const voice = useVoiceDraft(thread.status === "open" ? replyDraft.key : null, docId, replyDraft.appendTranscript);
   useEffect(() => {
@@ -70,7 +71,8 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
     const submittedDraft = replyDraft.value;
     try {
       if (event.type === "reply") {
-        if (voice.busy) return false;
+        if (voice.postingBlocked) return false;
+        setReplySending(true);
         await api.post(`/v1/threads/${seg(thread.id)}/comments`, { body: event.comment.body, recording_id: voice.draft.recording?.id });
         voice.clear();
         replyDraft.clear(submittedDraft);
@@ -82,6 +84,8 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
       notifyError(error, "That didn't save");
       refresh();
       return false;
+    } finally {
+      if (event.type === "reply") setReplySending(false);
     }
     refresh();
     return true;
@@ -103,9 +107,9 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
       <CommentThread
         comments={comments}
         onCommentsChange={onChange}
-        replyAccessory={<VoiceComment voice={voice} />}
+        replyAccessory={<VoiceComment voice={voice} disabled={replySending} />}
         replyCanSendEmpty={voice.ready}
-        replyDisabled={voice.busy}
+        replyDisabled={voice.postingBlocked || replySending}
         replyDraft={replyDraft.value.text}
         onReplyDraftChange={text => replyDraft.setValue({ text, mentions: [] })}
         currentUser={{ id: account.id || account.uuid, name: displayName(account), avatar: account.pfp_url || undefined }}

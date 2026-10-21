@@ -185,7 +185,7 @@ export function SelectionComment({
 
   const submit = async (current: MentionValue = value) => {
     const body = serializeMentions(current, m => `@${m.id}`).trim();
-    if (!pending || (!body && !voice.ready) || voice.busy || sending) return;
+    if (!pending || (!body && !voice.ready) || voice.postingBlocked || sending) return;
     setSending(true);
     try {
       const thread = await api.post<Thread>(`/v1/docs/${seg(docId)}/threads`, { anchor: pending.anchor, body, recording_id: voice.draft.recording?.id });
@@ -244,7 +244,7 @@ export function SelectionComment({
             <Button variant="ghost" size="sm" disabled={sending || voice.busy} onClick={() => { clear(); voice.clear(); onPending(null); }}>
               {value.text || voice.draft.recording || voice.draft.blob ? "Discard" : "Cancel"}
             </Button>
-            <Button variant="primary" size="sm" className={commentStyles.inkButton} loading={sending} disabled={voice.busy || (!value.text.trim() && !voice.ready)} onClick={() => void submit()}>
+            <Button variant="primary" size="sm" className={commentStyles.inkButton} loading={sending} disabled={voice.postingBlocked || (!value.text.trim() && !voice.ready)} onClick={() => void submit()}>
               Comment
             </Button>
           </div>
