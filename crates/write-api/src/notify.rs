@@ -65,7 +65,7 @@ pub async fn comment(
         "thread_id": thread_id,
         "comment_id": comment_id,
         "quote": quote,
-        "comment": body,
+        "comment": if body.is_empty() { "Voice comment" } else { body },
         "by": person(author),
         "url": format!("{}?thread={}", state.config.doc_url(&doc.id), thread_id),
     });

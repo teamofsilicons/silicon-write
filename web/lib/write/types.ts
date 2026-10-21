@@ -75,7 +75,14 @@ export interface Reaction {
   accounts: Account[];
 }
 
+export interface VoiceRecording {
+  id: string;
+  duration_ms: number;
+  transcript: string | null;
+}
+
 export interface Comment {
+  voice?: VoiceRecording | null;
   id: string;
   author: Account;
   body: string;

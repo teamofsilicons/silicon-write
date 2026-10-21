@@ -21,6 +21,7 @@ import { keys, useSuggestions } from "@/lib/write/queries";
 import { displayName, type Account, type Doc, type Thread } from "@/lib/write/types";
 import { useMentionPeople } from "./selection-comment";
 import { useThreadRead } from "./use-thread-read";
+import { VoiceComment, VoicePlayer, useVoiceDraft } from "./voice-comment";
 import { useCommentDraft } from "./use-comment-draft";
 import styles from "./doc.module.css";
 import commentStyles from "./comments.module.css";
@@ -36,6 +37,7 @@ function toThreadComments(thread: Thread): ThreadComment[] {
     id: c.id,
     author: { id: c.author.id || c.author.uuid, name: displayName(c.author), avatar: c.author.pfp_url || undefined },
     body: c.body,
+    attachment: c.voice && !c.deleted ? <VoicePlayer recording={c.voice} /> : undefined,
     createdAt: formatRelative(c.created_at),
     edited: Boolean(c.edited_at),
     deleted: c.deleted,
@@ -50,6 +52,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   useThreadRead(docId, thread, ref);
   const comments = useMemo(() => toThreadComments(thread), [thread]);
   const replyDraft = useCommentDraft(account.uuid, docId, `reply:${thread.id}`);
+  const voice = useVoiceDraft(thread.status === "open" ? replyDraft.key : null, docId, replyDraft.appendTranscript);
   useEffect(() => {
     if (!active || !scrollToActive || !ref.current) return;
     const panel = ref.current.closest("[data-comment-scroll], aside");
@@ -67,7 +70,9 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
     const submittedDraft = replyDraft.value;
     try {
       if (event.type === "reply") {
-        await api.post(`/v1/threads/${seg(thread.id)}/comments`, { body: event.comment.body });
+        if (voice.busy) return false;
+        await api.post(`/v1/threads/${seg(thread.id)}/comments`, { body: event.comment.body, recording_id: voice.draft.recording?.id });
+        voice.clear();
         replyDraft.clear(submittedDraft);
       }
       if (event.type === "edit") await api.patch(`/v1/comments/${seg(event.id)}`, { body: event.body });
@@ -98,6 +103,9 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
       <CommentThread
         comments={comments}
         onCommentsChange={onChange}
+        replyAccessory={<VoiceComment voice={voice} />}
+        replyCanSendEmpty={voice.ready}
+        replyDisabled={voice.busy}
         replyDraft={replyDraft.value.text}
         onReplyDraftChange={text => replyDraft.setValue({ text, mentions: [] })}
         currentUser={{ id: account.id || account.uuid, name: displayName(account), avatar: account.pfp_url || undefined }}

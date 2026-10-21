@@ -24,6 +24,9 @@ pub struct Config {
     pub pandoc: String,
     pub soffice: String,
     pub pdftotext: String,
+    pub ffmpeg: String,
+    pub deepgram_api_key: Option<String>,
+    pub deepgram_url: String,
     pub dev: bool,
     pub accounts_webhook_secret: Option<String>,
 }
@@ -66,6 +69,12 @@ impl Config {
             pandoc: var("WRITE_PANDOC").unwrap_or_else(|| "pandoc".into()),
             soffice: var("WRITE_SOFFICE").unwrap_or_else(default_soffice),
             pdftotext: var("WRITE_PDFTOTEXT").unwrap_or_else(|| "pdftotext".into()),
+            ffmpeg: var("WRITE_FFMPEG").unwrap_or_else(|| "ffmpeg".into()),
+            deepgram_api_key: var("WRITE_DEEPGRAM_API_KEY"),
+            // A local fake is only available in the explicitly selected development environment.
+            deepgram_url: if var("WRITE_ENVIRONMENT").as_deref() == Some("development") {
+                var("WRITE_DEEPGRAM_URL").unwrap_or_else(|| "https://api.deepgram.com/v1/listen".into())
+            } else { "https://api.deepgram.com/v1/listen".into() },
             // Development extras (the outbox page, plain-HTTP Silicon Accounts) only when asked for by name.
             dev: var("WRITE_ENVIRONMENT").as_deref() == Some("development"),
             accounts_webhook_secret: var("WRITE_ACCOUNTS_WEBHOOK_SECRET"),

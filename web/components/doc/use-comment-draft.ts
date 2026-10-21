@@ -14,5 +14,10 @@ export function useCommentDraft(accountId: string | null, docId: string, target:
   const value = useSyncExternalStore(drafts.subscribe, snapshot, serverSnapshot);
   const setValue = useCallback((next: MentionValue) => { if (key) drafts.write(key, next); }, [key]);
   const clear = useCallback((expected?: MentionValue) => key ? drafts.clear(key, expected) : false, [key]);
-  return { value, setValue, clear };
+  const appendTranscript = useCallback((text: string) => {
+    if (!key || !text.trim()) return;
+    const latest = drafts.read(key);
+    drafts.write(key, { text: latest.text ? `${latest.text}\n${text}` : text, mentions: latest.mentions });
+  }, [key]);
+  return { key, value, setValue, clear, appendTranscript };
 }

@@ -98,7 +98,7 @@ def main():
         raise ValueError("Unexpected runtime data location or listener")
     if secret["WRITE_API_URL"] != "https://api.write.teamofsilicons.com" or secret["WRITE_ENVIRONMENT"] != "production":
         raise ValueError("Unexpected production origin/environment")
-    for name in ["pandoc", "soffice", "pdftotext", "pdfinfo"]:
+    for name in ["pandoc", "soffice", "pdftotext", "pdfinfo", "ffmpeg"]:
         (release / "converters" / name).symlink_to("converter.py")
     run("systemctl", "enable", "--now", "postgresql")
     def sql(query):

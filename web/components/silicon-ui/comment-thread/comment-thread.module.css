@@ -131,6 +131,7 @@
 .composer { display: grid; align-items: start; gap: var(--space-related) var(--space-group); grid-template-columns: auto minmax(0, 1fr) auto; }
 .composer > .avatar { margin-top: var(--space-tight); }
 .composer[data-compact] { grid-template-columns: minmax(0, 1fr); margin-top: var(--space-tight); }
+.composerAccessory { grid-column: 1 / -1; min-width: 0; }
 .fieldWrap { display: grid; min-width: 0; }
 .field {
   width: 100%;

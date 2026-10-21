@@ -22,6 +22,7 @@ export interface CommentReaction {
 }
 
 export interface ThreadComment {
+  attachment?: ReactNode;
   id: string;
   author: CommentAuthor;
   /** Plain text. "@Full Name" mentions of known people are highlighted. */
@@ -147,6 +148,9 @@ export interface CommentThreadProps {
   placeholder?: string;
   /** Optional persisted reply text. A controlled caller clears it after the server accepts the reply. */
   replyDraft?: string;
+  replyAccessory?: ReactNode;
+  replyCanSendEmpty?: boolean;
+  replyDisabled?: boolean;
   onReplyDraftChange?: (text: string) => void;
   /** Replies deeper than this attach to the deepest allowed parent. Defaults to 2. */
   maxDepth?: number;
@@ -292,13 +296,16 @@ interface ComposerProps {
   onValueChange?: (text: string) => void;
   onCancel?: () => void;
   leading?: ReactNode;
+  accessory?: ReactNode;
+  allowEmpty?: boolean;
+  disabled?: boolean;
   compact?: boolean;
   cancelLabel: string;
   mentionsLabel: string;
 }
 
 /** A growing text field with @mention suggestions. ⌘ or Ctrl + Enter sends; Escape cancels. */
-function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, focusKey, onSubmit, onCancel, leading, compact, cancelLabel, mentionsLabel, value, onValueChange }: ComposerProps) {
+function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, focusKey, onSubmit, onCancel, leading, compact, cancelLabel, mentionsLabel, value, onValueChange, accessory, allowEmpty = false, disabled = false }: ComposerProps) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const reduced = useReducedFlag();
   const field = useRef<HTMLTextAreaElement>(null);
@@ -350,7 +357,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
   const send = async () => {
     const submitted = latestText.current;
     const body = submitted.trim();
-    if (!body || pending.current) return;
+    if ((!body && !allowEmpty) || pending.current || disabled) return;
     pending.current = true;
     setSending(true);
     try {
@@ -380,6 +387,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
   };
 
   return <div className={styles.composer} data-compact={compact || undefined}>
+    {accessory && <div className={styles.composerAccessory}>{accessory}</div>}
     {leading}
     <div className={styles.fieldWrap}>
       <textarea ref={field} className={styles.field} value={text} placeholder={placeholder} rows={1} aria-label={placeholder}
@@ -399,7 +407,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
     </div>
     <div className={styles.composerActions}>
       {onCancel && <button type="button" className={styles.ghost} onClick={onCancel}>{cancelLabel}</button>}
-      <button type="button" className={styles.send} disabled={sending || !text.trim() || text.trim() === initial.trim()} onClick={() => void send()}>{submitLabel}</button>
+      <button type="button" className={styles.send} disabled={sending || disabled || (!allowEmpty && (!text.trim() || text.trim() === initial.trim()))} onClick={() => void send()}>{submitLabel}</button>
     </div>
   </div>;
 }
@@ -408,7 +416,7 @@ type Ui = { editing: string | null; confirming: string | null; picker: string | 
 
 export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(function CommentThread({
   comments, defaultComments = [], onCommentsChange, currentUser, people, resolved, defaultResolved = false, onResolvedChange,
-  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", replyDraft, onReplyDraftChange, maxDepth = 2, nowLabel = "Just now", labels, presentation = "card", className,
+  title, reactions = DEFAULT_REACTIONS, placeholder = "Reply, or @mention someone", replyDraft, onReplyDraftChange, replyAccessory, replyCanSendEmpty, replyDisabled, maxDepth = 2, nowLabel = "Just now", labels, presentation = "card", className,
 }, forwardedRef) {
   const t = withDefaults(DEFAULT_LABELS, labels);
   const reduced = useReducedFlag();
@@ -505,6 +513,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
                 {editing
                 ? <motion.div key="edit" {...swap}><Composer people={mentionable} initial={comment.body} placeholder={t.editComment} submitLabel={t.save} cancelLabel={t.cancel} mentionsLabel={t.mentions} autoFocus compact onSubmit={body => edit(comment.id, body)} onCancel={() => setUi(current => ({ ...current, editing: null }))} /></motion.div>
                 : <motion.div key="view" {...swap}>
+                {comment.attachment}
                 <Body text={comment.body} people={mentionable} />
 
               <div className={styles.footer}>
@@ -618,7 +627,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
                   </span>
                 </motion.div>}
               </AnimatePresence>
-              <Composer people={mentionable} value={replyDraft} onValueChange={onReplyDraftChange} placeholder={placeholder} submitLabel={t.send} cancelLabel={t.cancel} mentionsLabel={t.mentions} focusKey={focusKey} onSubmit={addReply}
+              <Composer people={mentionable} accessory={replyAccessory} allowEmpty={replyCanSendEmpty} disabled={replyDisabled} value={replyDraft} onValueChange={onReplyDraftChange} placeholder={placeholder} submitLabel={t.send} cancelLabel={t.cancel} mentionsLabel={t.mentions} focusKey={focusKey} onSubmit={addReply}
                 onCancel={replyTo ? () => setReplyTo(null) : undefined} leading={presentation === "margin" ? undefined : <Avatar author={currentUser} />} />
             </div>
           </motion.div>}

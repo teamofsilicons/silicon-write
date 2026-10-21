@@ -22,6 +22,7 @@ mod state;
 mod ting;
 mod versions;
 mod views;
+mod voice;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -66,6 +67,9 @@ fn router(state: AppState) -> Router {
         .route("/v1/docs/{id}/public", put(sharing::set_public))
         .route("/v1/docs/{id}/transfer", post(library::transfer_doc))
         .route("/v1/docs/{id}/threads", get(comments::list).post(comments::create))
+        .route("/v1/docs/{id}/recordings", post(voice::upload).layer(DefaultBodyLimit::max(3 * 1024 * 1024 + 16384)))
+        .route("/v1/recordings/{id}", get(voice::audio))
+        .route("/v1/recordings/{id}/transcribe", post(voice::transcribe))
         .route("/v1/docs/{id}/suggestions", get(versions::suggestions))
         .route("/v1/docs/{id}/suggestions/{action}", post(versions::decide_all))
         .route("/v1/docs/{id}/suggestions/{sid}/{action}", post(versions::decide))
@@ -150,6 +154,7 @@ async fn main() {
         jwks: Default::default(),
         rooms: Default::default(),
         http: reqwest::Client::builder().timeout(Duration::from_secs(30)).build().expect("http client"),
+        voice_slots: tokio::sync::Semaphore::new(2),
     }));
     tokio::spawn(ting::worker(state.clone()));
     tokio::spawn(mail::worker(state.clone()));

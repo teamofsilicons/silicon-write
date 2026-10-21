@@ -15,6 +15,7 @@ import { notifyError } from "@/lib/notify";
 import { useSharing } from "@/lib/write/queries";
 import type { Account, Anchor, Thread } from "@/lib/write/types";
 import { commentAnchorTarget } from "@/lib/write/comment-drafts";
+import { VoiceComment, useVoiceDraft } from "./voice-comment";
 import { useCommentDraft } from "./use-comment-draft";
 import styles from "./doc.module.css";
 import commentStyles from "./comments.module.css";
@@ -72,7 +73,8 @@ export function SelectionComment({
   onCreated: (thread: Thread, activate: boolean) => void;
 }) {
   const [pill, setPill] = useState<{ top: number; left: number } | null>(null);
-  const { value, setValue, clear } = useCommentDraft(account?.uuid ?? null, docId, pending ? commentAnchorTarget(pending.anchor) : null);
+  const { key, value, setValue, clear, appendTranscript } = useCommentDraft(account?.uuid ?? null, docId, pending ? commentAnchorTarget(pending.anchor) : null);
+  const voice = useVoiceDraft(key, docId, appendTranscript);
   const [sending, setSending] = useState(false);
   const [maxRows, setMaxRows] = useState(8);
   const [composerPosition, setComposerPosition] = useState<{ pending: PendingComment; top: number; left: number; width: number } | null>(null);
@@ -183,10 +185,11 @@ export function SelectionComment({
 
   const submit = async (current: MentionValue = value) => {
     const body = serializeMentions(current, m => `@${m.id}`).trim();
-    if (!pending || !body || sending) return;
+    if (!pending || (!body && !voice.ready) || voice.busy || sending) return;
     setSending(true);
     try {
-      const thread = await api.post<Thread>(`/v1/docs/${seg(docId)}/threads`, { anchor: pending.anchor, body });
+      const thread = await api.post<Thread>(`/v1/docs/${seg(docId)}/threads`, { anchor: pending.anchor, body, recording_id: voice.draft.recording?.id });
+      voice.clear();
       // A late response must not erase newer writing or reopen a dismissed composer.
       const cleared = clear(current);
       const activate = activePending.current === pending && cleared;
@@ -222,6 +225,7 @@ export function SelectionComment({
         <div ref={card} className={`${styles.composerCard} ${commentStyles.composerCard}`} style={composerStyle} role="dialog" aria-label="New comment" data-sq="panel">
           {pending.anchor.quote ? <p className={commentStyles.composerQuote}>“{pending.anchor.quote.slice(0, 160)}{pending.anchor.quote.length > 160 ? "…" : ""}”</p> : null}
           {pending.anchor.kind !== "text" ? <p className={commentStyles.composerKind}>{pending.anchor.kind === "block" ? "On this section" : pending.anchor.kind === "cell" ? "On this cell" : pending.anchor.kind === "pdf" ? "On this area of the page" : pending.anchor.rect ? "On this area of the image" : "On this image"}</p> : null}
+          <VoiceComment voice={voice} disabled={sending} />
           <MentionInput
             className={commentStyles.composerInput}
             ref={input}
@@ -237,10 +241,10 @@ export function SelectionComment({
           />
           <div className={commentStyles.composerActions}>
             <span className={commentStyles.composerHint}>Enter to post · Shift+Enter for a new line</span>
-            <Button variant="ghost" size="sm" disabled={sending} onClick={() => { clear(); onPending(null); }}>
-              {value.text ? "Discard" : "Cancel"}
+            <Button variant="ghost" size="sm" disabled={sending || voice.busy} onClick={() => { clear(); voice.clear(); onPending(null); }}>
+              {value.text || voice.draft.recording || voice.draft.blob ? "Discard" : "Cancel"}
             </Button>
-            <Button variant="primary" size="sm" className={commentStyles.inkButton} loading={sending} disabled={!value.text.trim()} onClick={() => void submit()}>
+            <Button variant="primary" size="sm" className={commentStyles.inkButton} loading={sending} disabled={voice.busy || (!value.text.trim() && !voice.ready)} onClick={() => void submit()}>
               Comment
             </Button>
           </div>

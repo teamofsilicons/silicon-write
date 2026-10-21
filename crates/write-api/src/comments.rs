@@ -52,6 +52,7 @@ struct CommentRow {
     thread_id: String,
     author_uuid: String,
     body: String,
+    recording_id: Option<String>,
     created_at: OffsetDateTime,
     edited_at: Option<OffsetDateTime>,
     deleted_at: Option<OffsetDateTime>,
@@ -181,10 +182,13 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>, viewer: Option<
     } else {
         HashSet::new()
     };
-    let comments: Vec<CommentRow> = sqlx::query_as("select id, thread_id, author_uuid, body, created_at, edited_at, deleted_at from comments where thread_id = any($1) order by created_at")
+    let comments: Vec<CommentRow> = sqlx::query_as("select id, thread_id, author_uuid, body, recording_id, created_at, edited_at, deleted_at from comments where thread_id = any($1) order by created_at")
         .bind(&ids)
         .fetch_all(&state.db)
         .await?;
+    let recording_ids: Vec<String> = comments.iter().filter_map(|c| c.recording_id.clone()).collect();
+    let recordings: Vec<(String, i64, Option<String>)> = sqlx::query_as("select id, duration_ms, transcript from comment_recordings where id=any($1)")
+        .bind(&recording_ids).fetch_all(&state.db).await?;
     let comment_ids: Vec<String> = comments.iter().map(|c| c.id.clone()).collect();
     let reactions: Vec<(String, String, String)> = sqlx::query_as("select comment_id, emoji, account_uuid from reactions where comment_id = any($1) order by created_at")
         .bind(&comment_ids)
@@ -224,6 +228,7 @@ async fn thread_views(state: &AppState, threads: Vec<ThreadRow>, viewer: Option<
                     "id": c.id,
                     "author": person(&c.author_uuid),
                     "body": if c.deleted_at.is_some() { String::new() } else { c.body.clone() },
+                    "voice": if c.deleted_at.is_some() { None } else { recordings.iter().find(|r| Some(&r.0)==c.recording_id.as_ref()).map(|r| json!({"id":r.0,"duration_ms":r.1,"transcript":r.2})) },
                     "created_at": rfc3339(&c.created_at),
                     "edited_at": c.edited_at.as_ref().map(rfc3339),
                     "deleted": c.deleted_at.is_some(),
@@ -349,12 +354,14 @@ pub struct Anchor {
 #[derive(Deserialize)]
 pub struct NewThread {
     anchor: Anchor,
+    #[serde(default)]
     body: String,
+    recording_id: Option<String>,
 }
 
-fn check_body(body: &str) -> ApiResult<String> {
+fn check_comment_body(body: &str, has_recording: bool) -> ApiResult<String> {
     let body = body.trim();
-    if body.is_empty() {
+    if body.is_empty() && !has_recording {
         return Err(ApiError::invalid("A comment can't be empty."));
     }
     if body.chars().count() > MAX_BODY {
@@ -415,7 +422,7 @@ async fn anchor_by_quote(state: &AppState, doc_id: &str, quote: &str) -> ApiResu
 pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<NewThread>) -> ApiResult<(StatusCode, Json<Value>)> {
     let (doc, _) = access::require_doc(&state, Some(&caller), &id, Role::Commenter).await?;
     require_active(&doc)?;
-    let text = check_body(&body.body)?;
+    let text = check_comment_body(&body.body, body.recording_id.is_some())?;
     let kind = body.anchor.kind.clone().unwrap_or_else(|| "text".into());
     if !["text", "block", "cell", "image", "pdf"].contains(&kind.as_str()) {
         return Err(ApiError::invalid("The anchor kind must be text, block, cell, image or pdf."));
@@ -433,7 +440,7 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
             return Err(ApiError::invalid(format!("Choose a page from 1 to {pages}.")));
         }
         let anchor = json!({ "kind": "pdf", "rect": rect });
-        return create_thread(&state, &caller, &doc, &id, anchor, body.anchor.quote.clone().unwrap_or_default(), text).await;
+        return create_thread(&state, &caller, &doc, &id, anchor, body.anchor.quote.clone().unwrap_or_default(), (text, body.recording_id)).await;
     }
     let (start, end, quote) = match (&body.anchor.start, &body.anchor.quote) {
         (Some(start), _) => {
@@ -483,7 +490,7 @@ pub async fn create(State(state): State<AppState>, Auth(caller): Auth, Path(id):
         }).await?.ok_or_else(|| ApiError::conflict("The selected section changed. Select it again."))?;
         anchor["seq"] = json!(seq);
     }
-    create_thread(&state, &caller, &doc, &id, anchor, quote, text).await
+    create_thread(&state, &caller, &doc, &id, anchor, quote, (text, body.recording_id)).await
 }
 
 fn check_rect(rect: &Value) -> ApiResult<()> {
@@ -512,12 +519,14 @@ async fn quote_at_positions(state: &AppState, doc_id: &str, start: &str, end: Op
     }).await?
 }
 
-async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, id: &str, anchor: Value, quote: String, text: String) -> ApiResult<(StatusCode, Json<Value>)> {
+async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, id: &str, anchor: Value, quote: String, content: (String, Option<String>)) -> ApiResult<(StatusCode, Json<Value>)> {
+    let (text, recording_id) = content;
     let state = state.clone();
     let thread_id = ids::new_id("t");
     let comment_id = ids::new_id("c");
     let quote: String = quote.chars().take(2000).collect();
     let mut tx = state.db.begin().await?;
+    crate::voice::attach(&mut tx, recording_id.as_deref(), id, caller).await?;
     sqlx::query("insert into threads (id, doc_id, anchor, quote, created_by) values ($1, $2, $3, $4, $5)")
         .bind(&thread_id)
         .bind(id)
@@ -526,12 +535,13 @@ async fn create_thread(state: &AppState, caller: &Caller, doc: &access::DocRow, 
         .bind(&caller.uuid)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("insert into comments (id, thread_id, doc_id, author_uuid, body) values ($1, $2, $3, $4, $5)")
+    sqlx::query("insert into comments (id, thread_id, doc_id, author_uuid, body, recording_id) values ($1, $2, $3, $4, $5, $6)")
         .bind(&comment_id)
         .bind(&thread_id)
         .bind(id)
         .bind(&caller.uuid)
         .bind(&text)
+        .bind(&recording_id)
         .execute(&mut *tx)
         .await?;
     sqlx::query("insert into thread_activity (thread_id, account_uuid, activity_version) values ($1, $2, 1)")
@@ -566,21 +576,25 @@ async fn thread_for(state: &AppState, caller: &Caller, thread_id: &str) -> ApiRe
 
 #[derive(Deserialize)]
 pub struct Body {
+    #[serde(default)]
     body: String,
+    recording_id: Option<String>,
 }
 
 pub async fn reply(State(state): State<AppState>, Auth(caller): Auth, Path(thread_id): Path<String>, Json(body): Json<Body>) -> ApiResult<(StatusCode, Json<Value>)> {
     let (thread, doc, _) = thread_for(&state, &caller, &thread_id).await?;
     require_active(&doc)?;
-    let text = check_body(&body.body)?;
+    let text = check_comment_body(&body.body, body.recording_id.is_some())?;
     let comment_id = ids::new_id("c");
     let mut tx = state.db.begin().await?;
-    sqlx::query("insert into comments (id, thread_id, doc_id, author_uuid, body) values ($1, $2, $3, $4, $5)")
+    crate::voice::attach(&mut tx, body.recording_id.as_deref(), &thread.doc_id, &caller).await?;
+    sqlx::query("insert into comments (id, thread_id, doc_id, author_uuid, body, recording_id) values ($1, $2, $3, $4, $5, $6)")
         .bind(&comment_id)
         .bind(&thread_id)
         .bind(&thread.doc_id)
         .bind(&caller.uuid)
         .bind(&text)
+        .bind(&body.recording_id)
         .execute(&mut *tx)
         .await?;
     let version = record_activity(&mut tx, &thread_id, &caller.uuid).await?;
@@ -602,7 +616,7 @@ async fn comment_view(state: &AppState, comment_id: &str) -> ApiResult<Value> {
 }
 
 async fn comment_for(state: &AppState, caller: &Caller, comment_id: &str) -> ApiResult<(CommentRow, ThreadRow, access::DocRow, Role)> {
-    let comment: CommentRow = sqlx::query_as("select id, thread_id, author_uuid, body, created_at, edited_at, deleted_at from comments where id = $1")
+    let comment: CommentRow = sqlx::query_as("select id, thread_id, author_uuid, body, recording_id, created_at, edited_at, deleted_at from comments where id = $1")
         .bind(comment_id)
         .fetch_optional(&state.db)
         .await?
@@ -620,7 +634,7 @@ pub async fn edit(State(state): State<AppState>, Auth(caller): Auth, Path(commen
     if comment.deleted_at.is_some() {
         return Err(ApiError::conflict("This comment was deleted."));
     }
-    let text = check_body(&body.body)?;
+    let text = check_comment_body(&body.body, comment.recording_id.is_some())?;
     let mut tx = state.db.begin().await?;
     // Serialize replacements so every accepted text is the current body or a revision.
     let previous: Option<(String, Option<OffsetDateTime>)> = sqlx::query_as("select body, deleted_at from comments where id = $1 for update")

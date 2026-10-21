@@ -10,7 +10,7 @@ RUN cargo build --release -p write-api
 FROM debian:bookworm-slim
 ARG PANDOC_VERSION=3.12.1
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl libreoffice-writer-nogui poppler-utils fonts-dejavu-core \
+ && apt-get install -y --no-install-recommends ca-certificates curl libreoffice-writer-nogui poppler-utils ffmpeg fonts-dejavu-core \
  && curl -fsSL -o /tmp/pandoc.deb "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-1-$(dpkg --print-architecture).deb" \
  && apt-get install -y /tmp/pandoc.deb && rm /tmp/pandoc.deb \
  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* \

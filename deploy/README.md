@@ -19,6 +19,8 @@ and `identity-release-20261017.json` for Accounts, Ting and the published CLI re
 
 | Setting | Production value |
 | --- | --- |
+| `WRITE_DEEPGRAM_API_KEY` | Waveform production Deepgram credential, copied securely into Write runtime Secrets Manager; never sent to the browser |
+| `WRITE_FFMPEG` | `/opt/silicon-write/current/converters/ffmpeg` (sandboxed audio decoding) |
 | `WRITE_DATABASE_URL` | the Postgres URL |
 | `WRITE_APP_SECRET` | the `write` app's secret (`~/.silicon-release/accounts-apps/write/app-secret` on the release machine) |
 | `WRITE_TICKET_SECRET` | 48+ random bytes (`openssl rand -base64 48`) |
@@ -28,6 +30,10 @@ and `identity-release-20261017.json` for Accounts, Ting and the published CLI re
 | `WRITE_TING_URL` | `https://backend.ting.teamofsilicons.com` |
 | `WRITE_POSTMARK_TOKEN`, `WRITE_MAIL_FROM` | for invitation emails (a Postmark sender for write@teamofsilicons.com) |
 | `WRITE_ACCOUNTS_WEBHOOK_SECRET` | from `silicon-accounts app webhook` once the webhook is set to `https://api.write.teamofsilicons.com/v1/webhooks/accounts` |
+
+Install `ffmpeg` on existing hosts before upgrading to voice comments. Local tests may set
+`WRITE_ENVIRONMENT=development`, `WRITE_DEEPGRAM_URL=http://127.0.0.1:4373/listen` and
+`WRITE_DEEPGRAM_API_KEY=local-test` with `node e2e/deepgram-stub.mjs`; production ignores URL overrides.
 
 The API uses the wrappers installed under `/opt/silicon-write/current/converters`. Each converter runs in a
 Bubblewrap network/PID/mount namespace with a cleared environment, read-only runtime files, and only its temporary

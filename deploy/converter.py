@@ -12,6 +12,7 @@ PROGRAMS = {
     "soffice": "/usr/bin/soffice",
     "pdftotext": "/usr/bin/pdftotext",
     "pdfinfo": "/usr/bin/pdfinfo",
+    "ffmpeg": "/usr/bin/ffmpeg",
 }
 
 

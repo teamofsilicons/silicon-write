@@ -20,6 +20,7 @@ pub struct Inner {
     pub jwks: RwLock<Option<(silicon_accounts_client::types::Jwks, Instant)>>,
     pub rooms: Rooms,
     pub http: reqwest::Client,
+    pub voice_slots: tokio::sync::Semaphore,
 }
 
 impl std::ops::Deref for AppState {

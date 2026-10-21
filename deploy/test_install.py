@@ -141,7 +141,7 @@ class ConverterTests(unittest.TestCase):
                 self.argv(resolved=path)
 
     def test_each_converter_is_absolute_and_allowlisted(self):
-        for program in ["pandoc", "soffice", "pdftotext", "pdfinfo"]:
+        for program in ["pandoc", "soffice", "pdftotext", "pdfinfo", "ffmpeg"]:
             with self.subTest(program=program):
                 argv = self.argv(program=program)
                 self.assertEqual(argv[argv.index("--") + 1], "/usr/bin/" + program)

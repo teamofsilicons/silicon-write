@@ -176,6 +176,24 @@ file is the technical reference.
   `{ "kind": "pdf", "rect": { "x","y","w","h","page" } }` (an area of a page of a PDF doc).
 - `POST /v1/threads/{id}/comments` `{ "body" }` → `Comment`. `PATCH /v1/comments/{id}` `{ "body" }` (author).
   `DELETE /v1/comments/{id}` (author) → kept in history as deleted.
+- Voice comments: `POST /v1/docs/{id}/recordings` accepts one multipart `audio` field (WebM, MP4, Ogg or WAV;
+  at most 3 MiB and 3 minutes). Requires commenter access. Returns `VoiceRecording = { "id": "r_…",
+  "duration_ms", "transcript": null }`. The server validates/decodes audio and stores a private, seekable WAV.
+- `POST /v1/recordings/{id}/transcribe` `{}` → `{ "transcript" }`. Only the recording's author can transcribe,
+  with current commenter access. Deepgram Nova-3 multilingual STT runs server-side; successful transcripts are
+  cached and failed attempts may be retried up to five times. A failure preserves the audio. The browser inserts
+  the transcript into the draft, where it can be edited before posting.
+- To post audio, pass optional `recording_id` to the new-thread or reply endpoint. The recording must belong to
+  the same author and doc, and can be attached once. `body` may be empty when audio is attached.
+  Comment responses include `voice: VoiceRecording | null`; `body` is the reviewed transcript, while
+  `voice.transcript` is the original automatic transcript. Editing the body keeps the recording.
+- `GET /v1/recordings/{id}` streams audio and supports a single byte `Range`. Requires signed-in viewer access
+  to the doc; unpublished drafts are author-only. Deleted-comment recordings are unavailable. Responses are
+  private/no-store. Unattached drafts older than seven days are cleaned up when their author next uploads.
+  Recordings are included in encrypted database backups and removed with their document.
+- Recording limits: 60 uploads per account per hour, two simultaneous processing jobs per server.
+  The web editor stops recording when a comment is dismissed, keeps the draft, and never posts automatically.
+
 - `POST /v1/comments/{id}/reactions` `{ "emoji" }` → `Comment`: toggles the caller's reaction.
 - `POST /v1/threads/{id}/resolve`, `POST /v1/threads/{id}/reopen` → `Thread`.
 - `POST /v1/threads/{id}/read` `{ "activity_version": n }` →
