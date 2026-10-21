@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-21T21:36:17.238862+00:00",
+  "recorded_at": "2026-10-21T21:51:53.955214+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_Y5H6mwie5LvYCGrCxYdVEyorkvPB",
+    "deployment_id": "dpl_7EAEkpfvLrKNCWpBZxxVLrNtete1",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,7 +13,7 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "ba8085fbeeefdfdfcf849bba9355c03595050425",
+    "revision": "5f49dc758783dbe3b0dff78b4810e1b323150395",
     "browser_checks": [
       "Neutral Silicon UI surfaces and text-colored caret verified live",
       "Formatting toolbar visible by default and workspace plus retained without arrow buttons",
@@ -22,7 +22,8 @@
       "Download submenu focus stays separate from unrelated main-menu items",
       "Format preference persists across documents and reloads",
       "Mic-only bottom-right recording control verified in new comments and replies; padding prevents text overlap",
-      "Live waveform, pause/resume, discard, 25-minute sound warning and 30-minute stop verified with synthetic audio"
+      "Live waveform, pause/resume, discard, 25-minute sound warning and 30-minute stop verified with synthetic audio",
+      "Recorder shows elapsed time only and Done finishes recording; native recording and transcription verified"
     ],
     "custom_domain_verified": true
   },
@@ -215,5 +216,6 @@
   },
   "home_tabs_release_receipt": "verification-home-tabs-20261019.json",
   "writing_polish_release_receipt": "verification-writing-polish-20261022.json",
-  "voice_recorder_verification": "deploy/verification-voice-recorder-20261022.json"
+  "voice_recorder_verification": "deploy/verification-voice-recorder-20261022.json",
+  "voice_label_verification": "deploy/verification-voice-labels-20261022.json"
 }

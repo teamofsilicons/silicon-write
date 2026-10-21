@@ -1,0 +1,40 @@
+{
+  "recorded_at": "2026-10-21T21:51:53.955214+00:00",
+  "web": {
+    "revision": "5f49dc758783dbe3b0dff78b4810e1b323150395",
+    "deployment_id": "dpl_7EAEkpfvLrKNCWpBZxxVLrNtete1",
+    "url": "https://write.teamofsilicons.com",
+    "custom_domain_verified": true
+  },
+  "changes": [
+    "Recording timer displays elapsed time only",
+    "Stop button renamed Done, including accessible label"
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "eslint": "passed",
+    "production_web_build": "passed",
+    "native_recording_and_transcription_browser_test": "passed",
+    "full_browser_suite": {
+      "passed": 98,
+      "failed": 8,
+      "known_prior_failures": [
+        "e2e/editor.spec.ts:1359:7 \u203a comments \u203a a table cell, an image and an area drawn on the image take comments too (7.5s)",
+        "e2e/editor.spec.ts:1684:7 \u203a suggestions and roles \u203a a commenter comments and proposes text, formatting and paragraph splits for review (21.6s)",
+        "e2e/editor.spec.ts:2031:7 \u203a PDFs \u203a a comment on a PDF area shows on its page and in the comments (21.1s)",
+        "e2e/library.spec.ts:674:5 \u203a opening files makes a new doc from a .md file, in the folder it was opened in (16.6s)",
+        "e2e/library.spec.ts:742:5 \u203a the share dialog: share with the friend by c:id, they open it from Shared with me, change their role, remove them (18.6s)",
+        "e2e/library.spec.ts:831:5 \u203a someone with view access sees who has it, can't share or change roles, and can leave (17.5s)",
+        "e2e/library.spec.ts:1215:5 \u203a names reach other Carbons exactly as typed: markup in a doc or folder name is shown, never run (18.8s)",
+        "e2e/library.spec.ts:1594:5 \u203a a public doc opens signed out, read only, and once private again the same link sends to sign in (17.9s)"
+      ]
+    },
+    "screenshot": ".dev/production/voice-labels-recorder.png"
+  },
+  "api_unchanged": true,
+  "cleanup": {
+    "test_services_stopped": true,
+    "test_postgres_stopped": true
+  },
+  "secrets_included": false
+}
