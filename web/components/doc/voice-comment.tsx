@@ -74,12 +74,12 @@ export function VoiceComment({ voice, disabled = false, children }: { voice: Ret
   return <div className={styles.voice}>
     {draft.recording ? <VoicePlayer recording={draft.recording} /> : draft.blob ? <audio controls ref={preview} aria-label="Recording preview" /> : null}
     {recording ? <div className={styles.recorder} data-sq="input" aria-label="Voice recording">
-      <div className={styles.recordingHeader}><span>{draft.status === "paused" ? "Paused" : "Recording"}</span><span role="timer">{duration(draft.elapsedMs ?? 0)} / 30:00</span></div>
+      <div className={styles.recordingHeader}><span>{draft.status === "paused" ? "Paused" : "Recording"}</span><span role="timer">{duration(draft.elapsedMs ?? 0)}</span></div>
       <Waveform stream={draft.stream} paused={draft.status === "paused"} />
       <div className={styles.recordingControls}>
         <Button variant="ghost" size="sm" aria-label="Discard recording" title="Discard recording" onClick={voice.discard}><Trash2 size={17} /></Button>
         <Button key={draft.status} variant="secondary" size="sm" aria-label={draft.status === "paused" ? "Resume recording" : "Pause recording"} title={draft.status === "paused" ? "Resume recording" : "Pause recording"} onClick={voice.pause}>{draft.status === "paused" ? <Play size={16} /> : <Pause size={16} />}</Button>
-        <Button variant="primary" size="sm" aria-label="Stop recording" onClick={voice.stop}><Square size={14} fill="currentColor" /> Stop</Button>
+        <Button variant="primary" size="sm" aria-label="Done recording" onClick={voice.stop}><Square size={14} fill="currentColor" /> Done</Button>
       </div>
     </div> : <div className={styles.field} data-mic={!draft.recording && !draft.blob || undefined}>
       {children}
