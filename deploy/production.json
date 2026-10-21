@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-19T17:09:52.066529+00:00",
+  "recorded_at": "2026-10-21T19:58:15.077303+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_46fRvaoi4ZoSynFXyjLNUJjQiVXT",
+    "deployment_id": "dpl_Br3GrFk4S6NNatNnUp5rvXjUZ2Vh",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,13 +13,13 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "8e465a2b384619984c33b044f754dfff46e7feb4",
+    "revision": "70397ff95668198dbfb4c6413997b353e878dc63",
     "browser_checks": [
-      "All comments heading and filters stay fixed on desktop and mobile",
-      "Focused browser passage visible to Silicon CLI context; blur clears location",
-      "Editor caret matches text color on the live document (rgb(30, 30, 28))",
-      "Owned and shared docs visible together on homepage; selection controls hidden by default",
-      "Cmd-click multi-open and previous/next workspace navigation verified live"
+      "Neutral Silicon UI surfaces and text-colored caret verified live",
+      "Formatting toolbar visible by default and workspace plus retained without arrow buttons",
+      "Suggester role visible in invite options",
+      "Custom double-click text menu verified live",
+      "Download submenu focus stays separate from unrelated main-menu items"
     ]
   },
   "api": {
@@ -192,5 +192,6 @@
     "catalog_published": false,
     "blocker": "Apps requires Windows x86_64 and macOS aarch64 packages, but both live upload validation runners are not_configured. Existing0.1.0 remains published."
   },
-  "home_tabs_release_receipt": "verification-home-tabs-20261019.json"
+  "home_tabs_release_receipt": "verification-home-tabs-20261019.json",
+  "writing_polish_release_receipt": "verification-writing-polish-20261022.json"
 }

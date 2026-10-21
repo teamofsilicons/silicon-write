@@ -1,0 +1,127 @@
+{
+  "checked_at": "2026-10-21T19:58:15.077303+00:00",
+  "source_revision": "70397ff95668198dbfb4c6413997b353e878dc63",
+  "deployment_id": "dpl_Br3GrFk4S6NNatNnUp5rvXjUZ2Vh",
+  "url": "https://write.teamofsilicons.com",
+  "deployment_status": "live_ready",
+  "previous_deployment_id": "dpl_46fRvaoi4ZoSynFXyjLNUJjQiVXT",
+  "changes": [
+    "Neutral white and gray surfaces from Silicon UI, with neutral-8 small labels for WCAG AA contrast; blue accent retained.",
+    "Visible workspace previous/next buttons removed; plus button and tab shortcuts retained.",
+    "Suggester invitation label maps to existing commenter API permission; starts in Suggesting mode and cannot rename or accept suggestions.",
+    "Click suggested text to review it inline; accept converts it to normal text, reject removes the proposal. Review is also available in Comments and More.",
+    "Custom double-click and context menu for selection copying, formatting, comments and review.",
+    "Slash and document-link menus track the text during scrolling, fit the viewport and scroll their options independently.",
+    "Formatting toolbar starts open while writing.",
+    "Portalled submenu focus no longer moves the parent menu highlight to unrelated items."
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "production_build": "passed",
+    "web_unit_tests": {
+      "passed": 99,
+      "failed": 0
+    },
+    "full_browser_suite": {
+      "total": 98,
+      "passed": 79,
+      "failed": 11,
+      "did_not_run": 8,
+      "duration": "9.0m",
+      "log": ".dev/writing-polish-full.log",
+      "note": "Initial full run before final corrections. Eight previously failing scenarios remain; one contrast regression and two changed-default expectations were corrected and rerun."
+    },
+    "preexisting_failing_scenarios": [
+      {
+        "test": "editor.spec.ts:1359",
+        "observation": "Image comment toolbar does not reappear after the image already has a comment."
+      },
+      {
+        "test": "editor.spec.ts:1684",
+        "observation": "Desktop commenter drag-selection helper receives empty selection."
+      },
+      {
+        "test": "editor.spec.ts:2031",
+        "observation": "PDF area click does not expose the expected active thread card."
+      },
+      {
+        "test": "library.spec.ts:675",
+        "observation": "Imported-title assertion still looks for H1 inside banner."
+      },
+      {
+        "test": "library.spec.ts:743",
+        "observation": "Shared list lookup by original document title fails at line 791. This scenario also failed in the prior baseline, at a later assertion; current failure was not separately repaired."
+      },
+      {
+        "test": "library.spec.ts:832",
+        "observation": "Viewer menu assertion still omits the existing Select item."
+      },
+      {
+        "test": "library.spec.ts:1216",
+        "observation": "Markup-title assertion still looks for H1 inside banner."
+      },
+      {
+        "test": "library.spec.ts:1595",
+        "observation": "Share dialog assertion expects obsolete explanatory text."
+      }
+    ],
+    "final_focused_checks": [
+      {
+        "name": "WCAG AA public/workspace pages, desktop/phone, device light/dark preferences and keyboard navigation",
+        "passed": 9,
+        "failed": 0,
+        "log": ".dev/writing-polish-final-focused.log"
+      },
+      {
+        "name": "New-document formatting default and signed-in public-link suggestion access",
+        "passed": 2,
+        "failed": 0,
+        "log": ".dev/writing-polish-final-focused.log"
+      },
+      {
+        "name": "Workspace shortcuts and 390/320px tab controls",
+        "passed": 2,
+        "failed": 0,
+        "log": ".dev/writing-polish-final-focused.log"
+      },
+      {
+        "name": "Suggester invitation, role enforcement, inline accept/reject and persisted Markdown; 390/320px review controls; text menu, submenu highlights and slash scroll",
+        "passed": 2,
+        "failed": 0,
+        "setup_passed": 1,
+        "log": ".dev/writing-polish-mobile-final3.log"
+      }
+    ],
+    "live_browser": {
+      "browser": "Chrome",
+      "document_connected_and_synced": true,
+      "neutral_surfaces_verified": true,
+      "caret_equals_text_color": "lab(3.04863 0 0)",
+      "formatting_visible_by_default": true,
+      "tab_arrows_absent": true,
+      "plus_button_visible": true,
+      "suggester_option_visible": true,
+      "custom_double_click_menu_visible": true,
+      "submenu_focus_on_rtf_without_unrelated_parent_highlight": true,
+      "existing_document_not_edited": true,
+      "sharing_not_changed": true,
+      "screenshots": [
+        ".dev/production/writing-polish-live.png",
+        ".dev/production/writing-polish-live-menu.png",
+        ".dev/production/writing-polish-live-text-menu.png"
+      ]
+    },
+    "production_https_status": 200,
+    "custom_domain_deployment_id_verified": true
+  },
+  "limitations": [
+    "The full browser suite is not green; eight existing failing scenarios are recorded above.",
+    "Suggestion acceptance and rejection were verified against two local test accounts, without changing the user's production document."
+  ],
+  "cleanup": {
+    "original_user_browser_tab_untouched": true,
+    "test_services_stopped": true
+  },
+  "secrets_included": false
+}
