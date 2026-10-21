@@ -22,6 +22,12 @@ test('voice recording, dismissal draft, edited transcript, persisted playback an
  try {
   await signIn(page,runAccounts().carbon.email,'/library');const d=await doc(page,'Voice comment test');await page.goto(`/d/${d.id}`);await expect(docSyncState(page)).toHaveAccessibleName('Connected and synced');await newComment(page);
   const box=page.getByRole('dialog',{name:'New comment'}), field=box.getByRole('combobox',{name:'Comment',exact:true});
+  for (const width of [390,320]) {
+    await page.setViewportSize({width,height:844});
+    await expect.poll(async()=>{const bounds=await box.boundingBox();return bounds!.x+bounds!.width;}).toBeLessThanOrEqual(width);
+    await expect(box.getByRole('button',{name:'Record voice comment'})).toBeVisible();
+  }
+  await page.setViewportSize({width:1440,height:900});
   await field.fill('My introduction.');await box.getByRole('button',{name:'Record voice comment'}).click();await expect(box.getByRole('button',{name:'Stop recording'})).toBeVisible();
   await page.mouse.click(12,350);await expect(box).not.toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as unknown as {voiceTest:{stopped:number}}).voiceTest.stopped)).toBeGreaterThan(0);
   await newComment(page);await expect(field).toHaveValue('My introduction.\nA voice comment about the next paragraph.');
@@ -73,4 +79,19 @@ test('recordings enforce permissions, attachment binding, media limits, cached S
   expect((await page.request.post(`/api/v1/docs/${d.id}/threads`,{headers:sameOrigin(),data:{anchor:{quote:'A voice anchor.'},recording_id:draft.id}})).status()).toBe(201);expect((await guest.request.get(`/api/v1/recordings/${draft.id}`)).status()).toBe(200);
   const sharing=await(await page.request.get(`/api/v1/docs/${d.id}/sharing`)).json();const member=sharing.members.find((m:{account:{id:string}})=>m.account.id===runAccounts().friend.id);await page.request.delete(`/api/v1/docs/${d.id}/sharing/${member.id}`,{headers:sameOrigin()});expect([403,404]).toContain((await guest.request.get(`/api/v1/recordings/${draft.id}`)).status());
  }finally{await provider();await owner.close();await friend.close();}
+});
+
+
+test('native browser MediaRecorder encodes audio that the server decodes and transcribes',async({browser})=>{
+ await provider(200,true);const context=await accountsSession(browser,'carbon',{reducedMotion:'reduce'});const page=await context.newPage();page.setDefaultTimeout(15000);
+ // A generated tone replaces microphone input; the browser's real MediaRecorder remains untouched.
+ await page.addInitScript(()=>{Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{
+   const audio=new AudioContext(),destination=audio.createMediaStreamDestination(),tone=audio.createOscillator();tone.connect(destination);tone.start();await audio.resume();return destination.stream;
+ }});});
+ try {
+  await signIn(page,runAccounts().carbon.email,'/library');const d=await doc(page,'Native recording verification');await page.goto(`/d/${d.id}`);await expect(docSyncState(page)).toHaveAccessibleName('Connected and synced');await newComment(page);
+  const box=page.getByRole('dialog',{name:'New comment'});await box.getByRole('button',{name:'Record voice comment'}).click();await expect(box.getByRole('timer')).toContainText('0:01');await box.getByRole('button',{name:'Stop recording'}).click();await expect(box.getByRole('combobox',{name:'Comment',exact:true})).toHaveValue('A voice comment about the next paragraph.');
+  await expect.poll(()=>box.locator('audio').evaluate((audio:HTMLAudioElement)=>audio.duration)).toBeGreaterThan(0.9);
+  await box.getByRole('button',{name:'Discard'}).click();
+ }finally{await context.close();}
 });
