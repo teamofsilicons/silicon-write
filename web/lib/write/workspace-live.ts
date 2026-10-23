@@ -77,6 +77,7 @@ export async function acquireWorkspaceLive(id: string, account: string | null): 
     ...live,
     get role() { return live.role; },
     get account() { return live.account; },
+    get hasLoaded() { return live.hasLoaded; },
     get rejectionReason() { return live.rejectionReason; },
     release() {
       if (released) return;

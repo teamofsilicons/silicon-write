@@ -40,6 +40,7 @@ export interface LiveDoc {
   on(listener: (event: LiveEvent) => void): () => void;
   /** True until a server round trip has acknowledged all earlier local updates. */
   hasPendingChanges(): boolean;
+  readonly hasLoaded: boolean;
   readonly rejectionReason: string | null;
   flush(): Promise<boolean>;
   destroy(): void;
@@ -65,6 +66,7 @@ export async function connectLive(docId: string): Promise<LiveDoc> {
   const authors = new Map<number, Account>();
   let checkpointTimer: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
+  let hasLoaded = false;
   const checkpoint = new SyncCheckpoint({
     ready: () => !destroyed && Boolean(provider.ws && provider.wsconnected && provider.synced),
     send: () => {
@@ -92,6 +94,7 @@ export async function connectLive(docId: string): Promise<LiveDoc> {
       return () => listeners.delete(listener);
     },
     hasPendingChanges: () => checkpoint.hasChanges,
+    get hasLoaded() { return hasLoaded; },
     get rejectionReason() { return checkpoint.rejectionReason; },
     flush: () => destroyed ? Promise.resolve(false) : checkpoint.flush(),
     destroy() {
@@ -119,7 +122,10 @@ export async function connectLive(docId: string): Promise<LiveDoc> {
     checkpoint.changed();
     scheduleCheckpoint();
   });
-  provider.on("sync", (synced: boolean) => { if (synced && live.hasPendingChanges()) scheduleCheckpoint(); });
+  provider.on("sync", (synced: boolean) => {
+    if (synced) hasLoaded = true;
+    if (synced && live.hasPendingChanges()) scheduleCheckpoint();
+  });
 
   provider.messageHandlers[MESSAGE_EVENT] = (_encoder, decoder) => {
     let event: LiveEvent;

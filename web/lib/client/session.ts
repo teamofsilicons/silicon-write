@@ -11,6 +11,7 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import { appConfig } from "../app.config";
 import type { SessionAccount, SessionView } from "../account";
+import { contentCache } from "../write/content-cache";
 import { ApiError } from "../errors";
 
 /** The keeper refreshes this long before the access token expires; API calls wait for a refresh inside the last minute. */
@@ -40,6 +41,7 @@ interface TabMessage {
 }
 
 function set(next: SessionView, broadcast: false | TabMessage["reason"] | true = false) {
+  contentCache.setScope(next.signedIn ? next.account?.uuid ?? null : null);
   state = next;
   emit();
   schedule();
@@ -122,6 +124,7 @@ export function startSessionKeeper(initial: SessionView): void {
       channel = new BroadcastChannel(CHANNEL);
       channel.onmessage = event => {
         const { view, reason } = event.data as TabMessage;
+        contentCache.setScope(view.signedIn ? view.account?.uuid ?? null : null);
         state = view;
         emit();
         schedule();

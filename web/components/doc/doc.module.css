@@ -364,3 +364,5 @@
 }
 .sectionGutter:hover { color: var(--foreground); border-color: var(--border-strong); }
 @media (max-width: 860px) { .sectionGutterRail { display: none; } }
+
+.cacheNotice { color: var(--text-secondary); font-size: 0.8125rem; margin-top: 1rem; }

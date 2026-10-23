@@ -19,6 +19,10 @@ import { acquireWorkspaceLive } from "@/lib/write/workspace-live";
 import { useWorkspaceTabs } from "@/components/workspace/workspace-tabs";
 import { keys, useThreads } from "@/lib/write/queries";
 import { atLeast, type Account, type Anchor, type Doc, type Thread } from "@/lib/write/types";
+import { contentCache } from "@/lib/write/content-cache";
+import { denyWorkspaceDoc } from "@/lib/write/workspace-docs";
+import { ApiError } from "@/lib/errors";
+import { CachedContent } from "@/components/editor/cached-content";
 import { DocEditor, type EditMode } from "@/components/editor/editor";
 import { anchorFor } from "@/components/editor/anchors";
 import { TopBar } from "./top-bar";
@@ -70,6 +74,12 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   const canComment = atLeast(role, "commenter") && Boolean(account);
   const [mode, setMode] = useState<EditMode>(canEdit ? "editing" : canComment ? "suggesting" : "viewing");
   const [live, setLive] = useState<LiveDoc | null>(null);
+  const liveReady = useSyncExternalStore(useCallback(listener => {
+    live?.provider.on("sync", listener);
+    return () => { live?.provider.off("sync", listener); };
+  }, [live]), () => live?.hasLoaded ?? false, () => false);
+  const cachedContent = useSyncExternalStore(contentCache.subscribe,
+    () => contentCache.get(docId, account?.uuid ?? null)?.content, () => undefined);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   // The thread to open first comes from a link (?thread=…).
@@ -141,7 +151,14 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
           setMode("viewing");
         }
       })
-      .catch(error => setLiveError(error instanceof Error ? error.message : "The doc couldn't be opened."));
+      .catch(error => {
+        if (disposed) return;
+        if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+          denyWorkspaceDoc(docId);
+          setLostAccess(true);
+        }
+        setLiveError(error instanceof Error ? error.message : "The doc couldn't be opened.");
+      });
     return () => {
       disposed = true;
       current?.release();
@@ -162,7 +179,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
           client.invalidateQueries({ queryKey: keys.doc(docId) });
           break;
         case "role":
-          if (event.role === null) setLostAccess(true);
+          if (event.role === null) { denyWorkspaceDoc(docId); setLostAccess(true); }
           client.invalidateQueries({ queryKey: keys.doc(docId) });
           break;
         case "rejected":
@@ -173,6 +190,27 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       }
     });
   }, [live, client, docId]);
+
+  // Only cache acknowledged text. Never turn unconfirmed/rejected local edits into a saved preview.
+  useEffect(() => {
+    if (!editor || !live || !account || lostAccess || doc.deleted_at) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let revoked = false;
+    const save = () => {
+      clearTimeout(timer);
+      if (!revoked && !editor.isDestroyed && live.provider.synced && !live.hasPendingChanges() && !live.rejectionReason) {
+        contentCache.remember(doc, account.uuid, editor.getJSON());
+      }
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(save, 250); };
+    editor.on("update", schedule);
+    const off = live.on(event => {
+      if (event.type === "role" && event.role === null) { revoked = true; contentCache.remove(docId); }
+      if (event.type === "saved") save();
+    });
+    save();
+    return () => { clearTimeout(timer); editor.off("update", schedule); off(); };
+  }, [editor, live, account, doc, docId, lostAccess]);
 
   // Suggestions changed in the doc: refresh their list.
   useEffect(() => {
@@ -368,7 +406,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
           {findOpen && editor ? <FindBar editor={editor} canReplace={canEdit && mode === "editing"} onClose={() => setFindOpen(false)} /> : null}
           {doc.kind === "pdf" ? (
             <PdfView doc={doc} canComment={canComment} canEdit={canEdit} threads={threads} activeThread={activeThread} onActivate={openThread} onCommentArea={(anchor, at) => { openThread(null); setPending({ anchor, ...at }); }} />
-          ) : live ? (
+          ) : live && liveReady ? (
             <div className={styles.column}>
               <DocEditor
                 live={live}
@@ -389,6 +427,11 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={activeThread} onActivate={openThread} /> : null}
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
+            </div>
+          ) : cachedContent && !doc.deleted_at ? (
+            <div className={styles.column}>
+              <CachedContent content={cachedContent} />
+              <p className={styles.cacheNotice} role="status">{liveError ? "Showing saved content. Reconnect to edit the latest version." : "Checking for changes…"}</p>
             </div>
           ) : (
             <div className={styles.loading}>{liveError ? <p className={styles.error}>{liveError}</p> : <p>Opening…</p>}</div>
