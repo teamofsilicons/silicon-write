@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-10-23T13:55:09.136510+00:00",
+  "web": {
+    "revision": "475cd72c3bcaee6b0d25aabf3007b905bf90f674",
+    "deployment_id": "dpl_GQUNxVbC8SW9s6dL1PXkttsKD83X",
+    "url": "https://write.teamofsilicons.com",
+    "custom_domain_verified": true
+  },
+  "changes": [
+    "Cache recently opened document text, formatting and metadata locally by signed-in account",
+    "Render saved content immediately while fetching the live ticket and initial WebSocket sync",
+    "Keep previews read-only and never feed cached content back into the collaborative document",
+    "Store acknowledged edits only, purge on sign-out or denied access, and bound storage to 20 documents, about 2 MB, and seven days of inactivity"
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "eslint": "passed",
+    "production_web_build": "passed",
+    "unit_tests": {
+      "passed": 104
+    },
+    "cache_browser_tests": {
+      "passed": 4,
+      "covers": [
+        "Ticket-delayed preview with preserved formatting",
+        "Concurrent writer reconciliation without duplicate or overwritten content",
+        "Preview remains visible while initial WebSocket sync is delayed",
+        "Denied access removes cached text",
+        "Sign-out clears saved content"
+      ]
+    },
+    "full_browser_suite": {
+      "passed": 102,
+      "failed": 8,
+      "known_prior_failures": [
+        "e2e/editor.spec.ts:1359:7 \u203a comments \u203a a table cell, an image and an area drawn on the image take comments too",
+        "e2e/editor.spec.ts:1684:7 \u203a suggestions and roles \u203a a commenter comments and proposes text, formatting and paragraph splits for review",
+        "e2e/editor.spec.ts:2031:7 \u203a PDFs \u203a a comment on a PDF area shows on its page and in the comments",
+        "e2e/library.spec.ts:674:5 \u203a opening files makes a new doc from a .md file, in the folder it was opened in",
+        "e2e/library.spec.ts:742:5 \u203a the share dialog: share with the friend by c:id, they open it from Shared with me, change their role, remove them",
+        "e2e/library.spec.ts:831:5 \u203a someone with view access sees who has it, can't share or change roles, and can leave",
+        "e2e/library.spec.ts:1215:5 \u203a names reach other Carbons exactly as typed: markup in a doc or folder name is shown, never run",
+        "e2e/library.spec.ts:1594:5 \u203a a public doc opens signed out, read only, and once private again the same link sends to sign in"
+      ],
+      "baseline_receipt": "verification-voice-labels-20261022.json"
+    },
+    "production_browser": {
+      "saved_preview_visible_while_connecting": true,
+      "live_sync_completed": true,
+      "document_text_unchanged": true,
+      "user_document_edited": false,
+      "verification_tab_closed": true,
+      "screenshot": ".dev/production/content-cache-live.png"
+    },
+    "public_http_status": 200,
+    "api_readiness": "ready"
+  },
+  "api_unchanged": true,
+  "cleanup": {
+    "test_services_stopped": true,
+    "test_postgres_stopped": true
+  },
+  "secrets_included": false
+}
