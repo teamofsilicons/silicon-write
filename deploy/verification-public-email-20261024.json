@@ -1,0 +1,104 @@
+{
+  "recorded_at": "2026-10-24T16:13:49.410086+00:00",
+  "runtime_revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
+  "changes": [
+    "Optional Require email to view checkbox for public files",
+    "Account email used when available; otherwise an unverified email prompt without sign-in",
+    "Owner-only paginated viewer history with first/latest visits and email source",
+    "Receipt and stream authorization invalidated when email collection policy changes"
+  ],
+  "api": {
+    "revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
+    "archive_sha256": "c82193b9f793e891a3f188c6ec9b02ff3e8279e271a3a6e6ff590d2316a23326",
+    "migration_7": true,
+    "services": {
+      "silicon-write": "active",
+      "silicon-write-caddy": "active",
+      "silicon-write-backup.timer": "active"
+    },
+    "predeploy_backup": "predeploy-20261024T160628Z",
+    "install_ssm_command": "cc1b6311-9082-4925-a25d-fa386a20b7e8"
+  },
+  "web": {
+    "deployment_id": "dpl_EyKk5Y4VRoxKdvQRmjtiqEQ4jZBj",
+    "url": "https://write.teamofsilicons.com",
+    "revision": "277403142bf9c2207207c15aa896d8eeae8a7023"
+  },
+  "checks": {
+    "rust_api_tests": 28,
+    "web_unit_tests": 104,
+    "typecheck": true,
+    "lint": true,
+    "web_build": true,
+    "linux_arm64_build": true,
+    "full_browser_suite": {
+      "passed": 103,
+      "failed": 8,
+      "failures": [
+        "[e2e] \u203a e2e/editor.spec.ts:1359:7 \u203a comments \u203a a table cell, an image and an area drawn on the image take comments too",
+        "[e2e] \u203a e2e/editor.spec.ts:1684:7 \u203a suggestions and roles \u203a a commenter comments and proposes text, formatting and paragraph splits for review",
+        "[e2e] \u203a e2e/editor.spec.ts:2031:7 \u203a PDFs \u203a a comment on a PDF area shows on its page and in the comments",
+        "[e2e] \u203a e2e/library.spec.ts:674:5 \u203a opening files makes a new doc from a .md file, in the folder it was opened in",
+        "[e2e] \u203a e2e/library.spec.ts:742:5 \u203a the share dialog: share with the friend by c:id, they open it from Shared with me, change their role, remove them",
+        "[e2e] \u203a e2e/library.spec.ts:831:5 \u203a someone with view access sees who has it, can't share or change roles, and can leave",
+        "[e2e] \u203a e2e/library.spec.ts:1215:5 \u203a names reach other Carbons exactly as typed: markup in a doc or folder name is shown, never run",
+        "[e2e] \u203a e2e/library.spec.ts:1594:5 \u203a a public doc opens signed out, read only, and once private again the same link sends to sign in"
+      ],
+      "same_failures_as": "deploy/verification-content-cache-20261023.json",
+      "tested_revision": "975e6e630619792925d95ce655a575b523b965c6"
+    },
+    "final_focused_browser_suite": {
+      "passed": 3,
+      "includes_setup": true,
+      "feature_cases": 2,
+      "runtime_revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
+      "log": ".dev/email-gate-final-focused.log"
+    },
+    "production_api": {
+      "document_id": "d_Wpq3NJTacgqH2zwhypKL",
+      "identity": "si:udd-saket",
+      "anonymous_content_blocked": true,
+      "owner_visits_excluded": true
+    },
+    "production_browser": {
+      "document_id": "d_Wpq3NJTacgqH2zwhypKL",
+      "anonymous_prompt": true,
+      "no_content_before_email": true,
+      "email_opens_file": true,
+      "grant_http_only": true,
+      "reload_remembers_email": true,
+      "anonymous_viewer_list_denied": true,
+      "mobile_fits": true,
+      "checked_at": "2026-10-24T16:08:14.489Z"
+    },
+    "production_owner_history": {
+      "total": 2,
+      "guest_email_recorded_as_unverified": true,
+      "signed_in_account_email_recorded": true,
+      "first_and_latest_timestamps": true,
+      "owner_history_private": true,
+      "fixture_moved_to_trash": true
+    },
+    "signed_in_chrome": {
+      "no_prompt": true,
+      "content_visible": true,
+      "synced": true,
+      "verification_tab_closed": true
+    }
+  },
+  "screenshots": [
+    ".dev/production/public-email-live-prompt.png",
+    ".dev/production/public-email-live-mobile.png",
+    ".dev/production/public-email-live-signed-in.png",
+    ".dev/production/public-email-viewers.png"
+  ],
+  "limitations": [
+    "Entered email addresses are unverified and do not prove identity.",
+    "Viewer history is collected while Require email to view is enabled.",
+    "If account email consent is unavailable, signed-in readers are prompted for an email."
+  ],
+  "existing_user_documents_changed": false,
+  "fixture_moved_to_trash": true,
+  "external_messages_sent": false,
+  "secrets_included": false
+}

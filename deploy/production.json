@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-23T13:55:09.136510+00:00",
+  "recorded_at": "2026-10-24T16:13:49.410086+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_GQUNxVbC8SW9s6dL1PXkttsKD83X",
+    "deployment_id": "dpl_EyKk5Y4VRoxKdvQRmjtiqEQ4jZBj",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,7 +13,7 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "475cd72c3bcaee6b0d25aabf3007b905bf90f674",
+    "revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
     "browser_checks": [
       "Neutral Silicon UI surfaces and text-colored caret verified live",
       "Formatting toolbar visible by default and workspace plus retained without arrow buttons",
@@ -24,15 +24,16 @@
       "Mic-only bottom-right recording control verified in new comments and replies; padding prevents text overlap",
       "Live waveform, pause/resume, discard, 25-minute sound warning and 30-minute stop verified with synthetic audio",
       "Recorder shows elapsed time only and Done finishes recording; native recording and transcription verified",
-      "Cached document preview is visible before live sync; authenticated live document then replaces it with unchanged text"
+      "Cached document preview is visible before live sync; authenticated live document then replaces it with unchanged text",
+      "Optional public-file email gate verified signed out and signed in; owner-only viewer history records entered and account emails with visit timestamps"
     ],
     "custom_domain_verified": true
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "9497871f84cd163dd3b217c422041efb82ebefcc",
-    "archive_sha256": "a6546302645ee899cc6871ceeb00efe76a356f05b12688a7016c8e109d8fdf03",
-    "install_ssm_command": "e36726db-e304-4581-8117-df0b70dc38f9",
+    "revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
+    "archive_sha256": "c82193b9f793e891a3f188c6ec9b02ff3e8279e271a3a6e6ff590d2316a23326",
+    "install_ssm_command": "cc1b6311-9082-4925-a25d-fa386a20b7e8",
     "readiness": true,
     "private_document_journey": [
       "ordinary device sign-in authorizes production API",
@@ -102,7 +103,7 @@
       "existing_docx_export_bytes": 10470,
       "fixture_moved_to_trash": true
     },
-    "predeploy_backup": "predeploy-20261021T212737Z"
+    "predeploy_backup": "predeploy-20261024T160628Z"
   },
   "infrastructure": {
     "aws_account": "234951665042",
@@ -219,5 +220,6 @@
   "writing_polish_release_receipt": "verification-writing-polish-20261022.json",
   "voice_recorder_verification": "deploy/verification-voice-recorder-20261022.json",
   "voice_label_verification": "deploy/verification-voice-labels-20261022.json",
-  "content_cache_verification": "deploy/verification-content-cache-20261023.json"
+  "content_cache_verification": "deploy/verification-content-cache-20261023.json",
+  "public_email_verification": "deploy/verification-public-email-20261024.json"
 }
