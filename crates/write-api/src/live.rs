@@ -3,6 +3,7 @@
 //! account and the role, and is signed so it can't be altered.
 
 use axum::Json;
+use axum::http::HeaderMap;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
@@ -56,8 +57,9 @@ fn check(state: &AppState, token: &str) -> ApiResult<Ticket> {
     Ok(ticket)
 }
 
-pub async fn ticket(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+pub async fn ticket(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let (doc, role) = access::require_doc(&state, caller.as_ref(), &id, Role::Viewer).await?;
+    crate::visitors::ensure(&state, caller.as_ref(), &doc, &headers, false).await?;
     if doc.kind == "pdf" {
         return Err(ApiError::conflict("A PDF shown as it is has no live text.").hint("Turn it into a doc to edit it."));
     }

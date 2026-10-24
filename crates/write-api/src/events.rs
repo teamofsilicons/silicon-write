@@ -245,6 +245,7 @@ impl Drop for Presence {
 }
 
 struct Session {
+    view_headers: HeaderMap,
     state: AppState,
     caller: Caller,
     room: Arc<Room>,
@@ -290,6 +291,7 @@ async fn open(
         None
     };
     let session = Session {
+        view_headers: headers,
         state,
         caller,
         room,
@@ -353,13 +355,18 @@ impl Session {
                 self.end().await;
                 return Ok(json!({"type":"reconnect","reason":"authentication_refresh"}));
             }
-            let (_, role) = access::require_doc(
+            let (doc, role) = access::require_doc(
                 &self.state,
                 Some(&self.caller),
                 &self.room.doc_id,
                 Role::Viewer,
             )
             .await?;
+            // Auth checked and refreshed account email when this stream opened. Subsequent
+            // permission checks use that cache and the grant, without polling Accounts.
+            let mut gate_caller = self.caller.clone();
+            gate_caller.token.clear();
+            crate::visitors::ensure(&self.state, Some(&gate_caller), &doc, &self.view_headers, false).await?;
             let current = self.state.rooms.get(&self.state, &self.room.doc_id).await?;
             if !Arc::ptr_eq(&current, &self.room) {
                 let joined = self.presence.take().is_some();

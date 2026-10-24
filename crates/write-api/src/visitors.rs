@@ -163,7 +163,16 @@ pub async fn guard(
                 (method == axum::http::Method::GET
                     && (parts.len() == 3
                         || parts.get(3).is_some_and(|p| {
-                            matches!(*p, "markdown" | "prosemirror" | "export" | "original")
+                            matches!(
+                                *p,
+                                "markdown"
+                                    | "prosemirror"
+                                    | "export"
+                                    | "original"
+                                    | "context"
+                                    | "events"
+                                    | "join"
+                            )
                         })))
                     || (method == axum::http::Method::POST && parts.get(3) == Some(&"live")),
             )
