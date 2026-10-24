@@ -48,8 +48,11 @@ test("public email gate protects content, remembers guests and gives only the ow
   const friend = await accountsSession(browser, "friend");
   const signed = await friend.newPage();
   // Grant the optional account-email scope on the hosted consent page.
-  await signed.addLocatorHandler(signed.getByRole("checkbox", { name: /Email address/ }), async checkbox => { await checkbox.check(); }, { times: 1, noWaitAfter: true });
-  await signIn(signed, runAccounts().friend.email, "/library");
+  await signed.goto("/library");
+  await signed.getByRole("button", { name: /^Continue as / }).click();
+  await signed.getByRole("checkbox", { name: /Email address/ }).check();
+  await signed.getByRole("button", { name: "Share and continue", exact: true }).click();
+  await expect(signed).toHaveURL(/\/library$/);
   await signed.goto(`/d/${id}`);
   await expect(signed.locator(".ProseMirror")).toContainText("The gated document content.");
   await expect(signed.getByRole("heading", { name: "Enter your email to view" })).toHaveCount(0);
