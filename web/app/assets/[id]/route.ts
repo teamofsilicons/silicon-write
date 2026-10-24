@@ -5,6 +5,7 @@
  * private, or someone loses it, its images stop loading for them too.
  */
 import { NextResponse, type NextRequest } from "next/server";
+import { viewGrantHeaders } from "@/lib/server/view-grants";
 import { serverEnv } from "@/lib/server/env";
 import { freshSession } from "@/lib/server/fresh";
 import { clientHeaders, readSession, writeSession } from "@/lib/server/session";
@@ -14,7 +15,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   if (!/^a_[A-Za-z0-9]+$/.test(id)) return new NextResponse("Not found", { status: 404 });
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = viewGrantHeaders(request.cookies);
+  const rawGrants = request.headers.get("x-write-view-grants");
+  if (rawGrants) headers["x-write-view-grants"] = rawGrants;
   const bearer = request.headers.get("authorization");
   let rotated: Awaited<ReturnType<typeof freshSession>> | null = null;
   if (bearer?.startsWith("Bearer ")) {

@@ -67,7 +67,9 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
         let token = bearer(parts).ok_or_else(ApiError::unauthorized)?;
-        Ok(Auth(verify(&state, &token).await?))
+        let caller = verify(&state, &token).await?;
+        crate::visitors::guard(&state, Some(&caller), parts.uri.path(), &parts.headers, &parts.method).await?;
+        Ok(Auth(caller))
     }
 }
 
@@ -79,9 +81,11 @@ where
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        match bearer(parts) {
-            Some(token) => Ok(MaybeAuth(Some(verify(&state, &token).await?))),
-            None => Ok(MaybeAuth(None)),
-        }
+        let caller = match bearer(parts) {
+            Some(token) => Some(verify(&state, &token).await?),
+            None => None,
+        };
+        crate::visitors::guard(&state, caller.as_ref(), parts.uri.path(), &parts.headers, &parts.method).await?;
+        Ok(MaybeAuth(caller))
     }
 }

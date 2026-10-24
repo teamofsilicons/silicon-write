@@ -28,6 +28,7 @@ export interface Doc {
   path: PathPart[];
   role: Role;
   public_access: PublicAccess;
+  require_email?: boolean;
   seq: number;
   created_at: string;
   updated_at: string;
@@ -66,6 +67,7 @@ export interface Member {
 export interface Sharing {
   owner: Account;
   public_access: PublicAccess;
+  require_email?: boolean;
   members: Member[];
   role: Role;
 }

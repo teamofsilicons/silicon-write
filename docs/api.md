@@ -28,6 +28,7 @@ file is the technical reference.
   "folder_id": "f_…" | null, "path": [{ "id": "f_…", "name": "Plans" }],  // folders from the top down
   "role": "owner" | "editor" | "commenter" | "viewer",                  // the caller's role
   "public_access": "none" | "view" | "comment" | "edit",
+  "require_email": false,
   "seq": 42,                                                              // latest change number
   "created_at": "…", "updated_at": "…", "deleted_at": null,
   "url": "https://write.teamofsilicons.com/d/d_x7Kq…"
@@ -149,7 +150,20 @@ file is the technical reference.
   pending invitation (and an invitation email) until someone signs in with it. Not for an item in the trash (`409`), not
   by someone who has only the public link (`403`), and a `to` that's neither an id nor an email is `422 invalid`.
 - `PATCH /v1/docs/{id}/sharing/{member}` `{ "role" }` → `Member`. `DELETE /v1/docs/{id}/sharing/{member}` → `204`.
-- `PUT /v1/docs/{id}/public` `{ "access": "none"|"view"|"comment"|"edit" }` → `Doc` (owner).
+- `PUT /v1/docs/{id}/public` `{ "access": "none"|"view"|"comment"|"edit", "require_email"?: boolean }` → `Doc` (owner).
+  Omitting `require_email` preserves the setting. It applies only while the file is public.
+- A public file with `require_email: true` returns `403 email_required` on reads, exports, assets and live tickets until
+  a visitor supplies an email. Signed-in visitors automatically use their account email; the owner is exempt.
+- `POST /v1/docs/{id}/visits` **public** `{ "email": "reader@example.com" }` → `{ "ok": true, "view_grant"?: string }`.
+  An entered email is unverified: this never signs anyone in, creates an account or grants private-file access.
+  For raw API reads, pass the returned opaque value in `X-Write-View-Grants` (comma-separated for multiple files).
+  Grants last 30 days and are invalidated by changes to public-link settings. The web proxy stores them in an
+  HTTP-only cookie and does not return them to browser JavaScript. Signed-in visitors with an account email need no grant.
+- `GET /v1/docs/{id}/viewers?offset=0` (owner only) → `{ "viewers": [{ "email", "email_source": "account"|"entered",
+  "account": Account|null, "first_viewed_at", "last_viewed_at" }], "total", "next_offset": number|null }`.
+  Up to 50 entries per page. Opening a file while collection is enabled records a visit, grouped by account or entered
+  email, with repeated timestamps coalesced within one minute. Owner visits are excluded. Disabling collection retains
+  history; deleting the file permanently removes it. An entered email identifies only what the visitor supplied.
 - The same under `/v1/folders/{id}/sharing` (no `public` for folders).
 - Owner and editors can invite; only the owner can change or remove other people (anyone can remove themselves).
 

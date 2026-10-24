@@ -77,3 +77,7 @@
   .dialog .roleSelectSmall, .remove { min-height: 36px; }
   .remove { width: 28px; }
 }
+
+.emailSetting { display: grid; gap: 8px; padding-top: 8px; }
+.emailSetting label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.emailSetting input { width: 16px; height: 16px; accent-color: var(--accent); }

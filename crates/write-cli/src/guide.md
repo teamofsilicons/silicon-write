@@ -198,6 +198,12 @@ Commenters can only suggest; editors and the owner can accept or reject.
     write transfer "Launch plan" c:saket                    # they accept with `write transfers accept ID`
     write transfers
 
+In the website, owners can enable **Require email to view** under **Share → Link access** for
+public files. Visitors enter an email without verification or sign-in; Write uses an available
+account email for signed-in visitors. **Share → Viewers** shows the emails and first and latest
+visits recorded while the setting is enabled. Entered emails are labelled unverified. Turning
+it off stops collection and keeps the existing history. Only the owner can see this list.
+
 ## Versions and history
 
 Every change is kept, with who made it and when. Going back never deletes anything: a restore

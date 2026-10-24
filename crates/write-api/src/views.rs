@@ -25,6 +25,7 @@ pub struct DocView {
     pub path: Vec<PathPart>,
     pub role: Role,
     pub public_access: String,
+    pub require_email: bool,
     pub seq: i64,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
@@ -100,6 +101,7 @@ pub async fn doc_view(state: &AppState, doc: &DocRow, role: Role, viewer: Option
         path: visible_path(state, doc.folder_id.as_deref(), viewer).await?,
         role,
         public_access: doc.public_access.clone(),
+        require_email: doc.require_email,
         seq: doc.seq,
         created_at: doc.created_at,
         updated_at: doc.updated_at,

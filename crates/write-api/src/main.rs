@@ -22,6 +22,7 @@ mod state;
 mod ting;
 mod versions;
 mod views;
+mod visitors;
 mod voice;
 
 use std::sync::Arc;
@@ -65,6 +66,8 @@ fn router(state: AppState) -> Router {
         .route("/v1/docs/{id}/sharing", get(sharing::doc_members).post(sharing::share_doc))
         .route("/v1/docs/{id}/sharing/{member}", patch(sharing::change_doc_member).delete(sharing::remove_doc_member))
         .route("/v1/docs/{id}/public", put(sharing::set_public))
+        .route("/v1/docs/{id}/visits", post(visitors::visit).layer(DefaultBodyLimit::max(1024)))
+        .route("/v1/docs/{id}/viewers", get(visitors::list))
         .route("/v1/docs/{id}/transfer", post(library::transfer_doc))
         .route("/v1/docs/{id}/threads", get(comments::list).post(comments::create))
         .route("/v1/docs/{id}/recordings", post(voice::upload).layer(DefaultBodyLimit::max(3 * 1024 * 1024 + 16384)))

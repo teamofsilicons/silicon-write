@@ -11,6 +11,7 @@
  * page sends the Carbon to sign in again. State-changing requests must come from this site's pages (Origin check).
  */
 import { NextResponse, type NextRequest } from "next/server";
+import { viewGrantCookie, viewGrantHeaders } from "@/lib/server/view-grants";
 import { EnvError, serverEnv } from "@/lib/server/env";
 import { forwardRequestHeaders, relayResponseHeaders, upstreamPath } from "@/lib/server/forward";
 import { freshSession } from "@/lib/server/fresh";
@@ -25,7 +26,7 @@ const PREFIX = "/api/";
 const PUBLIC_ROUTES: [string, RegExp][] = [
   ["GET", /^v1\/docs\/d_[A-Za-z0-9]+$/],
   ["GET", /^v1\/docs\/d_[A-Za-z0-9]+\/(markdown|prosemirror|export|original)$/],
-  ["POST", /^v1\/docs\/d_[A-Za-z0-9]+\/live$/],
+  ["POST", /^v1\/docs\/d_[A-Za-z0-9]+\/(live|visits)$/],
   ["GET", /^v1\/assets\/a_[A-Za-z0-9]+$/],
 ];
 
@@ -38,8 +39,8 @@ async function forwardAnonymously(request: NextRequest, base: string, path: stri
   try {
     upstream = await fetch(`${base}/${path}${request.nextUrl.search}`, {
       method,
-      headers: { accept: request.headers.get("accept") ?? "application/json", ...(method === "POST" ? { "content-type": "application/json" } : {}) },
-      body: method === "POST" ? "{}" : undefined,
+      headers: { ...viewGrantHeaders(request.cookies), accept: request.headers.get("accept") ?? "application/json", ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+      body: method === "POST" ? await request.text() || "{}" : undefined,
       redirect: "manual",
       cache: "no-store",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
@@ -47,6 +48,7 @@ async function forwardAnonymously(request: NextRequest, base: string, path: stri
   } catch {
     return json(502, errorBody("upstream_unavailable", "Silicon Write's service didn't answer.", "Try again in a moment."));
   }
+  if (/^v1\/docs\/d_[A-Za-z0-9]+\/visits$/.test(path) && upstream.ok) return visitResponse(request, path, upstream);
   const headers = new Headers();
   for (const name of ["content-type", "content-disposition", "content-length", "cache-control"]) {
     const value = upstream.headers.get(name);
@@ -54,6 +56,17 @@ async function forwardAnonymously(request: NextRequest, base: string, path: stri
   }
   if (!headers.has("cache-control")) headers.set("cache-control", "private, no-store");
   return new NextResponse(upstream.body, { status: upstream.status, headers });
+}
+async function visitResponse(request: NextRequest, path: string, upstream: Response): Promise<NextResponse> {
+  const body = await upstream.json() as { view_grant?: string };
+  const response = NextResponse.json({ ok: true }, { headers: { "cache-control": "private, no-store" } });
+  if (body.view_grant) {
+    const current = viewGrantCookie(path.split("/")[2]);
+    const old = request.cookies.getAll().filter(cookie => cookie.name.startsWith("write-view-") && cookie.name !== current);
+    for (const cookie of old.slice(0, Math.max(0, old.length - 19))) response.cookies.delete(cookie.name);
+    response.cookies.set(current, body.view_grant, { httpOnly: true, secure: request.nextUrl.protocol === "https:", sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 });
+  }
+  return response;
 }
 /** A slow upload or report may take a while; nothing waits forever. */
 const UPSTREAM_TIMEOUT_MS = 300_000;
@@ -89,7 +102,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   try {
     upstream = await fetch(`${env.appApiUrl}/${path}${request.nextUrl.search}`, {
       method,
-      headers: forwardRequestHeaders(request.headers, session.at, clientHeaders(request)),
+      headers: forwardRequestHeaders(request.headers, session.at, { ...clientHeaders(request), ...viewGrantHeaders(request.cookies) }),
       body: hasBody ? request.body : undefined,
       // Streams the body through instead of buffering it (Node's fetch needs this for a stream body).
       ...(hasBody ? { duplex: "half" } : {}),
@@ -104,6 +117,11 @@ async function handle(request: NextRequest): Promise<NextResponse> {
     });
   }
 
+  if (/^v1\/docs\/d_[A-Za-z0-9]+\/visits$/.test(path) && upstream.ok) {
+    const response = await visitResponse(request, path, upstream);
+    if (rotated) writeSession(response, session);
+    return response;
+  }
   if (upstream.status === 401) {
     // The service no longer accepts this sign-in (revoked, the account removed the app, or deleted): end it here too.
     const text = await upstream.text().catch(() => "");

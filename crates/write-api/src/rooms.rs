@@ -276,6 +276,27 @@ impl Rooms {
         }
     }
 
+    /// Recheck live readers when the owner enables or changes email collection.
+    pub async fn require_email(&self, state: &AppState, doc_id: &str) {
+        let room = self.map.lock().await.get(doc_id).cloned();
+        let Some(room) = room else { return };
+        let Ok(doc) = crate::access::load_doc(state, doc_id).await else { return };
+        let mut inner = room.inner.lock().await;
+        let mut closed = vec![];
+        for (id, conn) in &inner.conns {
+            let caller = conn.account.as_ref().map(|a| crate::auth::Caller {
+                uuid: a.uuid.clone(), id: a.id.clone(), kind: a.kind.clone(), token: String::new(),
+            });
+            if crate::visitors::ensure(state, caller.as_ref(), &doc, &axum::http::HeaderMap::new(), false).await.is_err() {
+                let _ = conn.tx.send(WsMessage::Binary(event_message(&json!({"type":"email_required"})).into()));
+                let _ = conn.tx.send(access_closed());
+                closed.push(*id);
+            }
+        }
+        for id in closed { inner.remove_connection(id); }
+        inner.events.wake();
+    }
+
     /// Forgets a room (after its doc is permanently deleted).
     pub async fn drop_room(&self, doc_id: &str) {
         let room = self.map.lock().await.remove(doc_id);

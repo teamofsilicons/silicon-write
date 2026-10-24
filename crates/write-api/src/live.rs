@@ -28,6 +28,8 @@ struct Ticket {
     a: Option<String>,
     r: Role,
     e: i64,
+    #[serde(default)]
+    g: i64,
 }
 
 fn sign(state: &AppState, payload: &str) -> String {
@@ -60,7 +62,7 @@ pub async fn ticket(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth,
         return Err(ApiError::conflict("A PDF shown as it is has no live text.").hint("Turn it into a doc to edit it."));
     }
     let expires = OffsetDateTime::now_utc().unix_timestamp() + TICKET_TTL;
-    let token = issue(&state, &Ticket { d: id.clone(), a: caller.as_ref().map(|c| c.uuid.clone()), r: role, e: expires });
+    let token = issue(&state, &Ticket { d: id.clone(), a: caller.as_ref().map(|c| c.uuid.clone()), r: role, e: expires, g: doc.email_gate_version });
     let base = state.config.api_url.trim_end_matches('/').replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
     let account = match &caller {
         Some(c) => Some(accounts::one(&state, &c.uuid).await?),
@@ -93,6 +95,7 @@ pub async fn connect(State(state): State<AppState>, Path(id): Path<String>, Quer
     let doc = access::load_doc(&state, &id).await?;
     let caller = account.as_ref().map(|a| crate::auth::Caller { uuid: a.uuid.clone(), id: a.id.clone(), kind: a.kind.clone(), token: String::new() });
     let role = access::doc_role(&state, caller.as_ref(), &doc).await?.ok_or_else(|| ApiError::not_found("This doc"))?;
+    if doc.require_email && doc.public_access != "none" && ticket.g != doc.email_gate_version { return Err(crate::visitors::required()); }
     let _ = ticket.r;
     Ok(ws
         .max_message_size(32 * 1024 * 1024)

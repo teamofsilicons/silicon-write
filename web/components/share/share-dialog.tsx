@@ -6,7 +6,7 @@
  * public to anyone with the link. The owner can also transfer it to someone else.
  */
 import { useId, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Globe, Link2, LockKeyhole, Mail, UserMinus } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/silicon-ui/dialog/dialog";
 import { Button } from "@/components/silicon-ui/button/button";
@@ -43,15 +43,17 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
   const [to, setTo] = useState("");
   const [role, setRole] = useState("editor");
   const [inviting, setInviting] = useState(false);
+  const [savingLink, setSavingLink] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<boolean | null>(null);
   const [transferTo, setTransferTo] = useState("");
   const me = useSessionView().account?.uuid;
   const isOwner = data?.role === "owner";
   const canInvite = data?.role === "owner" || data?.role === "editor";
-  const refresh = () => {
-    client.invalidateQueries({ queryKey: keys.sharing(kind, id) });
-    client.invalidateQueries({ queryKey: ["library"] });
-    if (kind === "docs") client.invalidateQueries({ queryKey: keys.doc(id) });
-  };
+  const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: keys.sharing(kind, id) }),
+    client.invalidateQueries({ queryKey: ["library"] }),
+    ...(kind === "docs" ? [client.invalidateQueries({ queryKey: keys.doc(id) })] : []),
+  ]);
   const link = typeof window === "undefined" ? "" : kind === "docs" ? `${window.location.origin}/d/${id}` : `${window.location.origin}/library/${id}`;
 
   const invite = async (event: React.FormEvent) => {
@@ -89,12 +91,17 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
     }
   };
 
-  const setPublic = async (access: string) => {
+  const setPublic = async (access: string, requireEmail = data?.require_email ?? false) => {
+    setSavingLink(true);
+    setPendingEmail(requireEmail);
     try {
-      await api.put(`/v1/docs/${seg(id)}/public`, { access });
-      refresh();
+      await api.put(`/v1/docs/${seg(id)}/public`, { access, require_email: requireEmail });
+      await refresh();
     } catch (error) {
       notifyError(error, "Couldn't change who can open the link");
+    } finally {
+      setSavingLink(false);
+      setPendingEmail(null);
     }
   };
 
@@ -211,17 +218,22 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
                     </span>
                     {isOwner ? (
                       <div className={styles.roleField}>
-                        <Select label="Who can open the link" options={PUBLIC} value={publicAccess} onValueChange={v => void setPublic(v)} className={styles.publicSelect} />
+                        <Select label="Who can open the link" disabled={savingLink} options={PUBLIC} value={publicAccess} onValueChange={v => void setPublic(v)} className={styles.publicSelect} />
                       </div>
                     ) : <span className={styles.linkLabel}>{PUBLIC.find(p => p.value === publicAccess)?.label}</span>}
                   </div>
                   <p className={styles.note}>{linkDescription}</p>
+                  {isOwner && publicAccess !== "none" ? <div className={styles.emailSetting}>
+                    <label><input type="checkbox" checked={pendingEmail ?? data?.require_email ?? false} disabled={savingLink} onChange={event => void setPublic(publicAccess, event.target.checked)} /> Require email to view</label>
+                    <p className={styles.note}>Signed-in visitors use their account email. Others enter an unverified email without signing in. Only you can see the viewer list.</p>
+                  </div> : null}
                 </>
               ) : kind === "folders" ? (
                 <p className={styles.note}><Link2 size={14} aria-hidden="true" /> Only people with access can open this folder.</p>
               ) : null}
             </section>
           ) : null}
+          {isOwner && kind === "docs" && open ? <ViewerList docId={id} /> : null}
           {isOwner ? (
             <details className={styles.transfer}>
               <summary><ChevronRight size={14} aria-hidden="true" /> Transfer ownership</summary>
@@ -238,4 +250,39 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
       </DialogContent>
     </Dialog>
   );
+}
+
+
+type ViewerPage = { viewers: { email: string; email_source: "account" | "entered"; first_viewed_at: string; last_viewed_at: string }[]; total: number; next_offset: number | null };
+function ViewerList({ docId }: { docId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const { data, error, isFetching, refetch } = useQuery({
+    queryKey: ["doc-viewers", docId, offset],
+    queryFn: () => api.get<ViewerPage>(`/v1/docs/${seg(docId)}/viewers?offset=${offset}`),
+    enabled: expanded,
+    staleTime: 0,
+  });
+  const date = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return <details className={styles.transfer} onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary><ChevronRight size={14} aria-hidden="true" /> Viewers{data ? ` (${data.total})` : ""}</summary>
+    <div className={styles.transferBody}>
+      <p className={styles.note}>Visits are recorded while “Require email to view” is enabled. Repeat visits are grouped by account or entered email. Your own visits aren’t included.</p>
+      <div className={styles.publicHead}><span className={styles.sectionLabel}>Viewer history</span><Button size="sm" variant="ghost" disabled={isFetching} onClick={() => void refetch()}>Refresh viewers</Button></div>
+      {error ? <p role="alert" className={styles.note}>Couldn’t load viewers. Try refreshing.</p> : null}
+      {isFetching && !data ? <p role="status" className={styles.note}>Loading viewers…</p> : null}
+      {data?.total === 0 ? <p className={styles.note}>No viewers recorded yet.</p> : null}
+      <ul className={styles.people} aria-label="File viewers">
+        {data?.viewers.map(viewer => <li key={`${viewer.email_source}:${viewer.email}:${viewer.first_viewed_at}`} className={styles.person}><span className={styles.who}>
+          <span>{viewer.email}</span>
+          <span className={styles.id}>{viewer.email_source === "account" ? "Account email" : "Entered email · unverified"}</span>
+          <span className={styles.id}>First viewed {date(viewer.first_viewed_at)}<br />Last viewed {date(viewer.last_viewed_at)}</span>
+        </span></li>)}
+      </ul>
+      {(offset > 0 || data?.next_offset != null) ? <div className={styles.publicHead}>
+        <Button size="sm" variant="ghost" disabled={offset === 0 || isFetching} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous viewers</Button>
+        <Button size="sm" variant="ghost" disabled={data?.next_offset == null || isFetching} onClick={() => setOffset(data?.next_offset ?? offset)}>Next viewers</Button>
+      </div> : null}
+    </div>
+  </details>;
 }

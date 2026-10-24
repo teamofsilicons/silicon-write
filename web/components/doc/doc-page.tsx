@@ -25,6 +25,7 @@ import { ApiError } from "@/lib/errors";
 import { CachedContent } from "@/components/editor/cached-content";
 import { DocEditor, type EditMode } from "@/components/editor/editor";
 import { anchorFor } from "@/components/editor/anchors";
+import { EmailGate } from "./email-gate";
 import { TopBar } from "./top-bar";
 import { Toolbar } from "./toolbar";
 import { EditorMenu } from "./editor-menu";
@@ -99,6 +100,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     window.dispatchEvent(new Event(FORMAT_EVENT));
   }, [formatKey]);
   const toggleFormat = () => setFormatOpen(!formatOpen);
+  const [emailRequired, setEmailRequired] = useState(false);
   const [lostAccess, setLostAccess] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
@@ -153,7 +155,8 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       })
       .catch(error => {
         if (disposed) return;
-        if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+        if (error instanceof ApiError && error.code === "email_required") { denyWorkspaceDoc(docId); setEmailRequired(true); }
+        else if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
           denyWorkspaceDoc(docId);
           setLostAccess(true);
         }
@@ -171,6 +174,8 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     if (!live) return;
     return live.on(event => {
       switch (event.type) {
+        case "email_required":
+          denyWorkspaceDoc(docId); setEmailRequired(true); break;
         case "threads":
           client.invalidateQueries({ queryKey: ["threads", docId] });
           client.invalidateQueries({ queryKey: keys.suggestions(docId) });
@@ -193,7 +198,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
 
   // Only cache acknowledged text. Never turn unconfirmed/rejected local edits into a saved preview.
   useEffect(() => {
-    if (!editor || !live || !account || lostAccess || doc.deleted_at) return;
+    if (!editor || !live || !account || lostAccess || emailRequired || doc.deleted_at) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let revoked = false;
     const save = () => {
@@ -205,12 +210,12 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     const schedule = () => { clearTimeout(timer); timer = setTimeout(save, 250); };
     editor.on("update", schedule);
     const off = live.on(event => {
-      if (event.type === "role" && event.role === null) { revoked = true; contentCache.remove(docId); }
+      if (event.type === "email_required" || event.type === "role" && event.role === null) { revoked = true; contentCache.remove(docId); }
       if (event.type === "saved") save();
     });
     save();
     return () => { clearTimeout(timer); editor.off("update", schedule); off(); };
-  }, [editor, live, account, doc, docId, lostAccess]);
+  }, [editor, live, account, doc, docId, lostAccess, emailRequired]);
 
   // Suggestions changed in the doc: refresh their list.
   useEffect(() => {
@@ -357,6 +362,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
 
   const onRefused = useCallback((reason: string) => notify.info("Not a suggestion", reason), []);
 
+  if (emailRequired) return <EmailGate docId={docId} />;
   if (lostAccess) {
     return (
       <div className={styles.gone}>

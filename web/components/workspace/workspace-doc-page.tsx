@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { EmailGate } from "@/components/doc/email-gate";
 import { DocPage, type DocPageProps } from "@/components/doc/doc-page";
 import { Button } from "@/components/silicon-ui/button/button";
 import { api, seg } from "@/lib/client/api";
@@ -42,6 +43,7 @@ export function WorkspaceDocPage({ initialDoc, account }: DocPageProps) {
     }
   }, [id, scope, query.data, unavailable]);
 
+  if (query.error?.code === "email_required") return <EmailGate docId={id} />;
   if (unavailable || !query.data) return (
     <main className={styles.unavailable} tabIndex={-1}>
       <h1>{query.isPending ? "Opening your doc…" : "This doc couldn’t be opened"}</h1>

@@ -23,6 +23,7 @@ export const MESSAGE_EVENT = 100;
 
 export type LiveEvent =
   | { type: "saved" }
+  | { type: "email_required" }
   | { type: "authors"; clients: Record<string, Account> }
   | { type: "threads" }
   | { type: "meta" }
@@ -151,7 +152,10 @@ export async function connectLive(docId: string): Promise<LiveDoc> {
     try {
       const next = await fetchTicket(docId);
       provider.params = { ticket: next.ticket };
-    } catch {
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "email_required") {
+        for (const listener of listeners) listener({ type: "email_required" });
+      }
       // The next attempt (or the page) reports a lasting problem.
     }
   };

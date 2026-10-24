@@ -158,6 +158,7 @@ async fn members(state: &AppState, caller: &Caller, target: Target, id: &str) ->
     Ok(Json(json!({
         "owner": people.get(&item.owner),
         "public_access": public,
+        "require_email": match target { Target::Doc => access::load_doc(state, id).await?.require_email, Target::Folder => false },
         "members": out,
         "role": item.role,
     })))
@@ -427,6 +428,7 @@ pub async fn remove_folder_member(State(state): State<AppState>, Auth(caller): A
 #[derive(Deserialize)]
 pub struct PublicBody {
     access: String,
+    require_email: Option<bool>,
 }
 
 pub async fn set_public(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>, Json(body): Json<PublicBody>) -> ApiResult<Json<Value>> {
@@ -438,9 +440,11 @@ pub async fn set_public(State(state): State<AppState>, Auth(caller): Auth, Path(
     if !["none", "view", "comment", "edit"].contains(&access_level) {
         return Err(ApiError::invalid("Public access must be none, view, comment or edit."));
     }
-    if access_level != doc.public_access {
-        sqlx::query("update docs set public_access = $2 where id = $1").bind(&id).bind(access_level).execute(&state.db).await?;
-        activity::record(&state, Some(&id), doc.folder_id.as_deref(), &caller.uuid, "doc.public", json!({ "from": doc.public_access, "to": access_level })).await?;
+    let require_email = body.require_email.unwrap_or(doc.require_email);
+    if access_level != doc.public_access || require_email != doc.require_email {
+        sqlx::query("update docs set public_access = $2, require_email=$3, email_gate_version=email_gate_version+1 where id = $1").bind(&id).bind(access_level).bind(require_email).execute(&state.db).await?;
+        if require_email && access_level != "none" { state.rooms.require_email(&state, &id).await; }
+        activity::record(&state, Some(&id), doc.folder_id.as_deref(), &caller.uuid, "doc.public", json!({ "from": doc.public_access, "to": access_level, "require_email_from": doc.require_email, "require_email_to": require_email })).await?;
         state.rooms.recheck(&state, &id).await;
         state.rooms.notify(&id, json!({ "type": "meta" })).await;
     }

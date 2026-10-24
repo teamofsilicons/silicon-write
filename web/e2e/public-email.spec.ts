@@ -1,0 +1,84 @@
+import { expect, test } from "@playwright/test";
+import { accountsSession, runAccounts, sameOrigin, signIn } from "./support";
+
+test("public email gate protects content, remembers guests and gives only the owner a viewer history", async ({ browser }) => {
+  const owner = await accountsSession(browser, "carbon");
+  const page = await owner.newPage();
+  await signIn(page, runAccounts().carbon.email, "/library");
+  const made = await page.request.post("/api/v1/docs", { headers: sameOrigin(), data: { title: "Email collection test", markdown: "The gated document content." } });
+  expect(made.ok()).toBeTruthy();
+  const { id } = await made.json() as { id: string };
+  const setPublic = async (access: string, require_email: boolean) => {
+    const response = await page.request.put(`/api/v1/docs/${id}/public`, { headers: sameOrigin(), data: { access, require_email } });
+    expect(response.ok()).toBeTruthy();
+  };
+  const asset = await page.request.post(`/api/v1/docs/${id}/assets`, { headers: sameOrigin(), multipart: { file: { name: "test.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="black"/></svg>') } } });
+  expect(asset.ok()).toBeTruthy();
+  const assetId = (await asset.json()).id as string;
+  await setPublic("view", true);
+  const anon = await browser.newContext({ baseURL: process.env.E2E_BASE_URL });
+  const guest = await anon.newPage();
+  await guest.goto(`/d/${id}`);
+  await expect(guest.getByRole("heading", { name: "Enter your email to view" })).toBeVisible();
+  await expect(guest.getByText("The gated document content.", { exact: true })).toHaveCount(0);
+  const apiBase = process.env.E2E_API_URL!;
+  expect((await guest.request.get(`/assets/${assetId}`)).ok()).toBe(false);
+  expect((await anon.request.get(`${apiBase}/v1/assets/${assetId}`)).status()).toBe(403);
+  for (const suffix of ["", "/markdown", "/prosemirror", "/export?format=md", "/original"]) {
+    const response = await anon.request.get(`${apiBase}/v1/docs/${id}${suffix}`);
+    expect(response.status(), suffix).toBe(403);
+    expect((await response.json()).error.code).toBe("email_required");
+  }
+  expect((await anon.request.get(`${apiBase}/v1/docs/%64${id.slice(1)}/markdown`)).ok()).toBe(false);
+  expect((await anon.request.post(`${apiBase}/v1/docs/${id}/live`, { data: {} })).status()).toBe(403);
+  expect((await guest.request.post(`/api/v1/docs/${id}/visits`, { headers: sameOrigin(), data: { email: "invalid" } })).status()).toBe(422);
+  await guest.getByLabel("Email").fill("Guest@example.com");
+  await guest.getByRole("button", { name: "View file" }).click();
+  await expect(guest.locator(".ProseMirror")).toContainText("The gated document content.");
+  const grant = (await anon.cookies()).find(cookie => cookie.name === `write-view-${id}`)!;
+  expect(grant.httpOnly).toBe(true);
+  expect((await guest.request.get(`/assets/${assetId}`)).ok()).toBe(true);
+  const submitted = await guest.request.post(`/api/v1/docs/${id}/visits`, { headers: sameOrigin(), data: { email: "Guest@example.com" } });
+  expect(await submitted.json()).toEqual({ ok: true });
+  await guest.reload();
+  await expect(guest.locator(".ProseMirror")).toContainText("The gated document content.");
+  const history = await page.request.get(`/api/v1/docs/${id}/viewers`);
+  expect((await history.json()).viewers).toMatchObject([{ email: "guest@example.com", email_source: "entered" }]);
+  expect((await guest.request.get(`/api/v1/docs/${id}/viewers`)).status()).toBe(401);
+  const friend = await accountsSession(browser, "friend");
+  const signed = await friend.newPage();
+  // Grant the optional account-email scope on the hosted consent page.
+  await signed.addLocatorHandler(signed.getByRole("checkbox", { name: /Email address/ }), async checkbox => { await checkbox.check(); }, { times: 1, noWaitAfter: true });
+  await signIn(signed, runAccounts().friend.email, "/library");
+  await signed.goto(`/d/${id}`);
+  await expect(signed.locator(".ProseMirror")).toContainText("The gated document content.");
+  await expect(signed.getByRole("heading", { name: "Enter your email to view" })).toHaveCount(0);
+  expect((await signed.request.get(`/api/v1/docs/${id}/viewers`)).status()).toBe(403);
+  const viewers = await (await page.request.get(`/api/v1/docs/${id}/viewers`)).json();
+  expect(viewers.total).toBe(2);
+  expect(viewers.viewers).toEqual(expect.arrayContaining([expect.objectContaining({ email: runAccounts().friend.email, email_source: "account" })]));
+  await page.goto(`/d/${id}`);
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("checkbox", { name: "Require email to view" })).toBeChecked();
+  await dialog.locator("summary").filter({ hasText: /Viewers/ }).click();
+  await expect(dialog.getByText("guest@example.com", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Entered email · unverified", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "../.dev/production/public-email-viewers.png", fullPage: true });
+  await dialog.getByRole("checkbox", { name: "Require email to view" }).uncheck();
+  await expect(dialog.getByRole("checkbox", { name: "Require email to view" })).not.toBeChecked();
+  await expect(dialog.getByRole("checkbox", { name: "Require email to view" })).toBeEnabled();
+  const fresh = await browser.newContext({ baseURL: process.env.E2E_BASE_URL });
+  const freshPage = await fresh.newPage();
+  await freshPage.goto(`/d/${id}`);
+  await expect(freshPage.locator(".ProseMirror")).toContainText("The gated document content.");
+  // Enabling the gate closes an already connected anonymous reader.
+  await setPublic("view", true);
+  await expect(freshPage.getByRole("heading", { name: "Enter your email to view" })).toBeVisible();
+  await guest.reload();
+  await expect(guest.getByRole("heading", { name: "Enter your email to view" })).toBeVisible();
+  await guest.screenshot({ path: "../.dev/production/public-email-prompt.png", fullPage: true });
+  await setPublic("none", true);
+  expect((await anon.request.get(`${apiBase}/v1/docs/${id}/markdown`, { headers: { "x-write-view-grants": grant.value } })).ok()).toBe(false);
+  await fresh.close(); await friend.close(); await anon.close(); await owner.close();
+});

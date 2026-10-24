@@ -49,12 +49,14 @@ pub struct DocRow {
     pub updated_at: OffsetDateTime,
     pub deleted_at: Option<OffsetDateTime>,
     pub public_access: String,
+    pub require_email: bool,
+    pub email_gate_version: i64,
     pub seq: i64,
     pub plain_text: String,
     pub original_asset: Option<String>,
 }
 
-pub const DOC_COLUMNS: &str = "id, owner_uuid, folder_id, title, kind, created_by, created_at, updated_at, deleted_at, public_access, seq, plain_text, original_asset";
+pub const DOC_COLUMNS: &str = "id, owner_uuid, folder_id, title, kind, created_by, created_at, updated_at, deleted_at, public_access, require_email, email_gate_version, seq, plain_text, original_asset";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct FolderRow {
