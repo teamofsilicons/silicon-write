@@ -1,0 +1,58 @@
+{
+  "verified_at": "2026-10-25T12:30:22.597660+00:00",
+  "source_revision": "bd44d7f155d1e10088f8b091b83bd0634a0985fa",
+  "deployment": "dpl_4eFf1jGPZykug46kpPWr3YtyUPJ9",
+  "url": "https://write.teamofsilicons.com",
+  "behavior": [
+    "removed text collapsed behind clickable red markers",
+    "full live Before/After review",
+    "typing, overwrite, repeated backward/forward deletion preserve originals",
+    "structural editing preserves proposed text and caret",
+    "accept/reject preserves expected baseline",
+    "copy excludes hidden removed text"
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "unit_tests": {
+      "base_suite_passed": 108,
+      "additional_mixed_replacement_copy_test": "passed"
+    },
+    "focused_browser": "3 feature cases plus setup passed, including restricted suggester formatting and paragraph splits",
+    "full_browser": {
+      "passed": 100,
+      "failed": 15,
+      "known_baseline_failures": 8,
+      "local_voice_environment_failures": 7
+    },
+    "voice_environment_recheck": {
+      "passed": 9,
+      "failed": 0,
+      "correction": "absolute ffmpeg binary and local provider URL/token configured"
+    },
+    "live": {
+      "passed": true,
+      "identity": "si:udd-saket",
+      "document": "d_8bUGcAELugcPSTzacWVr",
+      "revision": "bd44d7f",
+      "deployment": "dpl_4eFf1jGPZykug46kpPWr3YtyUPJ9",
+      "browser_red_marker_and_before_after": true,
+      "accept_persisted": true,
+      "reject_restored": true,
+      "checked_at": "2026-10-25T12:28:28.645584+00:00",
+      "synthetic_fixture_trashed": true
+    }
+  },
+  "known_baseline_tests": [
+    "editor.spec.ts:1359",
+    "editor.spec.ts:1684 (comment text selection before suggestion editing)",
+    "editor.spec.ts:2031",
+    "library.spec.ts:674",
+    "library.spec.ts:742",
+    "library.spec.ts:831",
+    "library.spec.ts:1215",
+    "library.spec.ts:1594"
+  ],
+  "screenshot": ".dev/production/suggestion-live-review-20261025.png"
+}
