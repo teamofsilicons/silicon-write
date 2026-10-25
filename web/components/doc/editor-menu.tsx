@@ -58,6 +58,12 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
     };
     const click = (event: MouseEvent) => {
       if (!canComment || event.detail > 1) return;
+      // Browsers also emit click after a text-selection drag. Opening a review
+      // then covers the next passage and intercepts subsequent selection gestures.
+      // Keep selected prose ready to overwrite; the explicit marker still reviews it.
+      const marker = (event.target as HTMLElement).closest(".suggestion-deletion-marker");
+      const native = dom.ownerDocument.getSelection();
+      if (!marker && (!editor.state.selection.empty || native && !native.isCollapsed)) return;
       const target = (event.target as HTMLElement).closest<HTMLElement>("[data-suggestion]");
       const pos = editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
       const id = target?.dataset.suggestion ?? (pos === undefined ? undefined : suggestionsIn(editor.state.doc).find(s => pos >= s.from && pos <= s.to)?.id);

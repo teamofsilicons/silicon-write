@@ -130,3 +130,59 @@ test('a suggester repeatedly deletes visible original characters, and the owner 
   await expect.poll(() => visible(friend)).toBe('Hello world');
   await page.request.delete(`/api/v1/docs/${id}`, { headers: sameOrigin() }); await owner.close(); await guest.close();
 });
+
+/** Exercise browser dragging instead of installing a selection programmatically. */
+async function dragPassage(page: Page, start: string, end = start, backwards = false) {
+  const points = await page.locator('.ProseMirror').evaluate((root, { start, end }) => {
+    const point = (text: string, last: boolean) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.parentElement?.checkVisibility()) continue;
+        const at = node.textContent!.indexOf(text);
+        if (at < 0) continue;
+        const range = document.createRange();
+        const offset = at + (last ? text.length - 1 : 0);
+        range.setStart(node, offset); range.setEnd(node, offset + 1);
+        const rect = range.getBoundingClientRect();
+        return { x: last ? rect.right - .5 : rect.left + .5, y: rect.top + rect.height / 2 };
+      }
+      throw new Error(`Missing visible passage: ${text}`);
+    };
+    return [point(start, false), point(end, true)];
+  }, { start, end });
+  const [from, to] = backwards ? points.reverse() : points;
+  await page.mouse.move(from.x, from.y); await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 20 }); await page.mouse.up();
+  await page.waitForTimeout(400);
+}
+
+test('mouse selection can overwrite passages and existing proposals without losing focus', async ({ browser }) => {
+  const context = await accountsSession(browser, 'carbon'); const page = await context.newPage();
+  await signIn(page, runAccounts().carbon.email, '/library');
+  const made = await page.request.post('/api/v1/docs', { headers: sameOrigin(), data: { title: 'Mouse selection regression', markdown: 'The original passage stays here.\n\nAnother paragraph ends here.' } });
+  const { id } = await made.json(); await page.goto(`/d/${id}`);
+  await expect(docSyncState(page)).toHaveAccessibleName('Connected and synced');
+  await chooseDocMode(page, 'Suggesting');
+  const selected = () => page.evaluate(() => window.getSelection()?.toString());
+  await dragPassage(page, 'original passage');
+  await expect.poll(selected).toBe('original passage');
+  await page.keyboard.type('better writing');
+  await expect.poll(() => visible(page)).toBe('The better writing stays here.\n\nAnother paragraph ends here.');
+  await dragPassage(page, 'better writing', 'better writing', true);
+  await expect.poll(selected).toBe('better writing');
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+  await expect(page.getByRole('dialog', { name: 'Review suggestion' })).toBeHidden();
+  await page.keyboard.type('new draft');
+  await expect.poll(() => visible(page)).toBe('The new draft stays here.\n\nAnother paragraph ends here.');
+  await dragPassage(page, 'new draft', 'Another paragraph');
+  await expect.poll(selected).toContain('Another paragraph');
+  await expect(page.locator('.ProseMirror')).toBeFocused();
+  await page.keyboard.type('joined');
+  await expect.poll(() => visible(page)).toBe('The joined ends here.');
+  await expect(docSyncState(page)).toHaveAccessibleName('Connected and synced');
+  expect(await markdown(page, id)).toBe('The original passage stays here.\n\nAnother paragraph ends here.\n');
+  const rejected = await page.request.post(`/api/v1/docs/${id}/suggestions/reject-all`, { headers: sameOrigin() });
+  expect(rejected.ok()).toBeTruthy();
+  await expect.poll(() => visible(page)).toBe('The original passage stays here.\n\nAnother paragraph ends here.');
+  await page.request.delete(`/api/v1/docs/${id}`, { headers: sameOrigin() }); await context.close();
+});
