@@ -1,0 +1,70 @@
+{
+  "version": "0.2.1",
+  "status": "built and tested; store publication pending Mac upload validation",
+  "checked_at": "2026-10-25T12:43:43.069227+00:00",
+  "source": {
+    "version": "0.2.1",
+    "frozen_source_matches": true,
+    "source_fingerprint": "17d71d81748d54c2927e6c70f748a0bfb2ac7f65b62ee9cc8ee82f56df6da35c",
+    "source_archive": "/Users/codanium/Documents/silicon/.dev/em-dash-20261025/release/write-0.2.1-source.tar.gz",
+    "source_archive_sha256": "b95e2fa835e930a82bdbcf8c45bc12eebbc8daeac3ec8438b33d04e0ddbf915b"
+  },
+  "targets": [
+    {
+      "target": "macos-aarch64",
+      "archive": "/Users/codanium/.silicon-release/accounts-apps/write/cli-0.2.1/write-0.2.1-macos-aarch64.tar.gz",
+      "archiveSha256": "3f805ad6403519937ba2c907b23119c029f1020da2f97f475c8c3e96b0b336de",
+      "archiveBytes": 4123759,
+      "binarySha256": "d27ba846a57f1f1bf722331fc7c4b0c45ad8e8b61b7059ba37e3118d42b5e5e5"
+    },
+    {
+      "target": "linux-x86_64",
+      "archive": "/Users/codanium/.silicon-release/accounts-apps/write/cli-0.2.1/write-0.2.1-linux-x86_64.tar.gz",
+      "archiveSha256": "b44141e7c7f9d985ff5f62cd1bbfc0103118f6c8c805b81bee7fdd1b9fbad23b",
+      "archiveBytes": 4559009,
+      "binarySha256": "2a575032fd8df6546ee05199d4f781826dcd78b1411cbb26fe11029209c17549"
+    },
+    {
+      "target": "linux-aarch64",
+      "archive": "/Users/codanium/.silicon-release/accounts-apps/write/cli-0.2.1/write-0.2.1-linux-aarch64.tar.gz",
+      "archiveSha256": "eac308d269dd1f47d30c5b5a17f0b960af5c04f82a2591f78b517315c13ba73f",
+      "archiveBytes": 4224267,
+      "binarySha256": "0a666c62da1088ee32495a31dc44f9e33f771a8a9f0ea76143125a6ffd2cad03"
+    },
+    {
+      "target": "linux-i686",
+      "archive": "/Users/codanium/.silicon-release/accounts-apps/write/cli-0.2.1/write-0.2.1-linux-i686.tar.gz",
+      "archiveSha256": "316386a7ae5964d40f3c87be505a5caab8cc5415ebb8aa35737510b70b60f916",
+      "archiveBytes": 4274657,
+      "binarySha256": "69a2352f45050d45541f7a78174ceea11fdda2379464cbfa0e5367ad2000863e"
+    },
+    {
+      "target": "linux-armv7hf",
+      "archive": "/Users/codanium/.silicon-release/accounts-apps/write/cli-0.2.1/write-0.2.1-linux-armv7hf.tar.gz",
+      "archiveSha256": "e4895c729c6fd0a2ac809fdcc3d3039129899baa0f267ca0d9da4b889bcd52dd",
+      "archiveBytes": 3750533,
+      "binarySha256": "ca5989bf0518a50d7988e98255c2edd14a8e7bf4e415adb4068fd45ac889b3a0"
+    },
+    {
+      "target": "windows-x86_64",
+      "archive": "/Users/codanium/.silicon-release/accounts-apps/write/cli-0.2.1/write-0.2.1-windows-x86_64.tar.gz",
+      "archiveSha256": "2b411c3f908951f7ffd2e7539350adcfd2c4a7eca02e45e6f3432a42ae60a4ba",
+      "archiveBytes": 4457325,
+      "binarySha256": "f44a918a6dddcec26308b38eaafb10da86fdbb7907b4b27043d4fe1ecdc380f8"
+    }
+  ],
+  "cli_behavior_tests": "passed: Silicon normalization, Carbon preservation, command-only override, unchanged exact match selectors and source files",
+  "clippy": "passed",
+  "local_macos_sandbox_validation": "passed for the exact archive",
+  "publication_blocker": "Private SSM SSH tunnel stalls while forwarding the Mac package; store validation has not accepted the new Mac archive. Required target policy prevents releasing a partial set.",
+  "release_workspace": "/Users/codanium/Documents/silicon/.dev/em-dash-20261025/release",
+  "resume": "Restore a bounded exact-archive Mac validator and validate through the normal Apps upload route. Keep all target packages and native checks before promotion.",
+  "temporary_mac_session_cleanup": {
+    "passed": true,
+    "checked_at": "2026-10-25T12:47:28.097967+00:00",
+    "receipt": "/Users/codanium/Documents/silicon/.dev/em-dash-20261025/release/mac-session-cleanup.json",
+    "local_and_remote_listeners_closed": true,
+    "temporary_credentials_removed": true,
+    "existing_linux_windows_validation_preserved": true
+  }
+}
