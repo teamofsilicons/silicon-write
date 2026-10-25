@@ -89,6 +89,10 @@ test("selection menu, neutral surfaces, independent submenu highlights, and anch
     expect(palette).toEqual([true, true, true]);
     await editor.locator('p').first().dblclick({ position: { x: 25, y: 12 } });
     const menu = page.getByRole('menu', { name: 'Text actions' });
+    await expect(menu).toBeHidden();
+    await expect(editor).toBeFocused();
+    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('Alpha');
+    await editor.locator('p').first().click({ button: 'right', position: { x: 25, y: 12 } });
     await expect(menu).toBeVisible();
     await menu.getByRole('menuitem', { name: 'Bold', exact: true }).click();
     await expect(editor.locator('strong')).toHaveText('Alpha');

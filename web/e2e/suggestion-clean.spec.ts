@@ -186,3 +186,37 @@ test('mouse selection can overwrite passages and existing proposals without losi
   await expect.poll(() => visible(page)).toBe('The original passage stays here.\n\nAnother paragraph ends here.');
   await page.request.delete(`/api/v1/docs/${id}`, { headers: sameOrigin() }); await context.close();
 });
+
+test('double-click selects a word for replacement in editing and suggesting; keyboard context menu still works', async ({ browser }) => {
+  const context = await accountsSession(browser, 'carbon'); const page = await context.newPage();
+  await signIn(page, runAccounts().carbon.email, '/library');
+  const made = await page.request.post('/api/v1/docs', { headers: sameOrigin(), data: { title: 'Double-click word selection', markdown: 'Alpha beta gamma.' } });
+  const { id } = await made.json();
+  try {
+    await page.goto(`/d/${id}`);
+    await expect(docSyncState(page)).toHaveAccessibleName('Connected and synced');
+    const editor = page.locator('.ProseMirror');
+    const menu = page.getByRole('menu', { name: 'Text actions' });
+    const replaceWord = async (word: string, replacement: string) => {
+      await editor.locator('p').first().dblclick({ position: { x: 25, y: 12 } });
+      await expect(menu).toBeHidden();
+      await expect(page.getByRole('dialog', { name: 'Review suggestion' })).toBeHidden();
+      await expect(editor).toBeFocused();
+      await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe(word);
+      await page.keyboard.type(replacement);
+      await expect.poll(() => visible(page)).toBe(`${replacement} beta gamma.`);
+      await expect(docSyncState(page)).toHaveAccessibleName('Connected and synced');
+    };
+    await replaceWord('Alpha', 'Delta');
+    await chooseDocMode(page, 'Suggesting');
+    await replaceWord('Delta', 'Better');
+    await replaceWord('Better', 'Clear');
+    expect(await markdown(page, id)).toBe('Delta beta gamma.\n');
+    await page.keyboard.press('Shift+F10');
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(editor).toBeFocused();
+  } finally {
+    await page.request.delete(`/api/v1/docs/${id}`, { headers: sameOrigin() }); await context.close();
+  }
+});

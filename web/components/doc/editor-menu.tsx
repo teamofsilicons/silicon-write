@@ -25,23 +25,8 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
   const selection = useEditorState({ editor, selector: ({ editor: e }) => ({ empty: e.state.selection.empty, suggestions: suggestionsIn(e.state.doc) }) });
   const reviewExists = review && selection.suggestions.some(s => s.id === review.id);
   useEffect(() => {
-    let frame = 0;
     const dom = editor.view.dom;
     const open = (x: number, y: number) => { setReview(null); focusOnClose.current = false; setPoint({ x, y }); };
-    const doubleClick = (event: MouseEvent) => {
-      // Wait for the browser's word selection before moving focus.
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        if (editor.isDestroyed) return;
-        const native = dom.ownerDocument.getSelection();
-        if (native?.rangeCount && !native.isCollapsed && dom.contains(native.anchorNode) && dom.contains(native.focusNode)) {
-          const from = editor.view.posAtDOM(native.anchorNode!, native.anchorOffset);
-          const to = editor.view.posAtDOM(native.focusNode!, native.focusOffset);
-          editor.commands.setTextSelection({ from: Math.min(from, to), to: Math.max(from, to) });
-        }
-        open(event.clientX, event.clientY);
-      });
-    };
     const context = (event: MouseEvent) => {
       event.preventDefault();
       if (editor.state.selection.empty) {
@@ -57,7 +42,8 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
       open(rect.left, rect.bottom);
     };
     const click = (event: MouseEvent) => {
-      if (!canComment || event.detail > 1) return;
+      if (event.detail > 1) { setReview(null); return; }
+      if (!canComment) return;
       // Browsers also emit click after a text-selection drag. Opening a review
       // then covers the next passage and intercepts subsequent selection gestures.
       // Keep selected prose ready to overwrite; the explicit marker still reviews it.
@@ -77,12 +63,18 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
       if (event.target instanceof Element && event.target.closest('[role="menu"], [data-write-review]')) return;
       setPoint(null);
     };
-    dom.addEventListener("dblclick", doubleClick); dom.addEventListener("contextmenu", context);
+    // A single click can open a review before the second click selects a word.
+    // Dismiss it as soon as selection begins, including keyboard selections.
+    const selectionChanged = () => {
+      if (!editor.state.selection.empty) setReview(null);
+    };
+    editor.on("selectionUpdate", selectionChanged);
+    dom.addEventListener("contextmenu", context);
     dom.addEventListener("keydown", key); dom.addEventListener("click", click);
     window.addEventListener("scroll", closeOnScroll, true); window.addEventListener("resize", closeOnScroll);
     return () => {
-      cancelAnimationFrame(frame);
-      dom.removeEventListener("dblclick", doubleClick); dom.removeEventListener("contextmenu", context);
+      editor.off("selectionUpdate", selectionChanged);
+      dom.removeEventListener("contextmenu", context);
       dom.removeEventListener("keydown", key); dom.removeEventListener("click", click);
       window.removeEventListener("scroll", closeOnScroll, true); window.removeEventListener("resize", closeOnScroll);
     };
