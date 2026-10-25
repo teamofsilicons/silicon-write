@@ -1,0 +1,31 @@
+{
+  "source_revision": "7cf94a1eda8fb12f47f2f2d31627cfb692c9ce2f",
+  "deployment": "dpl_9euxzLXGvM2FmyHL7VYe4HyFYbzB",
+  "url": "https://write.teamofsilicons.com",
+  "checked_at": "2026-10-25T21:56:03.829439+00:00",
+  "fix": "Double-click uses native word selection. Right-click and keyboard context menu remain. Nonempty selections dismiss suggestion review so words in proposals can be overwritten.",
+  "focused_browser_tests": {
+    "passed": 8,
+    "failed": 0,
+    "includes_setup": true,
+    "specs": [
+      "suggestion-clean.spec.ts",
+      "writing-polish.spec.ts"
+    ]
+  },
+  "typecheck": "passed",
+  "lint": "passed",
+  "build": "passed",
+  "live_browser": {
+    "passed": true,
+    "double_click_selects_word_without_menu": true,
+    "right_click_opens_menu": true,
+    "escape_restores_editor_focus": true,
+    "no_content_edits_from_browser_identity": true,
+    "fixture_author": "si:udd-saket",
+    "screenshot": ".dev/production/doubleclick-live-20261026.png",
+    "note": "First load after promotion retained old behavior; subsequent reload verified new behavior.",
+    "fixture_trashed": true
+  },
+  "source_backup": "Remote S3 backup unavailable: AWS SSO token expired. Source committed locally and deployed to Vercel."
+}
