@@ -26,6 +26,7 @@ pub struct Ctx {
 }
 
 pub struct Options {
+    pub dangerously_use_em_dash: bool,
     pub json: bool,
     pub api_url: Option<String>,
     pub accounts_url: Option<String>,
@@ -73,12 +74,15 @@ impl Ctx {
         let api_url = api_url.trim().trim_end_matches('/').to_owned();
         let accounts_url = accounts_url.trim().trim_end_matches('/').to_owned();
         let signed_in = session.is_some();
+        let replace_em_dashes = session.as_ref().is_some_and(|s| s.account.kind == "silicon")
+            && !options.dangerously_use_em_dash;
         let provider = Arc::new(SessionProvider::new(store.clone(), session));
         let client = Client::builder()
             .base_url(&api_url)
             .user_agent(format!("write/{}", env!("CARGO_PKG_VERSION")))
             .build()?
-            .with_token_provider(provider.clone());
+            .with_token_provider(provider.clone())
+            .with_em_dash_replacement(replace_em_dashes);
         Ok(Self {
             json: options.json,
             api_url,

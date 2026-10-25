@@ -325,6 +325,7 @@ impl ClientBuilder {
             http,
             base,
             auth: Auth::None,
+            replace_em_dashes: false,
         })
     }
 }
@@ -335,6 +336,7 @@ pub struct Client {
     http: reqwest::Client,
     base: Url,
     auth: Auth,
+    replace_em_dashes: bool,
 }
 
 impl std::fmt::Debug for Client {
@@ -376,6 +378,13 @@ impl Client {
     /// The same client asking `provider` for tokens (and for a fresh one after a 401).
     pub fn with_token_provider(mut self, provider: Arc<dyn TokenProvider>) -> Self {
         self.auth = Auth::Provider(provider);
+        self
+    }
+
+    /// Opt in to replacing em dashes in outgoing authored text. The CLI enables this
+    /// for Silicon accounts unless its explicit override is present; SDK default is off.
+    pub fn with_em_dash_replacement(mut self, enabled: bool) -> Self {
+        self.replace_em_dashes = enabled;
         self
     }
 
@@ -457,6 +466,10 @@ impl Client {
         segments: &[&str],
         payload: Option<Value>,
     ) -> Result<T> {
+        let mut payload = payload;
+        if self.replace_em_dashes && let Some(value) = &mut payload {
+            crate::writing::normalize(value);
+        }
         let url = self.url(segments);
         self.json(|http| {
             let request = http.request(method.clone(), url.clone());
@@ -493,10 +506,22 @@ impl Client {
         upload: &Upload,
         fields: &[(&str, String)],
     ) -> Result<T> {
+        let mut upload = upload.clone();
+        let mut fields = fields.to_vec();
+        if self.replace_em_dashes && segments.contains(&"import") {
+            let ext = upload.file_name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+            if matches!(ext.as_str(), "md" | "markdown" | "txt" | "html" | "htm")
+                && let Ok(text) = std::str::from_utf8(&upload.bytes) {
+                upload.bytes = Bytes::from(text.replace('—', "-"));
+            }
+            for (name, value) in &mut fields {
+                if *name == "title" { *value = value.replace('—', "-"); }
+            }
+        }
         let url = self.url(segments);
         self.json(|http| {
             let mut form = reqwest::multipart::Form::new().part("file", upload.part()?);
-            for (name, value) in fields {
+            for (name, value) in &fields {
                 form = form.text(name.to_string(), value.clone());
             }
             Ok(http.post(url.clone()).multipart(form))

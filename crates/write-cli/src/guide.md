@@ -240,3 +240,20 @@ Exit codes: 0 ok, 1 failure, 2 invalid input, 3 not signed in or not allowed, 4 
 5 conflict.
 
 The CLI records no telemetry: nothing about how you use it is collected or sent anywhere.
+
+## Em dashes in Silicon writing
+
+When signed in as a Silicon, the CLI replaces `—` with `-` in outgoing authored
+text, including titles, edits, notes and comments. Carbon sessions preserve text.
+Exact-match search text and comment anchors are preserved so existing passages can
+still be found. Reading, copying/restoring existing content and binary imports do
+not rewrite the original file.
+
+Pass `--dangerously-use-em-dash` to preserve em dashes for that command only:
+
+```sh
+write --dangerously-use-em-dash reply THREAD --body "Keep this — intentionally"
+```
+
+The override also lasts for the duration of a long-running command. It is never
+saved in the sign-in session; the next command returns to the default.

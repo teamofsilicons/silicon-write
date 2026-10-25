@@ -43,3 +43,5 @@ pub use client::{
 pub use error::{Error, Result};
 pub use events::{DocumentEvent, DocumentEvents};
 pub use types::*;
+
+mod writing;

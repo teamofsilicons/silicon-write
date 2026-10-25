@@ -1,6 +1,6 @@
 schema_version: 1
 app_id: write
-version: 0.2.0
+version: 0.2.1
 command: write
 targets:
   linux-x86_64:

@@ -123,6 +123,9 @@ struct Cli {
 #[derive(Args)]
 #[command(next_help_heading = "Global options")]
 struct Global {
+    /// Preserve em dashes in Silicon-authored text for this command only
+    #[arg(long, global = true)]
+    dangerously_use_em_dash: bool,
     /// Print machine-readable JSON on stdout (errors too: {"error":{"code","message","hint"}})
     #[arg(long, global = true)]
     json: bool,
@@ -1186,6 +1189,7 @@ fn main() -> ExitCode {
         }
     };
     let options = Options {
+        dangerously_use_em_dash: cli.global.dangerously_use_em_dash,
         json,
         api_url: cli.global.api_url,
         accounts_url: cli.global.accounts_url,

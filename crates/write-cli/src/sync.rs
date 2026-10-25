@@ -1403,6 +1403,7 @@ mod tests {
             })
             .unwrap();
         Ctx::new(Options {
+            dangerously_use_em_dash: false,
             json: true,
             api_url: Some(base),
             accounts_url: None,
