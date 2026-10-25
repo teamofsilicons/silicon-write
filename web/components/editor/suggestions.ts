@@ -2,7 +2,7 @@
  * Suggestions (track changes). Two marks, stored in the doc like any other mark, which is also how the service and
  * the `write` CLI read and make them:
  * - `suggestionInsert {id, author}`: text someone suggests adding (shown underlined, not yet part of the doc);
- * - `suggestionDelete {id, author}`: text someone suggests removing (shown struck through, still part of the doc).
+ * - `suggestionDelete {id, author}`: text someone suggests removing (collapsed behind a review marker, still retained for rejection).
  *
  * In suggesting mode (`SuggestMode`), every edit becomes a suggestion: typed text is marked as an insertion, and text
  * that is deleted is put back marked as a deletion (unless it was the author's own suggested insertion, which simply
@@ -10,9 +10,10 @@
  */
 import { Extension, Mark, mergeAttributes } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { baseKeymap } from "@tiptap/pm/commands";
 import { ReplaceStep } from "@tiptap/pm/transform";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { Fragment, Slice, type Mark as PMMark, type Node as PMNode } from "@tiptap/pm/model";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
 const suggestionAttrs = {
@@ -81,14 +82,14 @@ export interface NodeSuggestion { kind: "insert" | "delete"; id: string; author:
 
 const nodeTypes = ["paragraph", "heading", "bulletList", "orderedList", "listItem", "taskList", "taskItem", "blockquote", "codeBlock", "horizontalRule", "image", "inlineImage", "table", "tableRow", "tableCell", "tableHeader", "blockMath", "inlineMath", "hardBreak", "footnote", "docLink", "tableOfContents"];
 
-/** Removes pending changes from a proposed replacement; their original nodes stay alongside it. */
-function currentNode(node: PMNode): PMNode | null {
+/** The proposed view retains additions and excludes deletions; original nodes stay alongside it. */
+function proposedNode(node: PMNode): PMNode | null {
   const suggestion = node.attrs.suggestion as NodeSuggestion | null;
-  if (suggestion?.kind === "insert" || node.marks.some(m => m.type.name === "suggestionInsert")) return null;
+  if (suggestion?.kind === "delete" || node.marks.some(m => m.type.name === "suggestionDelete")) return null;
   const marks = node.marks.filter(m => m.type.name !== "suggestionInsert" && m.type.name !== "suggestionDelete");
   if (node.isText) return node.mark(marks);
   const children: PMNode[] = [];
-  node.forEach(child => { const kept = currentNode(child); if (kept) children.push(kept); });
+  node.forEach(child => { const kept = proposedNode(child); if (kept) children.push(kept); });
   return node.type.createAndFill({ ...node.attrs, suggestion: null }, children, marks);
 }
 
@@ -103,15 +104,48 @@ export function structuralSuggestion(oldState: EditorState, newState: EditorStat
   if (first === endBefore && first === endAfter) return null;
   const mark = (node: PMNode, kind: "insert" | "delete") => node.type.create({ ...node.attrs, suggestion: { kind, id, author } }, node.content, node.marks);
   const ownNode = (node: PMNode) => node.attrs.suggestion?.kind === "insert" && node.attrs.suggestion.author === author;
+  // Changes entirely within this author's proposed blocks already preserve the baseline.
+  // Replacing them again would remap the caret to the block's end on every keystroke.
+  if (before.slice(first, endBefore).every(ownNode) && after.slice(first, endAfter).every(ownNode)) return null;
   const originals = before.slice(first, endBefore).filter(node => !ownNode(node)).map(node => node.attrs.suggestion ? node : mark(node, "delete"));
   const proposed = after.slice(first, endAfter).flatMap(node => {
     if (ownNode(node)) return [node];
-    const clean = currentNode(node);
+    const clean = proposedNode(node);
     return clean ? [mark(clean, "insert")] : [];
   });
   const from = after.slice(0, first).reduce((n, node) => n + node.nodeSize, 0);
   const to = after.slice(0, endAfter).reduce((n, node) => n + node.nodeSize, 0);
-  return newState.tr.replaceWith(from, to, [...originals, ...proposed]).setMeta(FIX, true);
+  const fix = newState.tr.replaceWith(from, to, [...originals, ...proposed]).setMeta(FIX, true);
+  const originalsSize = originals.reduce((n, node) => n + node.nodeSize, 0);
+  const hidden = deletedRanges(newState.doc);
+  const mapSelection = (pos: number) => {
+    if (pos < from || pos > to) return fix.mapping.map(pos);
+    const removed = hidden.reduce((n, range) => n + Math.max(0, Math.min(pos, range.to) - Math.max(from, range.from)), 0);
+    return Math.min(fix.doc.content.size, from + originalsSize + pos - from - removed);
+  };
+  const anchor = mapSelection(newState.selection.anchor), head = mapSelection(newState.selection.head);
+  fix.setSelection(TextSelection.between(fix.doc.resolve(anchor), fix.doc.resolve(head)));
+  return fix;
+}
+
+export interface DeletedRange { from: number; to: number; id: string; block: boolean }
+
+/** Positions retained for review but absent from the proposed writing surface. */
+export function deletedRanges(doc: PMNode): DeletedRange[] {
+  const ranges: DeletedRange[] = [];
+  doc.descendants((node, pos) => {
+    const suggestion = node.attrs.suggestion as NodeSuggestion | null;
+    const deleted = node.marks.find(mark => mark.type.name === "suggestionDelete");
+    const id = suggestion?.kind === "delete" ? suggestion.id : deleted?.attrs.id as string | undefined;
+    if (id) {
+      const previous = ranges.at(-1);
+      if (previous && previous.to === pos && previous.id === id && !previous.block && node.isInline) previous.to += node.nodeSize;
+      else ranges.push({ from: pos, to: pos + node.nodeSize, id, block: node.isBlock });
+      return false;
+    }
+    return true;
+  });
+  return ranges;
 }
 
 /** Node decorations reach custom React and math node views as well as ordinary rendered nodes. */
@@ -121,6 +155,19 @@ export function suggestionDecorations(doc: PMNode): DecorationSet {
     const s = node.attrs.suggestion as NodeSuggestion | null;
     if (s && !node.isText) decorations.push(Decoration.node(pos, pos + node.nodeSize, { "data-suggestion-kind": s.kind, "data-suggestion": s.id, "data-author": s.author }));
   });
+  for (const range of deletedRanges(doc)) {
+    decorations.push(Decoration.widget(range.from, () => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `suggestion-deletion-marker${range.block ? " suggestion-deletion-block" : ""}`;
+      button.dataset.suggestion = range.id;
+      button.setAttribute("aria-label", "Review removed text");
+      button.title = "Review before and after";
+      button.contentEditable = "false";
+      button.addEventListener("mousedown", event => event.preventDefault());
+      return button;
+    }, { key: `deleted:${range.id}:${range.from}`, side: -1, marks: [], ignoreSelection: true }));
+  }
   return DecorationSet.create(doc, decorations);
 }
 
@@ -157,6 +204,42 @@ export const SuggestMode = Extension.create<SuggestModeOptions>({
   },
 });
 
+/** Copy the proposed text, not the hidden review originals. */
+export function proposedSlice(slice: Slice): Slice {
+  const nodes: PMNode[] = [];
+  slice.content.forEach(node => { const proposed = proposedNode(node); if (proposed) nodes.push(proposed); });
+  const content = Fragment.from(nodes), open = Slice.maxOpen(content);
+  return new Slice(content, Math.min(slice.openStart, open.openStart), Math.min(slice.openEnd, open.openEnd));
+}
+
+function skipDeleted(view: EditorView, key: string): boolean {
+  const backward = key === "Backspace" || key === "ArrowLeft";
+  const forward = key === "Delete" || key === "ArrowRight";
+  if (!backward && !forward) return false;
+  const deleting = key === "Backspace" || key === "Delete";
+  const ranges = deletedRanges(view.state.doc);
+  let pos = view.state.selection.head, skipped = false;
+  for (;;) {
+    const range = ranges.find(r => backward ? pos > r.from && pos <= r.to : pos >= r.from && pos < r.to);
+    if (!range) break;
+    pos = backward ? range.from : range.to;
+    skipped = true;
+  }
+  if (skipped) view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(pos), backward ? -1 : 1)));
+  if (!deleting) return skipped;
+  // Handle visible text directly: native DOM deletion is unreliable around display:none originals.
+  const at = view.state.selection.head, $at = view.state.doc.resolve(at);
+  const text = backward ? $at.nodeBefore?.text : $at.nodeAfter?.text;
+  if (text) {
+    const chars = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map(part => part.segment);
+    const char = backward ? chars.at(-1)! : chars[0]!;
+    view.dispatch(view.state.tr.delete(backward ? at - char.length : at, backward ? at : at + char.length));
+    return true;
+  }
+  // At a block boundary keep ProseMirror's normal join behavior (turned into a structural suggestion).
+  return baseKeymap[key]?.(view.state, view.dispatch, view) || skipped;
+}
+
 export function suggestionPlugin(options: SuggestModeOptions): Plugin {
     let current: { id: string; at: number; time: number } | null = null;
     const idFor = (pos: number, nextPos = pos) => {
@@ -168,6 +251,23 @@ export function suggestionPlugin(options: SuggestModeOptions): Plugin {
     };
     return new Plugin({
         key: suggestModeKey,
+        props: {
+          transformCopied(slice) { return options.isOn() ? proposedSlice(slice) : slice; },
+          handleDOMEvents: {
+            beforeinput(view, event) {
+              const input = event as InputEvent;
+              if (!options.isOn() || input.isComposing || !view.state.selection.empty) return false;
+              const key = input.inputType === "deleteContentBackward" ? "Backspace" : input.inputType === "deleteContentForward" ? "Delete" : "";
+              if (!key || !skipDeleted(view, key)) return false;
+              event.preventDefault();
+              return true;
+            },
+          },
+          handleKeyDown(view, event) {
+            if (!options.isOn() || !view.state.selection.empty || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+            return skipDeleted(view, event.key);
+          },
+        },
         appendTransaction(transactions, oldState, newState) {
           if (!options.isOn()) return null;
           const local = transactions.filter(tr => tr.docChanged && !isRemote(tr) && !tr.getMeta(FIX));
@@ -197,6 +297,13 @@ export function suggestionPlugin(options: SuggestModeOptions): Plugin {
             tr.steps.forEach((step, i) => {
               const s = step as ReplaceStep;
               const before = tr.docs[i];
+              const $from = before.resolve(s.from);
+              // Text inside our own proposed block is already entirely a suggestion.
+              // Deleting/retyping it edits that proposal rather than proposing its deletion again.
+              for (let depth = $from.depth; depth > 0; depth--) {
+                const proposal = $from.node(depth).attrs.suggestion as NodeSuggestion | null;
+                if (proposal?.kind === "insert" && proposal.author === options.author && s.to <= $from.end(depth)) return;
+              }
               const map = laterMaps(i + 1);
               if (s.slice.size > 0) {
                 const a = map(s.from, -1);
@@ -222,11 +329,20 @@ export function suggestionPlugin(options: SuggestModeOptions): Plugin {
               }
             });
           }
-          if (!inserted.length && !restore.length) return null;
+          if (!inserted.length && !restore.length) {
+            if (current) current.at = newState.selection.head;
+            return null;
+          }
           const fix = newState.tr;
           fix.setMeta(FIX, true);
+          // A replacement is one review decision, regardless of the replacement's length.
+          const firstStep = local[0]!.steps[0] as ReplaceStep;
+          const $old = local[0]!.docs[0]!.resolve(firstStep.from);
+          const own = [...($old.nodeAfter?.marks ?? []), ...$old.marks(), ...($old.nodeBefore?.marks ?? [])]
+            .find(mark => (mark.type === insertType || mark.type === deleteType) && mark.attrs.author === options.author);
+          const id = own?.attrs.id as string | undefined ?? idFor(inserted[0]?.[0] ?? restore[0]!.pos, newState.selection.head);
+          current = { id, at: newState.selection.head, time: Date.now() };
           for (const [a, b] of inserted) {
-            const id = idFor(a, b);
             fix.removeMark(a, b, deleteType);
             fix.addMark(a, b, insertType.create({ id, author: options.author }));
             fix.doc.nodesBetween(a, b, (node, pos) => {
@@ -240,7 +356,6 @@ export function suggestionPlugin(options: SuggestModeOptions): Plugin {
           let cursor: number | null = null;
           for (const { pos, nodes } of restore) {
             const at = fix.mapping.map(pos, -1);
-            const id = idFor(at);
             let offset = at;
             for (const node of nodes) {
               const already = node.marks.some(m => m.type === deleteType || m.type === insertType);
@@ -253,6 +368,7 @@ export function suggestionPlugin(options: SuggestModeOptions): Plugin {
             cursor = backward ? at : offset;
           }
           if (cursor !== null && !inserted.length) fix.setSelection(TextSelection.create(fix.doc, cursor));
+          if (current) current.at = fix.selection.head;
           return fix;
         },
       });

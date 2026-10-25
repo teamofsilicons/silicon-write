@@ -8,7 +8,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LiveDoc } from "@/lib/write/live";
-import type { Editor } from "@tiptap/react";
+import { useEditorState, type Editor } from "@tiptap/react";
+import { suggestionsIn } from "@/components/editor/suggestions";
 import { Check, ChevronDown, ChevronUp, X } from "lucide-react";
 import { CommentThread, type ThreadComment, type CommentThreadEvent } from "@/components/silicon-ui/comment-thread/comment-thread";
 import SegmentedControl from "@/components/silicon-ui/segmented-control/segmented-control";
@@ -136,7 +137,9 @@ export function SuggestionCards({ docId, editor, canEdit, live, only, onDecided 
   const { data, refetch, isFetching, error } = useSuggestions(docId);
   useEffect(() => { if (only) void refetch(); }, [only, refetch]);
   const [busy, setBusy] = useState(false);
-  const suggestions = (data?.suggestions ?? []).filter(s => !only || s.id === only);
+  const localSuggestions = useEditorState({ editor, selector: ({ editor: current }) => current ? suggestionsIn(current.state.doc) : null });
+  const proposals = localSuggestions?.map(s => ({ ...s, author: data?.suggestions.find(saved => saved.id === s.id)?.author ?? null })) ?? data?.suggestions ?? [];
+  const suggestions = proposals.filter(s => !only || s.id === only);
   if (!suggestions.length) return only ? <p role="status">{isFetching ? "Loading suggestion…" : error ? "The suggestion couldn’t be loaded." : "This suggestion has already been reviewed."}</p> : null;
   const decide = async (path: string) => {
     if (busy) return;
@@ -173,8 +176,8 @@ export function SuggestionCards({ docId, editor, canEdit, live, only, onDecided 
               {s.author ? <Avatar name={displayName(s.author)} src={s.author.pfp_url || undefined} size="sm" /> : null}
               <span>{s.author ? displayName(s.author) : "Someone"}</span>
             </span>
-            {s.deleted ? <span className={commentStyles.suggestionText}><span className={commentStyles.label}>Delete</span> <del>{s.deleted.slice(0, 200)}</del></span> : null}
-            {s.inserted ? <span className={commentStyles.suggestionText}><span className={commentStyles.label}>Add</span> <ins>{s.inserted.slice(0, 200)}</ins></span> : null}
+            {s.deleted ? <span className={commentStyles.suggestionText}><span className={commentStyles.label}>Before</span> <del>{s.deleted}</del></span> : null}
+            {s.inserted ? <span className={commentStyles.suggestionText}><span className={commentStyles.label}>After</span> <ins>{s.inserted}</ins></span> : null}
           </button>
           {canEdit ? (
             <div className={commentStyles.suggestionActions}>

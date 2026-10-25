@@ -1622,10 +1622,10 @@ test.describe("suggestions and roles", () => {
     const list = suggestionsList(page);
     const cards = list.locator('[class*="suggestionCard"]');
     await expect(list).toBeVisible();
-    const remove = cards.filter({ hasText: "Delete" });
-    const adds = cards.filter({ hasText: "Add" });
+    const remove = cards.filter({ hasText: "Before" });
+    const adds = cards.filter({ hasText: "After" });
     await expect(remove).toHaveCount(1);
-    await expect(remove).toContainText("Delete draft");
+    await expect(remove).toContainText("Before draft");
     await expect(remove).toContainText(account.display_name || account.id);
     await expect.poll(async () => (await adds.locator("ins").allTextContents()).join("")).toBe(" today");
     expect.soft(await list.locator('[class*="panelSubhead"]').textContent(), "the panel's count").toContain("2 suggestions");

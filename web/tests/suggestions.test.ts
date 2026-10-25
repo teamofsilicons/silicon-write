@@ -5,7 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { TableKit } from "@tiptap/extension-table";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { SuggestionDelete, SuggestionInsert, SuggestionNodes, suggestionPlugin, suggestionsIn, suggestionDecorations } from "../components/editor/suggestions";
+import { SuggestionDelete, SuggestionInsert, SuggestionNodes, suggestionPlugin, suggestionsIn, suggestionDecorations, proposedSlice } from "../components/editor/suggestions";
 
 const Picture = Node.create({ name: "inlineImage", inline: true, group: "inline", atom: true, addAttributes: () => ({ src: { default: "picture.png" } }) });
 const schema = getSchema([StarterKit, TableKit, Picture, SuggestionDelete, SuggestionInsert, SuggestionNodes]);
@@ -105,4 +105,58 @@ test("ordinary typing and continued typing after a paste stay one suggestion", (
   const proposals = pending(edited.doc);
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0].inserted, " today and tomorrow.");
+});
+
+test("overwriting a passage keeps the before and after in one suggestion", () => {
+  const before = state([p("The original passage stays here.")]);
+  const after = before.applyTransaction(before.tr.insertText("better writing", 5, 21)).state;
+  const changes = pending(after.doc);
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].deleted, "original passage");
+  assert.equal(changes[0].inserted, "better writing");
+});
+
+test("formatting and splitting after typing preserve the proposed text", () => {
+  let edited = state([p("Hello world")]);
+  edited = edited.applyTransaction(edited.tr.insertText(" new", 6)).state;
+  edited = edited.applyTransaction(edited.tr.addMark(1, 6, schema.marks.bold.create())).state;
+  assert.equal(edited.doc.lastChild?.textContent, "Hello new world");
+  const proposedStart = edited.doc.firstChild!.nodeSize;
+  edited = edited.apply(edited.tr.setSelection(TextSelection.create(edited.doc, proposedStart + 10)));
+  edited = edited.applyTransaction(edited.tr.split(proposedStart + 10)).state;
+  const visible: string[] = [];
+  edited.doc.forEach(node => { if (node.attrs.suggestion?.kind !== "delete") visible.push(node.textContent); });
+  assert.deepEqual(visible, ["Hello new", " world"]);
+});
+
+test("editing a proposed paragraph does not add nested deletion proposals", () => {
+  const own = schema.nodes.paragraph.create({ suggestion: { kind: "insert", id: "s_block", author: "author" } }, schema.text("New words"));
+  const before = state([own]);
+  const after = before.applyTransaction(before.tr.setSelection(TextSelection.create(before.doc, 5, 10)).insertText("text")).state;
+  assert.equal(after.doc.textContent, "New text");
+  assert.equal(pending(after.doc).length, 1);
+  assert.equal(pending(after.doc)[0].deleted, "");
+  assert.equal(after.selection.head, 9);
+});
+
+test("editing an existing own insertion retains its original review id", () => {
+  const deletion = schema.text("original", [schema.marks.suggestionDelete.create({ id: "s_replace", author: "author" })]);
+  const insertion = schema.text("proposed", [schema.marks.suggestionInsert.create({ id: "s_replace", author: "author" })]);
+  const before = state([schema.nodes.paragraph.create(null, [deletion, insertion])]);
+  const after = before.applyTransaction(before.tr.insertText("better", 9, 17)).state;
+  assert.deepEqual(pending(after.doc).map(s => [s.id, s.inserted, s.deleted]), [["s_replace", "better", "original"]]);
+});
+
+
+test("replacing a mixed original and proposed passage preserves the baseline and copies only visible text", () => {
+  let current = state([p("The original passage stays here.")]);
+  current = current.applyTransaction(current.tr.insertText("better draft", 5, 21)).state;
+  current = current.applyTransaction(current.tr.insertText("A complete rewrite.", 1, current.doc.content.size - 1)).state;
+  const slice = proposedSlice(current.doc.slice(1, current.doc.content.size - 1));
+  assert.equal(slice.content.textBetween(0, slice.content.size), "A complete rewrite.");
+  const original: string[] = [];
+  current.doc.descendants(node => {
+    if (node.isText && !node.marks.some(mark => mark.type.name === "suggestionInsert")) original.push(node.text!);
+  });
+  assert.equal(original.join(""), "The original passage stays here.");
 });

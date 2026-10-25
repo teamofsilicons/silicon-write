@@ -269,3 +269,23 @@
 .prose :global([data-suggestion-kind="delete"]) { background: rgb(180 35 24 / .06); outline: 1px dashed rgb(180 35 24 / .35); }
 .editor[data-mode="viewing"] .prose :global([data-suggestion-kind="insert"]) { display: none; }
 .editor[data-mode="viewing"] .prose :global([data-suggestion-kind="delete"]) { background: none; outline: none; }
+
+/* Proposed text reads as an ordinary document; removed content remains in the model for review. */
+.editor:not([data-mode="viewing"]) .prose :global(del.suggest-delete),
+.editor:not([data-mode="viewing"]) .prose :global([data-suggestion-kind="delete"]) { display: none !important; }
+.prose :global(.suggestion-deletion-marker) {
+  display: inline-block; position: relative; vertical-align: baseline;
+  width: 8px; height: 1em; margin: 0 2px; padding: 0;
+  border: 0; border-radius: 0; background: transparent; cursor: pointer;
+  user-select: none;
+}
+.prose :global(.suggestion-deletion-marker)::after {
+  content: ""; position: absolute; left: 3px; top: 0; bottom: -2px;
+  width: 2px; background: #B42318;
+}
+.prose :global(.suggestion-deletion-marker:hover),
+.prose :global(.suggestion-deletion-marker:focus-visible) { background: rgb(180 35 24 / .1); outline: 2px solid rgb(180 35 24 / .3); }
+.prose :global(.suggestion-deletion-block) { display: block; width: 24px; height: 10px; margin: 6px 0; }
+.prose :global(.suggestion-deletion-block)::after { left: 0; right: 0; top: 4px; bottom: auto; height: 2px; width: auto; }
+.editor[data-mode="viewing"] .prose :global(.suggestion-deletion-marker),
+.editor[data-mode="viewing"] .prose :global(ins.suggest-insert) { display: none; }

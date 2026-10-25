@@ -7,7 +7,7 @@ import { useEditorState, type Editor } from "@tiptap/react";
 import { Bold, Italic, Underline, Copy, MessageSquarePlus, ListChecks, TextSelect } from "lucide-react";
 import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/silicon-ui/dropdown-menu/dropdown-menu";
 import { Popover, PopoverContent, PopoverAnchor } from "@/components/silicon-ui/popover/popover";
-import { suggestionsIn } from "@/components/editor/suggestions";
+import { proposedSlice, suggestionsIn } from "@/components/editor/suggestions";
 import type { LiveDoc } from "@/lib/write/live";
 import { notifyError } from "@/lib/notify";
 import { SuggestionCards } from "./comments-panel";
@@ -57,11 +57,11 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
       open(rect.left, rect.bottom);
     };
     const click = (event: MouseEvent) => {
-      if (!canComment || event.detail !== 1) return;
+      if (!canComment || event.detail > 1) return;
       const target = (event.target as HTMLElement).closest<HTMLElement>("[data-suggestion]");
       const pos = editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
       const id = target?.dataset.suggestion ?? (pos === undefined ? undefined : suggestionsIn(editor.state.doc).find(s => pos >= s.from && pos <= s.to)?.id);
-      const element = id ? dom.querySelector<HTMLElement>(`[data-suggestion="${CSS.escape(id)}"]`) : null;
+      const element = target ?? (id ? dom.querySelector<HTMLElement>(`[data-suggestion="${CSS.escape(id)}"]`) : null);
       if (id && element) {
         void client.invalidateQueries({ queryKey: keys.suggestions(docId) });
         setReview({ id, element });
@@ -82,7 +82,12 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
     };
   }, [editor, canComment, client, docId]);
   const copy = async () => {
-    try { const { from, to } = editor.state.selection; await navigator.clipboard.writeText(editor.state.doc.textBetween(from, to, "\n")); }
+    try {
+      const { from, to } = editor.state.selection;
+      const slice = editor.state.doc.slice(from, to);
+      const content = (writable ? proposedSlice(slice) : slice).content;
+      await navigator.clipboard.writeText(content.textBetween(0, content.size, "\n"));
+    }
     catch (error) { notifyError(error, "The selection couldn’t be copied"); }
   };
   return <>
