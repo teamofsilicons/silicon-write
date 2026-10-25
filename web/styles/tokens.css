@@ -92,54 +92,44 @@
   --app-accent: var(--foreground);
 }
 
-:root[data-theme="dark"], [data-theme="dark"] {
+:root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #151412;
-  --surface: #1B1A17;
-  --surface-raised: #22201D;
-  --surface-muted: #24221E;
-  --surface-pressed: #2E2B26;
-  --foreground: #EDE9E0;
-  --text-secondary: #C3BEB3;
-  --text-muted: #9A958A;
-  --text-faint: #5E5A52;
-  --border: #2E2B26;
-  --border-subtle: #24221E;
-  --border-strong: #423E36;
+  /* Silicon UI's neutral dark scale, without a warm tint. */
+  --background: oklch(19% 0 0);
+  --surface: oklch(21.5% 0 0);
+  --surface-raised: oklch(24% 0 0);
+  --surface-muted: oklch(26% 0 0);
+  --surface-pressed: oklch(30% 0 0);
+  --foreground: oklch(96% 0 0);
+  --text-secondary: oklch(77% 0 0);
+  --text-muted: oklch(70% 0 0);
+  --text-faint: oklch(64% 0 0);
+  --border: oklch(29% 0 0);
+  --border-subtle: oklch(25% 0 0);
+  --border-strong: oklch(40% 0 0);
 
   --accent: #86AEEA;
   --accent-strong: #B4CDF4;
   --accent-subtle: rgb(134 174 234 / .13);
-  --accent-foreground: #151412;
+  --accent-foreground: var(--background);
   --accent-ink: #8FB5EE;
-
-  --primary: #EDE9E0;
-  --primary-hover: var(--neutral-0);
-  --primary-pressed: #D9D4C9;
-  --primary-foreground: #151412;
-
+  --primary: #86AEEA;
+  --primary-hover: #A2C0EF;
+  --primary-pressed: #B4CDF4;
+  --primary-foreground: var(--background);
   --control-on: #86AEEA;
-  --control-glyph: #151412;
-  --control-track: #3A362F;
-  --control-track-hover: #45403A;
-  --control-thumb: #EDE9E0;
-  --control-thumb-on: #151412;
-  --control-thumb-shadow: 0 0 0 .5px rgb(0 0 0 / .3), 0 1px 2px rgb(0 0 0 / .35), 0 2px 6px rgb(0 0 0 / .2);
+  --control-glyph: var(--background);
+  --control-track: oklch(33% 0 0);
+  --control-track-hover: oklch(37% 0 0);
+  --control-thumb: oklch(97% 0 0);
+  --control-thumb-on: var(--background);
   --control-fill: var(--control-on);
   --control-on-subtle: color-mix(in oklab, var(--control-on) 16%, transparent);
-  --focus-ring: transparent;
-
   --success: #7FC79A;
   --warning: #E3B55A;
   --danger: #F4968C;
   --star: #E3B55A;
-
-  --shadow-resting: 0 1px 2px rgb(0 0 0 / .3);
-  --shadow-raised: 0 8px 22px rgb(0 0 0 / .35);
-  --shadow-floating: 0 22px 55px rgb(0 0 0 / .5), 0 3px 10px rgb(0 0 0 / .25);
-
   --series-1: #86AEEA; --series-2: #B99AE6; --series-3: #E3B55A; --series-4: #7FC79A;
-
   --overlay: rgb(0 0 0 / .5);
 }
 

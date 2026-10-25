@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditorState, type Editor } from "@tiptap/react";
 import { ArrowLeft, ChevronDown, Copy, Download, Eye, FileInput, FolderInput, History, Link2, MessageSquare, MoreHorizontal, PencilLine, Search, Trash2, RotateCcw, Type as TypeIcon, Users } from "lucide-react";
+import { ThemeSubmenu } from "@/components/foundation/theme/theme-menu";
 import { AppGlyph } from "@/components/foundation/brand/app-mark";
 import { Button } from "@/components/silicon-ui/button/button";
 import { AvatarGroup } from "@/components/silicon-ui/avatar-group/avatar-group";
@@ -239,6 +240,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            <ThemeSubmenu />
             {canComment && pendingSuggestions > 0 ? (
               <DropdownMenuItem icon={<PencilLine size={16} />} onSelect={() => onPanel("comments")}>
                 Review suggestions ({pendingSuggestions})

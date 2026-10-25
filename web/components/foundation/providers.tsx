@@ -15,7 +15,6 @@ import type { SessionView } from "@/lib/account";
 import { createQueryClient } from "@/lib/client/query";
 import { startSessionKeeper } from "@/lib/client/session";
 import { connectToasts } from "@/lib/notify";
-import { applyTheme } from "@/lib/theme";
 import styles from "./providers.module.css";
 import { WorkspaceTabsProvider } from "@/components/workspace/workspace-tabs";
 
@@ -32,11 +31,6 @@ export function Providers(props: { session: SessionView; children: ReactNode }) 
 
 function SessionProviders({ session, children }: { session: SessionView; children: ReactNode }) {
   const [client] = useState(createQueryClient);
-
-  // The boot script painted the stored theme; from here the theme store keeps <html> in sync.
-  useEffect(() => {
-    applyTheme();
-  }, []);
 
   // The keeper refreshes the sign-in ahead of expiry (lib/client/session.ts). A later render can hand it a newer expiry.
   useEffect(() => {

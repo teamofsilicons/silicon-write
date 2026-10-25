@@ -119,7 +119,7 @@
 }
 .styleButton:hover { background: var(--surface-muted); }
 .toolEnd { margin-left: auto; display: flex; }
-.suggestNote { margin: 0 var(--space-3); font-size: .85rem; color: #2B7148; white-space: nowrap; }
+.suggestNote { margin: 0 var(--space-3); font-size: .85rem; color: var(--success); white-space: nowrap; }
 .palette { display: grid; grid-template-columns: repeat(4, 28px); gap: var(--space-2); padding: var(--space-3); }
 .swatch { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; }
 .swatch:hover { transform: scale(1.06); }
@@ -231,8 +231,8 @@
 .suggestionCard { border: 1px solid var(--border); border-radius: 16px; padding: var(--space-3); display: grid; gap: var(--space-2); background: var(--surface); cursor: pointer; }
 .suggestionWho { display: flex; align-items: center; gap: var(--space-2); font-size: .85rem; font-weight: 500; }
 .suggestionText { margin: 0; font-size: .9rem; }
-.suggestionText ins { text-decoration: underline; text-decoration-color: #2B7148; color: #1F5C38; }
-.suggestionText del { color: #8A2A20; }
+.suggestionText ins { text-decoration: underline; text-decoration-color: var(--success); color: var(--success); }
+.suggestionText del { color: var(--danger); }
 .suggestionActions { display: flex; gap: var(--space-2); }
 
 /* The comment box beside the selection */
@@ -311,14 +311,14 @@
 .chipButton:hover { border-color: var(--danger); color: var(--danger); }
 .changes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .change { border-left: 2px solid var(--border-strong); padding-left: var(--space-3); }
-.change[data-change="added"] { border-color: #2B7148; }
-.change[data-change="removed"] { border-color: #B42318; }
+.change[data-change="added"] { border-color: var(--success); }
+.change[data-change="removed"] { border-color: var(--danger); }
 .change[data-change="changed"] { border-color: var(--accent); }
 .changeHead { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .changeKind { font: 500 .7rem/1.4 var(--font-pixel); text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .changeText { margin: var(--space-1) 0 0; font: 400 .92rem/1.55 "Iowan Old Style", Georgia, serif; white-space: pre-wrap; word-break: break-word; }
-.changeText ins { background: rgb(43 113 72 / .12); text-decoration: none; color: #1F5C38; }
-.changeText del { background: rgb(180 35 24 / .08); color: #8A2A20; }
+.changeText ins { background: color-mix(in srgb, var(--success) 12%, transparent); text-decoration: none; color: var(--success); }
+.changeText del { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
 .preview { border: 1px solid var(--border); border-radius: 16px; padding: var(--space-4); max-height: 60vh; overflow-y: auto; font-size: .9rem; }
 .switchRow { display: flex; align-items: center; gap: var(--space-2); font-size: .88rem; color: var(--text-secondary); }
 .switchRow > span { flex: 1; }

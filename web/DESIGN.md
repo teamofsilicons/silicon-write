@@ -8,7 +8,7 @@ become Write features.
 
 This guide describes the current design. The source of truth for shared colours and fonts is `styles/tokens.css`;
 page composition lives in `components/doc/`, `components/editor/`, `components/library/`, and
-`components/foundation/shell/`. The site is light only, with no theme switch and no telemetry.
+`components/foundation/shell/`. The site supports Light, Dark, and System appearance, saved locally and shared across tabs. There is no telemetry.
 
 ## Principles
 
@@ -184,7 +184,7 @@ Destructive operations keep their existing confirmation behavior and never becom
 
 Motion clarifies a change rather than decorating the page: a menu appears from its trigger, an inline title becomes
 an editor in place, and the selected drawer item can move between destinations. All transitions and scroll effects
-respect reduced motion. There is no theme animation because there is no theme choice.
+respect reduced motion. Theme changes are immediate, with the saved choice applied before the first paint.
 
 - Normal text, including placeholders and tiny timestamps, needs at least 4.5:1 contrast. Check scoped tokens against
   actual field fills as well as the page. Do not rely on a colour's contrast against white alone.

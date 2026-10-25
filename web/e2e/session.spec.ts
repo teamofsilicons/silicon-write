@@ -51,8 +51,8 @@ test("the shell: the app's sections, the account menu and the ⌘K palette", asy
   const menu = page.getByRole("menu");
   await expect(menu).toContainText(me);
   await expect(menu).toContainText("Carbon");
-  // Light only: the menu offers no theme choice.
-  await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
+  // The account menu exposes the saved appearance preference.
+  await expect(menu.getByRole("group", { name: "Theme" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
 

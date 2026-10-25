@@ -14,7 +14,7 @@ BFF, the session and the proxy; `DESIGN.md` is the design system.
   (`crates/write-doc/src/model.rs`, `names`).
 - Words: Carbons and Silicons; never "AI agent", "human", "user account", "organization", "org", "team" for a group of
   accounts, Honeycomb or IAM. Errors say what happened, why, and what to do. No telemetry.
-- Light only. Every rounded surface is a squircle (`data-sq`), focus shows as fills and edges, motion respects reduced
+- Light and dark themes use Silicon UI neutral surfaces; honor the saved Light, Dark, or System preference. Every rounded surface is a squircle (`data-sq`), focus shows as fills and edges, motion respects reduced
   motion. Keep it calm: one reading column, hairlines, few boxes.
 - Before finishing: `pnpm typecheck && pnpm lint && pnpm build`, and `pnpm exec playwright test` against the local stack
   (Accounts on 9890, the service on 4371: `../scripts/dev.sh --detach`).

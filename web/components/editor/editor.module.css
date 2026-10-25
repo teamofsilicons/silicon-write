@@ -91,7 +91,7 @@
 .prose :global(.selectedCell)::after { content: ""; position: absolute; inset: 0; background: var(--accent-subtle); pointer-events: none; }
 .prose :global(.tableWrapper) { overflow-x: auto; }
 
-.prose mark { background: #FFF1A8; color: inherit; border-radius: 3px; padding: 0 .08em; }
+.prose mark { background: #FFF1A8; color: #242424; border-radius: 3px; padding: 0 .08em; }
 
 .prose :global(.is-editor-empty):first-child::before,
 .prose :global(.is-empty)::before {
@@ -106,8 +106,8 @@
 .prose [data-type="block-math"] { text-align: center; margin: 1em 0; overflow-x: auto; }
 
 /* Suggestions: inserted text underlined in green, deleted text struck through in red, both with their author. */
-.prose :global(ins.suggest-insert) { text-decoration: underline; text-decoration-color: #2B7148; text-decoration-thickness: 2px; text-underline-offset: .2em; background: rgb(43 113 72 / .08); color: #1F5C38; }
-.prose :global(del.suggest-delete) { text-decoration: line-through; text-decoration-color: #B42318; text-decoration-thickness: 2px; background: rgb(180 35 24 / .06); color: #8A2A20; }
+.prose :global(ins.suggest-insert) { text-decoration: underline; text-decoration-color: var(--success); text-decoration-thickness: 2px; text-underline-offset: .2em; background: color-mix(in srgb, var(--success) 10%, transparent); color: var(--success); }
+.prose :global(del.suggest-delete) { text-decoration: line-through; text-decoration-color: var(--danger); text-decoration-thickness: 2px; background: color-mix(in srgb, var(--danger) 8%, transparent); color: var(--danger); }
 .editor[data-mode="viewing"] .prose :global(ins.suggest-insert),
 .editor[data-mode="viewing"] .prose :global(del.suggest-delete) { background: none; }
 
@@ -132,8 +132,8 @@
 }
 
 /* Find. */
-.prose :global(.find-match) { background: rgb(31 92 177 / .14); border-radius: 2px; }
-.prose :global(.find-current) { background: rgb(31 92 177 / .34); }
+.prose :global(.find-match) { background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 2px; }
+.prose :global(.find-current) { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 
 /* Other people's cursors. */
 .prose :global(.collaboration-carets__caret) { position: relative; margin-left: -1px; margin-right: -1px; border-left: 1.5px solid; border-right: 1.5px solid transparent; word-break: normal; pointer-events: none; }
@@ -265,8 +265,8 @@
 @media (max-width: 900px) { .prose :global(.authorship-gutter) { position: static; display: inline-flex; margin-right: .4em; vertical-align: middle; } }
 
 /* Structural proposals carry the same author and decision as text proposals. */
-.prose :global([data-suggestion-kind="insert"]) { background: rgb(43 113 72 / .08); outline: 1px solid rgb(43 113 72 / .3); }
-.prose :global([data-suggestion-kind="delete"]) { background: rgb(180 35 24 / .06); outline: 1px dashed rgb(180 35 24 / .35); }
+.prose :global([data-suggestion-kind="insert"]) { background: color-mix(in srgb, var(--success) 10%, transparent); outline: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
+.prose :global([data-suggestion-kind="delete"]) { background: color-mix(in srgb, var(--danger) 8%, transparent); outline: 1px dashed color-mix(in srgb, var(--danger) 35%, transparent); }
 .editor[data-mode="viewing"] .prose :global([data-suggestion-kind="insert"]) { display: none; }
 .editor[data-mode="viewing"] .prose :global([data-suggestion-kind="delete"]) { background: none; outline: none; }
 
@@ -281,10 +281,10 @@
 }
 .prose :global(.suggestion-deletion-marker)::after {
   content: ""; position: absolute; left: 3px; top: 0; bottom: -2px;
-  width: 2px; background: #B42318;
+  width: 2px; background: var(--danger);
 }
 .prose :global(.suggestion-deletion-marker:hover),
-.prose :global(.suggestion-deletion-marker:focus-visible) { background: rgb(180 35 24 / .1); outline: 2px solid rgb(180 35 24 / .3); }
+.prose :global(.suggestion-deletion-marker:focus-visible) { background: color-mix(in srgb, var(--danger) 10%, transparent); outline: 2px solid color-mix(in srgb, var(--danger) 30%, transparent); }
 .prose :global(.suggestion-deletion-block) { display: block; width: 24px; height: 10px; margin: 6px 0; }
 .prose :global(.suggestion-deletion-block)::after { left: 0; right: 0; top: 4px; bottom: auto; height: 2px; width: auto; }
 .editor[data-mode="viewing"] .prose :global(.suggestion-deletion-marker),

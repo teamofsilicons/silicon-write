@@ -1,44 +1,55 @@
-/**
- * The site is light only, as Silicon Writings, the Silicon Apps store and Silicon Accounts are. The inline boot script
- * (THEME_BOOT_SCRIPT, rendered with the CSP nonce in the root layout's <head>) pins <html data-theme="light"> before
- * the first paint and marks <html data-js>, so controls that only work with script stay hidden in a browser without it.
- *
- * The functions below keep the shape the site's code reads (useTheme in components/foundation/theme/use-theme.ts): the
- * theme is always "light", and changing it does nothing but make sure light is applied.
- */
+/** Shared theme preference: applied before first paint, persisted locally, and synced across tabs. */
 import { appConfig } from "@/lib/app.config";
 
 export type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
-
-/** Where the theme choice used to be stored; the boot script clears it so nothing reads a stale choice. */
 export const THEME_STORAGE_KEY = `${appConfig.appId}.theme`;
+const THEME_EVENT = "write:theme";
+const SYSTEM_QUERY = "(prefers-color-scheme: dark)";
+const preference = (value: string | null): ThemePreference => value === "light" || value === "dark" ? value : "system";
 
-export const THEME_BOOT_SCRIPT = `(function(){var r=document.documentElement;r.setAttribute("data-js","");r.setAttribute("data-theme","light");r.setAttribute("data-theme-preference","light");r.style.colorScheme="light";try{localStorage.removeItem(${JSON.stringify(THEME_STORAGE_KEY)})}catch(e){}})();`;
+export const THEME_BOOT_SCRIPT = `(function(){var r=document.documentElement,p="system";r.setAttribute("data-js","");try{var s=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(s==="light"||s==="dark")p=s}catch(e){}var t=p==="system"?(matchMedia("${SYSTEM_QUERY}").matches?"dark":"light"):p;r.setAttribute("data-theme",t);r.setAttribute("data-theme-preference",p);r.style.colorScheme=t;})();`;
 
-/** Writes the light theme onto <html>. */
-export const applyTheme: (value?: Theme, pref?: ThemePreference) => void = () => {
+export const resolveTheme = (value: ThemePreference): Theme => value === "system"
+  ? typeof window !== "undefined" && window.matchMedia(SYSTEM_QUERY).matches ? "dark" : "light"
+  : value;
+export const currentTheme = (): Theme => typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+export const themePreference = (): ThemePreference => typeof document === "undefined" ? "system" : preference(document.documentElement.getAttribute("data-theme-preference"));
+
+export function applyTheme(value: Theme, pref: ThemePreference) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  root.setAttribute("data-theme", "light");
-  root.setAttribute("data-theme-preference", "light");
-  root.style.colorScheme = "light";
-};
+  root.dataset.theme = value;
+  root.dataset.themePreference = pref;
+  root.style.colorScheme = value;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", value === "dark" ? "#141414" : "#FFFFFF");
+}
 
-/** The theme in use: always light. */
-export const currentTheme = (): Theme => "light";
+export function setThemePreference(value: ThemePreference) {
+  applyTheme(resolveTheme(value), value);
+  try { localStorage.setItem(THEME_STORAGE_KEY, value); } catch { /* The choice still works when storage is blocked. */ }
+  window.dispatchEvent(new Event(THEME_EVENT));
+}
 
-/** The preference: always light. */
-export const themePreference = (): ThemePreference => "light";
+export function subscribeTheme(listener: () => void): () => void {
+  const media = window.matchMedia(SYSTEM_QUERY);
+  const systemChanged = () => {
+    if (themePreference() === "system") { applyTheme(resolveTheme("system"), "system"); listener(); }
+  };
+  const storageChanged = (event: StorageEvent) => {
+    if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
+    const next = preference(event.newValue);
+    applyTheme(resolveTheme(next), next);
+    listener();
+  };
+  window.addEventListener(THEME_EVENT, listener);
+  window.addEventListener("storage", storageChanged);
+  media.addEventListener("change", systemChanged);
+  return () => {
+    window.removeEventListener(THEME_EVENT, listener);
+    window.removeEventListener("storage", storageChanged);
+    media.removeEventListener("change", systemChanged);
+  };
+}
 
-/** What a preference would show: always light on this site. */
-export const resolveTheme: (value: ThemePreference) => Theme = () => "light";
-
-/** Kept for callers; the site has one theme. */
-export const setThemePreference: (value: ThemePreference) => void = () => applyTheme();
-
-/** The theme never changes, so there is nothing to subscribe to. */
-export const subscribeTheme: (listener: () => void) => () => void = () => () => {};
-
-/** Kept for callers; the site has one theme. */
-export const changeTheme: (next: ThemePreference, trigger?: HTMLElement | null) => void = () => applyTheme();
+export const changeTheme = (next: ThemePreference) => setThemePreference(next);

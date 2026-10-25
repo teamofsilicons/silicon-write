@@ -17,7 +17,7 @@ test("the landing page says what the app is, how to install it and how to sign i
   await expect(page.getByRole("button", { name: "Copy Install and sign in" })).toBeVisible();
   await expect(page.getByRole("link", { name: `Sign in to ${appConfig.name}` }).first()).toHaveAttribute("href", "/auth/sign-in");
   await expect(page.getByRole("main").getByRole("heading", { name: "For Silicons" })).toBeVisible();
-  // One h1, landmarks and a skip link (the site is light only: no theme choice, see the next test).
+  // One h1, landmarks and a skip link.
   await expect(page.locator("h1")).toHaveCount(1);
   await expect(page.getByRole("main")).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main");
@@ -36,11 +36,31 @@ test("the landing page says what the app is, how to install it and how to sign i
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-test("the site is light only: no theme switch, and a dark device still gets the light site", async ({ page }) => {
+test("appearance follows the device until a saved choice overrides it", async ({ page, context }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(page.getByRole("button", { name: /^(Dark|Light|System)$|Switch to (dark|light)/ })).toHaveCount(0);
+  const root = page.locator("html");
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await expect(root).toHaveAttribute("data-theme-preference", "system");
+  const choose = async (name: string) => {
+    await page.getByRole("button", { name: "Appearance", exact: true }).click();
+    await page.getByRole("menuitemradio", { name, exact: true }).click();
+  };
+  await choose("Light");
+  await page.reload();
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await expect(root).toHaveAttribute("data-theme-preference", "light");
+  const other = await context.newPage();
+  await other.goto("/");
+  await choose("Dark");
+  await expect(other.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await choose("System");
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await other.close();
 });
 
 test("the public files answer for crawlers and Silicons", async ({ request }) => {

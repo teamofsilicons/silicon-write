@@ -103,3 +103,10 @@
   .header { padding-left: var(--space-3); }
 }
 @media (prefers-reduced-motion: reduce) { .expand, .chevron, .copyIcon > svg { transition: none; } }
+
+:global([data-theme="dark"]) .string { color: oklch(80% .12 150); }
+:global([data-theme="dark"]) .number { color: oklch(80% .12 55); }
+:global([data-theme="dark"]) .keyword { color: oklch(80% .12 285); }
+:global([data-theme="dark"]) .type, :global([data-theme="dark"]) .tag { color: oklch(80% .1 230); }
+:global([data-theme="dark"]) .function { color: oklch(80% .12 25); }
+:global([data-theme="dark"]) .property { color: oklch(80% .12 85); }

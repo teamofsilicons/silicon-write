@@ -1,6 +1,6 @@
 /**
  * The root layout: <html> and <body>, the Silicon look (Arc's foundation, BDO Grotesk, the tokens, squircles, the base),
- * the light-only boot script (inline, with the request's CSP nonce from proxy.ts), the app's colour and the
+ * the saved-theme boot script (inline, with the request's CSP nonce from proxy.ts), the app's colour and the
  * metadata every page shares. It ships no client code of its own: the public pages stay server-rendered HTML with a
  * few small islands, and the signed-in workspace mounts its providers in app/(workspace)/layout.tsx. Every page renders
  * per request (the nonce changes each time).
@@ -15,6 +15,7 @@ import { headers } from "next/headers";
 import type { CSSProperties, ReactNode } from "react";
 import { appConfig } from "@/lib/app.config";
 import { publicOrigin } from "@/lib/server/site";
+import { ThemeSync } from "@/components/foundation/theme/theme-menu";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -38,7 +39,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: "#FFFFFF",
-  colorScheme: "light",
+  colorScheme: "light dark",
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
@@ -54,7 +55,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <link rel="preload" href="/fonts/hedvig-letters-serif/HedvigLettersSerif-Regular.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/geist-pixel/GeistPixel-Square.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
       </head>
-      <body>{children}</body>
+      <body><ThemeSync />{children}</body>
     </html>
   );
 }

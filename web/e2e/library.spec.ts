@@ -5,7 +5,7 @@
  * Open files, the share dialog (people and roles, what owners, editors and viewers each get, email invites, what bad
  * input is told, the public link, transfers and an offer whose doc went to the trash), shared folders (as editor and
  * as viewer, the move dialog inside one), Shared with me, Recent, Search, a public doc read signed out and signed in
- * from its Sign in button, light only in a browser that prefers dark, and a pass over every page at 1440×900 and at
+ * from its Sign in button, dark appearance in a browser that prefers dark, and a pass over every page at 1440×900 and at
  * 390×844 (no sideways scrolling, nothing cut off or squeezed; full-page screenshots in test-results/web-library).
  *
  * The run's two Carbons come from the setup project ("carbon" and "friend", e2e/accounts.setup.ts); each test signs
@@ -1719,38 +1719,38 @@ test("a public doc's Sign in button signs the reader in and brings them back to 
 /* Light only                                                                                                       */
 /* ---------------------------------------------------------------------------------------------------------------- */
 
-test("light only: a browser that prefers dark still gets the light site, signed in and signed out", async ({ browser }) => {
+test("dark appearance works in the library, share dialog, editor and anonymous public docs", async ({ browser }) => {
   test.setTimeout(180_000);
   const carbon = await signedIn(browser, "carbon", DESKTOP, { colorScheme: "dark" });
   const { page } = carbon;
   expect(await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches), "the browser prefers dark").toBe(true);
-  const doc = await newDoc(page, named("Night reading"), { markdown: "# Night reading\n\nStill black on paper.\n" });
+  const doc = await newDoc(page, named("Night reading"), { markdown: "# Night reading\n\nComfortable night reading.\n" });
   await must(page, "PUT", `/v1/docs/${doc.id}/public`, { access: "view" });
-  const light = async (where: string, target: Locator) => {
+  const dark = async (where: string, target: Locator) => {
     await expect(target).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), `${where}: the page is pinned light`).toBe("light");
-    expect(await backgroundLuminance(target), `${where}: the background is light`).toBeGreaterThan(0.7);
+    expect(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), `${where}: the page follows dark preference`).toBe("dark");
+    expect(await backgroundLuminance(target), `${where}: the background is dark`).toBeLessThan(0.2);
   };
 
   await page.goto("/library");
-  await light("My docs", page.getByRole("list", { name: "My docs", exact: true }));
+  await dark("My docs", page.getByRole("list", { name: "My docs", exact: true }));
   await shot(page, "desktop-dark-preference-my-docs");
   await (await rowMenu(page, doc.title)).getByRole("menuitem", { exact: true, name: "Share" }).click();
   const dialog = page.getByRole("dialog", { name: "Share", exact: true });
-  await light("the share dialog", dialog.getByRole("list", { name: "People with access" }));
+  await dark("the share dialog", dialog.getByRole("list", { name: "People with access" }));
   await shot(page, "desktop-dark-preference-share-dialog", false);
   await page.keyboard.press("Escape");
   await page.goto(`/d/${doc.id}`);
-  await light("the doc", page.locator(".ProseMirror"));
-  expect(await inkLuminance(page.locator(".ProseMirror p").first()), "the doc's text is dark ink on the paper").toBeLessThan(0.2);
+  await dark("the doc", page.locator(".ProseMirror"));
+  expect(await inkLuminance(page.locator(".ProseMirror p").first()), "the doc's text is light ink on the dark canvas").toBeGreaterThan(0.7);
   await shot(page, "desktop-dark-preference-doc");
 
   // Signed out, the public doc too.
   const reader = await signedOut(browser, DESKTOP, { colorScheme: "dark" });
   await reader.page.goto(`/d/${doc.id}`);
-  await expect(reader.page.locator(".ProseMirror")).toContainText("Still black on paper.");
-  expect(await reader.page.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe("light");
-  expect(await backgroundLuminance(reader.page.locator(".ProseMirror")), "the signed-out public doc is light").toBeGreaterThan(0.7);
+  await expect(reader.page.locator(".ProseMirror")).toContainText("Comfortable night reading.");
+  expect(await reader.page.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe("dark");
+  expect(await backgroundLuminance(reader.page.locator(".ProseMirror")), "the signed-out public doc is dark").toBeLessThan(0.2);
   await shot(reader.page, "desktop-dark-preference-public-doc");
   expect(carbon.errors).toEqual([]);
   expect(reader.errors).toEqual([]);

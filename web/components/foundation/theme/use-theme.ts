@@ -6,7 +6,7 @@ import { changeTheme, currentTheme, setThemePreference, subscribeTheme, themePre
 export type { Theme, ThemePreference } from "@/lib/theme";
 
 const serverTheme = (): Theme => "light";
-const serverPreference = (): ThemePreference => "light";
+const serverPreference = (): ThemePreference => "system";
 
 /**
  * The current theme and preference, and ways to change them. The first render (server and hydration) reads "light" /
@@ -18,7 +18,7 @@ const serverPreference = (): ThemePreference => "light";
 export function useTheme(): {
   theme: Theme;
   preference: ThemePreference;
-  /** Animated (the eclipse from `trigger`), or instant with reduced motion. */
+  /** Change the saved preference immediately. */
   change: (next: ThemePreference, trigger?: HTMLElement | null) => void;
   /** Instant, no animation. */
   set: (next: ThemePreference) => void;

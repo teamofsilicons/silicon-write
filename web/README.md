@@ -1,7 +1,7 @@
 # Silicon Write web editor
 
 The web editor of Silicon Write (write.teamofsilicons.com): Next.js 16, React 19, TypeScript, Silicon UI, and Tiptap 3
-with Yjs for live editing. Light only. The product contract is `../understanding/UNDERSTANDING.md`; the service's API is
+with Yjs for live editing. Light, Dark, and System appearance choices. The product contract is `../understanding/UNDERSTANDING.md`; the service's API is
 `../docs/api.md`.
 
 The site is a BFF: Silicon Accounts tokens stay in a sealed, HttpOnly cookie and the browser never holds one. Pages call

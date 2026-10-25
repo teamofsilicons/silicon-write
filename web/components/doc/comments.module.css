@@ -19,7 +19,7 @@
 .commentPill {
   --radius-control: 6px;
   --radius-container: 6px;
-  --comment-blue: #2f68b8;
+  --comment-blue: var(--accent);
 }
 
 .panel.panel {
@@ -95,7 +95,7 @@
 .threadQuote {
   margin: 0 0 14px;
   padding: 2px 0 2px 12px;
-  border-left: 2px solid color-mix(in srgb, var(--comment-blue) 55%, white);
+  border-left: 2px solid color-mix(in srgb, var(--comment-blue) 55%, var(--surface));
   transition: border-color 120ms ease, background-color 120ms ease;
 }
 .threadCard[data-active] .threadQuote { border-left-color: var(--comment-blue); }
@@ -135,7 +135,7 @@
   border-radius: 6px;
   corner-shape: superellipse(1.5);
   background: var(--surface);
-  box-shadow: 0 6px 24px rgb(30 25 15 / 10%);
+  box-shadow: var(--shadow-raised);
 }
 .composerQuote { max-height: 4.65em; overflow: hidden; margin: 0; padding-left: 12px; border-left: 2px solid var(--comment-blue); overflow-wrap: anywhere; }
 .composerKind { margin: 0; }
@@ -144,8 +144,8 @@
 .composerInput > div:first-child[data-focused] { border-color: var(--comment-blue); }
 .composerActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .composerHint { flex: 1 0 100%; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
-.composerActions .inkButton { border-color: var(--foreground); background: var(--foreground); color: #fff; }
-.composerActions .inkButton:hover:not(:disabled) { border-color: #333; background: #333; }
+.composerActions .inkButton { border-color: var(--foreground); background: var(--foreground); color: var(--background); }
+.composerActions .inkButton:hover:not(:disabled) { border-color: var(--text-secondary); background: var(--text-secondary); }
 .commentPill > button { border-radius: 6px; background: var(--surface); }
 
 .panel :is(button, textarea):focus-visible,
@@ -153,10 +153,10 @@
   outline: none;
   box-shadow: inset 0 0 0 1px var(--comment-blue);
 }
-.panel .threadQuote:focus-visible { background: #f3f6fb; }
+.panel .threadQuote:focus-visible { background: var(--accent-subtle); }
 @media (hover: hover) and (pointer: fine) {
   .iconButton:hover:not(:disabled) { background: var(--surface-muted); color: var(--foreground); }
-  .threadQuote:hover { border-left-color: var(--comment-blue); background: #f8faff; }
+  .threadQuote:hover { border-left-color: var(--comment-blue); background: var(--accent-subtle); }
   .textButton:hover { color: var(--foreground); }
 }
 @media (max-width: 600px) {
@@ -184,7 +184,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   corner-shape: superellipse(1.5);
-  box-shadow: 0 6px 24px rgb(30 25 15 / 10%);
+  box-shadow: var(--shadow-raised);
   font-family: var(--font-body);
   z-index: 45;
 }
