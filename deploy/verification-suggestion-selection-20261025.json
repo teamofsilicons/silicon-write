@@ -1,0 +1,43 @@
+{
+  "source_revision": "264633b8a3da561ba81c7c7386f0f35bac0fcf16",
+  "deployment": "dpl_EVJwC8B1ngpJka2X3SqPMf2szpLB",
+  "url": "https://write.teamofsilicons.com",
+  "checked_at": "2026-10-25T17:08:42.927057+00:00",
+  "reproduction": "Browser emits click after drag-selecting suggested prose; the review card opens and intercepts the next cross-paragraph selection. Reproduced locally and on production before promotion.",
+  "fix": "Suppress implicit suggestion review while the editor or native DOM has a nonempty selection; explicit deletion markers still open review.",
+  "focused_browser_tests": {
+    "passed": 4,
+    "cases": [
+      "replacement and accept/reject/reload",
+      "repeated deletion and paragraph splits",
+      "restricted suggester editing",
+      "forward and backward mouse drag, replacement of an existing proposal, cross-paragraph overwrite and reject-all restoration"
+    ]
+  },
+  "unit_tests": {
+    "passed": 109,
+    "failed": 0
+  },
+  "typecheck": "passed",
+  "lint": "passed",
+  "build": "passed",
+  "live_browser": {
+    "passed": true,
+    "reverse_drag_no_review": true,
+    "cross_paragraph_selection_retained": true,
+    "explicit_red_marker_opens_review": true,
+    "no_content_edits_from_browser_identity": true,
+    "fixture_author": "si:udd-saket",
+    "fixture_trashed": true,
+    "screenshot": ".dev/production/selection-live-20261025.png"
+  },
+  "full_browser_suite": {
+    "passed": 107,
+    "failed": 9,
+    "known_baseline_failures": 8,
+    "local_environment_failures": 1,
+    "environment_detail": "editor.spec.ts:876 expected image width 160, received 0. Trace shows asset request to http://localhost:4370/assets failed; test web origin was 127.0.0.1:4380.",
+    "baseline_receipt": "deploy/verification-clean-suggestions-20261025.json",
+    "log": ".dev/selection-full-recheck.log"
+  }
+}
