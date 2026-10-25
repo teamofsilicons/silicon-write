@@ -1,0 +1,44 @@
+{
+  "source_revision": "927f7e0b51aaf32bd910b0122ea6ab9f2ec2a2b0",
+  "deployment": "dpl_4K7VUUtt2QB6qKuaSeELPtupLMXM",
+  "url": "https://write.teamofsilicons.com",
+  "checked_at": "2026-10-25T22:10:33.844307+00:00",
+  "features": [
+    "Saved Light, Dark, System preference",
+    "System changes and cross-tab updates",
+    "Pre-paint theme under CSP",
+    "Account menu, document More > Appearance, public header",
+    "Neutral Silicon UI dark surfaces and theme-aware suggestions/comments"
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "unit_tests": 116,
+    "focused_browser_cases": [
+      "public first paint and CSP",
+      "system/manual/reload/cross-tab preference",
+      "library share editor and anonymous document dark surfaces",
+      "account menu to editor comments suggestions share and document appearance"
+    ],
+    "dark_accessibility": "public and workspace pages, desktop and phone passed WCAG 2.2 AA automated checks",
+    "logs": [
+      ".dev/dark-browser.log",
+      ".dev/dark-theme-final.log",
+      ".dev/dark-accessibility-recheck.log"
+    ]
+  },
+  "live_browser": {
+    "dark_editor_verified": true,
+    "reload_preserved_choice": true,
+    "original_system_preference_restored": true,
+    "fixture_author": "si:udd-saket",
+    "no_browser_content_edits": true,
+    "screenshot": ".dev/production/dark-live-20261026.png",
+    "fixture_trashed": true
+  },
+  "notes": [
+    "Dark code syntax contrast corrected after accessibility check.",
+    "One final test startup returned 404 from stale local Next cache; restarted with a fresh isolated cache and checks passed."
+  ]
+}
