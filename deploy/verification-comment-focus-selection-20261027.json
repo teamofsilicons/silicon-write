@@ -1,0 +1,89 @@
+{
+  "checked_at": "2026-10-26T23:50:55.680927+00:00",
+  "source_revision": "74007b58a92816d238a79aa085808184de5efad8",
+  "send_contrast_revision": "1e4115e",
+  "deployment": "dpl_EQSyq9EnbojBbXit5hJT3uegz8bm",
+  "previous_deployment": "dpl_CGHSjfRU9GZxGpQEjiMkDZwmnGQ6",
+  "url": "https://write.teamofsilicons.com",
+  "behavior": [
+    "Command-click (Control-click on other platforms) selects a block with a visible outline and readable text, preserving authored text colors.",
+    "Opening a conversation from a marker or passage focuses its reply field without scrolling; drafts resume at the end.",
+    "Clicking a conversation quote in All comments focuses its reply field; J/K list navigation remains available.",
+    "Reply Send buttons use the theme background for their text, maintaining contrast in dark mode."
+  ],
+  "cause": "ProseMirror makes native block selection backgrounds transparent. The site selection rule still inverted the text color to the paper color, making the selected block appear blank. currentColor restores each text run while the block outline indicates selection.",
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "targeted_browser_cases_including_setup": 5,
+    "targeted_log": ".dev/comment-focus-selection-browser.log",
+    "coverage": "Heading, paragraph, bold/code/colored text, quote and list block selections in light/dark and Editing/Suggesting; ordinary text selection; unchanged server Markdown; popup and list reply focus; immediate typing; draft restoration; Escape; narrow viewport; replies/reactions/edit/resolve; J/K navigation.",
+    "earlier_send_contrast_checks_including_setup": 11,
+    "earlier_send_contrast_log": ".dev/comment-send-browser.log",
+    "earlier_send_contrast_coverage": "Saved appearance, WCAG checks and reply lifecycle.",
+    "live": {
+      "commandClickAfter": {
+        "className": "ProseMirror-selectednode",
+        "color": "lab(95.36 0 0)",
+        "editorClass": "tiptap ProseMirror editor-module__8MZEfG__prose ProseMirror-focused ProseMirror-hideselection",
+        "outline": "rgb(134, 174, 234) solid 2px",
+        "selectionBackground": "rgba(0, 0, 0, 0)",
+        "selectionColor": "lab(95.36 0 0)",
+        "text": "The Send label should remain readable in both appearances."
+      },
+      "beforeReplyOpen": {
+        "scrollY": 0
+      },
+      "replyOpen": {
+        "caret": 0,
+        "focused": true,
+        "scrollY": 0,
+        "value": ""
+      },
+      "replyTyped": {
+        "caret": 45,
+        "focused": true,
+        "scrollY": 0,
+        "value": "Typing immediately after opening the comment."
+      },
+      "replySend": {
+        "background": "lab(95.36 0 0)",
+        "color": "lab(6.19571 0 0)",
+        "disabled": false
+      }
+    },
+    "send_contrast": {
+      "before": {
+        "background": "lab(95.36 0 0)",
+        "color": "rgb(255, 255, 255)",
+        "disabled": false,
+        "opacity": "0.900175",
+        "theme": "dark"
+      },
+      "after": {
+        "background": "lab(95.36 0 0)",
+        "color": "lab(6.19571 0 0)",
+        "disabled": false,
+        "opacity": "1",
+        "theme": "dark"
+      }
+    },
+    "screenshots": [
+      ".dev/production/command-click-before.jpg",
+      ".dev/production/command-click-live.jpg",
+      ".dev/production/comment-focus-selection-live.jpg"
+    ],
+    "browser_fallback": "Two T3 preview snapshots failed with Preview automation snapshot timed out after 15000ms; live verification used Chrome."
+  },
+  "cleanup": {
+    "id": "d_DxDwriKcRm3b9VLEiZwD",
+    "seq": 1,
+    "public_access": "none",
+    "deleted_at": "2026-10-26T23:50:16.627404Z",
+    "test_draft_cleared": true,
+    "test_browser_tabs_closed": true,
+    "local_test_services_stopped": true,
+    "user_appearance_unchanged": true
+  }
+}
