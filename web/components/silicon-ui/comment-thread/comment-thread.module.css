@@ -245,7 +245,6 @@
 }
 .root[data-presentation="margin"] .field:focus { border-color: var(--accent); }
 .root[data-presentation="margin"] :is(.send, .ghost) { height: 36px; padding: 0 10px; border-radius: 6px; corner-shape: superellipse(1.5); font-size: 12px; font-weight: 400; }
-.root[data-presentation="margin"] .send { color: #fff; }
 .root[data-presentation="margin"] .replyingInner { padding-left: 0; }
 .root[data-presentation="margin"] .resolved { gap: 8px; padding: 4px 0; }
 .root[data-presentation="margin"] .resolvedIcon { width: 20px; background: transparent; }
