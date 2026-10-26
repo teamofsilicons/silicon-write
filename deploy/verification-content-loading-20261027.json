@@ -1,0 +1,171 @@
+{
+  "source_revision": "dbbfa8394fd38af46e509bef65710fdfe2ff6107",
+  "deployment": "dpl_H886WyhYCYRNYimNv9XnroczA8nJ",
+  "previous_deployment": "dpl_FsTH4Jpv5FQqLw5iNh83cef4CYck",
+  "url": "https://write.teamofsilicons.com",
+  "checked_at": "2026-10-26T22:01:16.440487+00:00",
+  "behavior": [
+    "Loading content is shown until initial sync and editor readiness, with no saved-body preview.",
+    "The context-menu handler attaches before the ready editor paints.",
+    "Initial live access is prepared on the server in parallel with document metadata; normal initial loads need no browser ticket request.",
+    "Old cached bodies are discarded and ongoing full-document cache serialization is removed."
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "unit_tests_passed": 117,
+    "focused_browser_cases_passed_including_setup": 13,
+    "focused_logs": [
+      ".dev/content-loading-focused.log",
+      ".dev/content-loading-mobile.log"
+    ],
+    "broader_browser": {
+      "passed": 60,
+      "failed": 3,
+      "not_run": 58,
+      "failure_limit": 3,
+      "log": ".dev/content-loading-suite.log",
+      "known_failures": [
+        "editor.spec.ts:1371 image comment toolbar",
+        "editor.spec.ts:2059 PDF comment thread control",
+        "library.spec.ts:674 outdated title-in-banner assertion"
+      ],
+      "baseline_receipt": "deploy/verification-clean-suggestions-20261025.json"
+    }
+  },
+  "live_browser": {
+    "url": "https://write.teamofsilicons.com/d/d_jSCMRMDePc4wyJLPoA8Y",
+    "loading_shown_until_sync": true,
+    "body_hidden_while_loading": true,
+    "first_context_menu": true,
+    "browser_ticket_requests": 0,
+    "page_errors": []
+  },
+  "signed_in_chrome": {
+    "initial_loading_observed": true,
+    "mode": "Suggesting",
+    "formatting_toolbar_ready": true,
+    "first_right_click_opened_text_actions": true,
+    "appearance_unchanged": true,
+    "screenshot": ".dev/production/content-loading-commenter-live.jpg"
+  },
+  "timings": {
+    "before": [
+      {
+        "load": "cold",
+        "ready_ms": 3176,
+        "browser_ticket_requests": 1
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2718,
+        "browser_ticket_requests": 1
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2197,
+        "browser_ticket_requests": 1
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2182,
+        "browser_ticket_requests": 1
+      }
+    ],
+    "after": [
+      {
+        "load": "cold",
+        "ready_ms": 3005,
+        "browser_ticket_requests": 0
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2754,
+        "browser_ticket_requests": 0
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2821,
+        "browser_ticket_requests": 0
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2246,
+        "browser_ticket_requests": 0
+      }
+    ],
+    "after_warm": [
+      {
+        "load": "cold",
+        "ready_ms": 3022,
+        "browser_ticket_requests": 0,
+        "stages": {
+          "socket_created_ms": 1944,
+          "first_frame_sent_ms": 2274,
+          "first_frame_received_ms": 2275
+        },
+        "navigation": {
+          "ttfb_ms": 360,
+          "response_end_ms": 584,
+          "dom_content_loaded_ms": 707
+        }
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2301,
+        "browser_ticket_requests": 0,
+        "stages": {
+          "socket_created_ms": 1320,
+          "first_frame_sent_ms": 1624,
+          "first_frame_received_ms": 1624
+        },
+        "navigation": {
+          "ttfb_ms": 47,
+          "response_end_ms": 497,
+          "dom_content_loaded_ms": 499
+        }
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2133,
+        "browser_ticket_requests": 0,
+        "stages": {
+          "socket_created_ms": 1330,
+          "first_frame_sent_ms": 1666,
+          "first_frame_received_ms": 1666
+        },
+        "navigation": {
+          "ttfb_ms": 73,
+          "response_end_ms": 317,
+          "dom_content_loaded_ms": 330
+        }
+      },
+      {
+        "load": "reload",
+        "ready_ms": 2142,
+        "browser_ticket_requests": 0,
+        "stages": {
+          "socket_created_ms": 1103,
+          "first_frame_sent_ms": 1457,
+          "first_frame_received_ms": 1458
+        },
+        "navigation": {
+          "ttfb_ms": 55,
+          "response_end_ms": 318,
+          "dom_content_loaded_ms": 327
+        }
+      }
+    ],
+    "interpretation": "The extra browser ticket request is eliminated. Small sequential production samples are variable and do not establish a reliable overall speedup."
+  },
+  "cleanup": {
+    "fixture": "d_jSCMRMDePc4wyJLPoA8Y",
+    "content_unchanged": true,
+    "threads_created": 0,
+    "seq": 1,
+    "public_access": "none",
+    "deleted_at": "2026-10-26T22:00:18.459997Z"
+  },
+  "loading_screenshot": ".dev/production/content-loading-live-pending.png"
+}
