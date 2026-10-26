@@ -41,7 +41,7 @@ export interface MentionValue {
 }
 
 export interface MentionInputHandle {
-  focus: () => void;
+  focus: (options?: FocusOptions) => void;
   /** Inserts text at the caret, as if typed. */
   insert: (text: string) => void;
   /** Types a trigger at the caret so the suggestions open, adding a space first when needed. */
@@ -318,7 +318,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(fu
   };
 
   useImperativeHandle(ref, () => ({
-    focus: () => areaRef.current?.focus(),
+    focus: options => areaRef.current?.focus(options),
     insert: text => typeText(text),
     openSuggestions: kind => {
       const area = areaRef.current;

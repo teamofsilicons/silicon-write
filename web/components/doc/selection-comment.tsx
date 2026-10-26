@@ -77,6 +77,7 @@ export function SelectionComment({
   const [maxRows, setMaxRows] = useState(8);
   const [composerPosition, setComposerPosition] = useState<{ pending: PendingComment; top: number; left: number; width: number } | null>(null);
   const input = useRef<MentionInputHandle>(null);
+  const layer = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const activePending = useRef(pending);
   const people = useMentionPeople(docId, Boolean(account));
@@ -96,7 +97,11 @@ export function SelectionComment({
           return;
         }
         const end = editor.view.coordsAtPos(range.to);
-        setPill({ top: end.bottom + 6, left: end.left, range });
+        const origin = layer.current?.getBoundingClientRect();
+        if (!origin) return;
+        // Store a position in the document. Scrolling then moves the button with
+        // its passage, including out of view, without a scroll listener.
+        setPill({ ...fitInLayer(end.bottom + 6, end.left - 24, 120, 32, origin), range });
       }, 120);
     };
     document.addEventListener("selectionchange", check);
@@ -108,27 +113,28 @@ export function SelectionComment({
     };
   }, [editor]);
 
-  useLayoutEffect(() => {
-    if (pending) input.current?.focus();
-  }, [pending]);
-
   // Fit the actual composer, including a quote and the on-screen keyboard. Keep
   // overflow visible so the mention picker can extend beyond the paper surface.
   useLayoutEffect(() => {
     const node = card.current;
-    if (!pending || !node) return;
+    const origin = layer.current;
+    if (!pending || !node || !origin) return;
+    const initial = origin.getBoundingClientRect();
+    const anchor = { top: pending.top - initial.top, left: pending.left - initial.left };
     const viewport = window.visualViewport;
+    let viewportTop = viewport?.offsetTop ?? 0;
+    let viewportLeft = viewport?.offsetLeft ?? 0;
     const fit = () => {
       const width = viewport?.width ?? window.innerWidth;
       const height = viewport?.height ?? window.innerHeight;
-      const top = viewport?.offsetTop ?? 0;
-      const left = viewport?.offsetLeft ?? 0;
+      viewportTop = viewport?.offsetTop ?? 0;
+      viewportLeft = viewport?.offsetLeft ?? 0;
       setMaxRows(Math.max(2, Math.min(8, Math.floor((height - 240) / 24))));
       const cardWidth = Math.min(340, width - 32);
+      const bounds = origin.getBoundingClientRect();
       const next = {
         pending,
-        top: Math.max(top + 16, Math.min(pending.top + 8, top + height - node.offsetHeight - 16)),
-        left: Math.max(left + 16, Math.min(pending.left - 24, left + width - cardWidth - 16)),
+        ...fitInLayer(anchor.top + bounds.top + 8, anchor.left + bounds.left - 24, cardWidth, node.offsetHeight, bounds),
         width: cardWidth,
       };
       // Keep one source of truth for the rendered position. Direct style writes
@@ -138,15 +144,24 @@ export function SelectionComment({
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(node);
+    // Keyboard panning can move the visual viewport within the layout viewport.
+    // Ordinary page scrolling must leave the document-relative position alone.
+    const onViewportScroll = () => {
+      if (viewport?.offsetTop !== viewportTop || viewport?.offsetLeft !== viewportLeft) fit();
+    };
     window.addEventListener("resize", fit);
     viewport?.addEventListener("resize", fit);
-    viewport?.addEventListener("scroll", fit);
+    viewport?.addEventListener("scroll", onViewportScroll);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", fit);
       viewport?.removeEventListener("resize", fit);
-      viewport?.removeEventListener("scroll", fit);
+      viewport?.removeEventListener("scroll", onViewportScroll);
     };
+  }, [pending]);
+
+  useLayoutEffect(() => {
+    if (pending) input.current?.focus({ preventScroll: true });
   }, [pending]);
 
   // Dismiss on a click away without moving focus from the place being clicked.
@@ -194,20 +209,14 @@ export function SelectionComment({
     }
   };
 
-  const position = (top: number, left: number) => {
-    const width = 340;
-    const maxLeft = typeof window === "undefined" ? left : window.innerWidth - width - 16;
-    const maxTop = typeof window === "undefined" ? top : window.innerHeight - 220;
-    return { top: Math.max(72, Math.min(top + 8, maxTop)), left: Math.max(16, Math.min(left - 24, maxLeft)) };
-  };
   const composerStyle = pending && composerPosition?.pending === pending
     ? { top: composerPosition.top, left: composerPosition.left, width: composerPosition.width }
-    : pending ? position(pending.top, pending.left) : undefined;
+    : undefined;
 
   return (
-    <>
+    <div ref={layer} className={styles.commentLayer}>
       {pill && !pending ? (
-        <div className={`${styles.commentPill} ${commentStyles.commentPill}`} style={position(pill.top - 8, pill.left)}>
+        <div className={`${styles.commentPill} ${commentStyles.commentPill}`} style={{ top: pill.top, left: pill.left }}>
           <Button variant="secondary" size="sm" onMouseDown={e => e.preventDefault()} onClick={() => onStart(pill.range)}>
             <MessageSquarePlus size={15} aria-hidden="true" /> Comment
           </Button>
@@ -243,6 +252,17 @@ export function SelectionComment({
           </div> : null}
         </div>
       ) : null}
-    </>
+    </div>
   );
+}
+
+/** Fit once in the visible viewport, then express the result in the scrolling layer. */
+function fitInLayer(top: number, left: number, width: number, height: number, origin: DOMRect) {
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  const viewportLeft = viewport?.offsetLeft ?? 0;
+  return {
+    top: Math.max(viewportTop + 16, Math.min(top, viewportTop + (viewport?.height ?? window.innerHeight) - height - 16)) - origin.top,
+    left: Math.max(viewportLeft + 16, Math.min(left, viewportLeft + (viewport?.width ?? window.innerWidth) - width - 16)) - origin.left,
+  };
 }

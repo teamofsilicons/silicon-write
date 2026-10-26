@@ -1281,6 +1281,57 @@ test.describe("comments", () => {
     await context.close();
   });
 
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    test(`the Comment button and draft stay at their document position while scrolling (${viewport.width}px)`, async ({ browser }) => {
+      const { page, context } = await signedIn(browser, "carbon");
+      await page.setViewportSize(viewport);
+      const paragraphs = Array.from({ length: 28 }, (_, i) => `Passage ${i + 1}. This paragraph gives the document enough room to scroll and keeps each comment beside its original text.`);
+      const doc = await newDoc(page, `Scrolling comments ${tag()}`, paragraphs.join("\n\n"));
+      await openDoc(page, doc.id);
+      await editorOf(page).focus();
+      await editorOf(page).locator("p").nth(8).evaluate(node => node.scrollIntoView({ block: "center" }));
+      await select(page, "Passage 9", { focus: false });
+      const pill = page.locator('[class*="commentPill"]').getByRole("button", { name: "Comment", exact: true });
+      await expect(pill).toBeVisible();
+      await expect(newCommentBox(page)).toBeHidden();
+      const scroll = await page.evaluate(() => window.scrollY);
+      const pillY = (await pill.boundingBox())!.y;
+      await page.mouse.move(20, viewport.height - 60);
+      await page.mouse.wheel(0, 180);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scroll + 180);
+      await expect.poll(async () => (await pill.boundingBox())!.y).toBeCloseTo(pillY - 180, 0);
+      // It can leave the viewport, and returns to the same passage when scrolling back.
+      await page.mouse.wheel(0, 700);
+      await expect.poll(async () => (await pill.boundingBox())!.y).toBeLessThan(0);
+      await page.evaluate(y => window.scrollTo(0, y), scroll);
+      await expect.poll(async () => (await pill.boundingBox())!.y).toBeCloseTo(pillY, 0);
+      await pill.click();
+      const composer = newCommentBox(page);
+      const field = composer.getByRole("combobox", { name: "Comment", exact: true });
+      await expect(field).toBeFocused();
+      await field.fill("Keep this note at its passage.");
+      const initial = (await composer.boundingBox())!;
+      expect(initial.x).toBeGreaterThanOrEqual(15);
+      expect(initial.x + initial.width).toBeLessThanOrEqual(viewport.width - 15);
+      expect(initial.y + initial.height).toBeLessThanOrEqual(viewport.height - 15);
+      const draftScroll = await page.evaluate(() => window.scrollY);
+      await page.mouse.move(20, viewport.height - 60);
+      await page.mouse.wheel(0, 180);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(draftScroll + 180);
+      await expect.poll(async () => (await composer.boundingBox())!.y).toBeCloseTo(initial.y - 180, 0);
+      await shot(page, `comment-scroll-${viewport.width}`);
+      await page.mouse.wheel(0, 700);
+      await expect.poll(async () => { const rect = (await composer.boundingBox())!; return rect.y + rect.height; }).toBeLessThan(0);
+      await page.evaluate(y => window.scrollTo(0, y), draftScroll);
+      await expect(field).toHaveValue("Keep this note at its passage.");
+      await composer.getByRole("button", { name: "Comment", exact: true }).click();
+      await expect(composer).toBeHidden();
+      const threads = await threadsOf(page, doc.id);
+      expect(threads.map(thread => [thread.quote, thread.comments[0]?.body])).toEqual([["Passage 9", "Keep this note at its passage."]]);
+      await context.close();
+    });
+  }
+
   test("the toolbar's Comment button with nothing selected comments on the whole section", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Section comment ${tag()}`, "First section text.\n\nSecond section text.");

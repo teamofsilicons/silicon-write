@@ -105,6 +105,8 @@ Anyone who can edit can switch to suggesting, so their changes become suggestion
 
 Selecting text never opens the comment box automatically, in any mode. Anyone who can comment gets a small `Comment` button next to their selection and a keyboard shortcut. They can freely select text, pause, change the selection or move away; the comment box opens only when they explicitly choose to comment.
 
+The selection's `Comment` button and new-comment box stay at the position where they opened in the document. They scroll with the passage, including out of view, instead of sticking to the screen. Opening the box fits it within the visible screen without scrolling the document.
+
 A comment can be on any part of a doc:
 - some text
 - a whole section, by clicking next to it in the margin
