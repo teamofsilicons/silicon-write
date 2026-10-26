@@ -3,7 +3,8 @@
 /**
  * The live connection to a doc: a Yjs document kept in sync with the service over y-websocket.
  *
- * - The page asks this site for a ticket (`POST /api/v1/docs/{id}/live`, signed in or, for a public doc, not); the
+ * - The initial page prepares a ticket on the server. Workspace opens and reconnects ask this site for a ticket
+ *   (`POST /api/v1/docs/{id}/live`, signed in or, for a public doc, not); the
  *   ticket names the doc, the account and its role, and is good for ten minutes. A fresh one is fetched before it runs
  *   out and whenever the connection drops, so reconnecting always carries a valid ticket.
  * - Besides the Yjs sync (message 0) and awareness (1), the service sends JSON events as message 100: who each Yjs
@@ -53,8 +54,11 @@ async function fetchTicket(docId: string): Promise<LiveTicket> {
   return api.post<LiveTicket>(`/v1/docs/${seg(docId)}/live`);
 }
 
-export async function connectLive(docId: string): Promise<LiveDoc> {
-  const ticket = await fetchTicket(docId);
+export async function connectLive(docId: string, initialTicket?: LiveTicket | null): Promise<LiveDoc> {
+  // The initial page prepares access on the server, alongside its metadata request.
+  // A delayed/historical navigation can carry an expired ticket; fetch a new one then.
+  const ticket = initialTicket && Date.parse(initialTicket.expires_at) > Date.now() + 30_000
+    ? initialTicket : await fetchTicket(docId);
   const ydoc = new Y.Doc();
   // The ticket's URL is {server}/v1/live/{doc}; y-websocket adds "/{room}" itself.
   const serverUrl = ticket.url.slice(0, ticket.url.lastIndexOf("/"));

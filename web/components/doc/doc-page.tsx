@@ -18,11 +18,9 @@ import { type LiveDoc } from "@/lib/write/live";
 import { acquireWorkspaceLive } from "@/lib/write/workspace-live";
 import { useWorkspaceTabs } from "@/components/workspace/workspace-tabs";
 import { keys, useThreads } from "@/lib/write/queries";
-import { atLeast, type Account, type Anchor, type Doc, type Thread } from "@/lib/write/types";
-import { contentCache } from "@/lib/write/content-cache";
+import { atLeast, type Account, type Anchor, type Doc, type LiveTicket, type Thread } from "@/lib/write/types";
 import { denyWorkspaceDoc } from "@/lib/write/workspace-docs";
 import { ApiError } from "@/lib/errors";
-import { CachedContent } from "@/components/editor/cached-content";
 import { DocEditor, type EditMode } from "@/components/editor/editor";
 import { anchorFor } from "@/components/editor/anchors";
 import { EmailGate } from "./email-gate";
@@ -42,6 +40,7 @@ import { DocHeading } from "./doc-heading";
 import { ImageAreas } from "./image-areas";
 import { SectionGutter } from "./section-gutter";
 import { CommentMarkers } from "./comment-markers";
+import { ContentLoading } from "./content-loading";
 import styles from "./doc.module.css";
 
 const formatFallback = new Map<string, boolean>();
@@ -56,9 +55,10 @@ export type Panel = "comments" | "versions" | "links" | null;
 export interface DocPageProps {
   initialDoc: Doc;
   account: Account | null;
+  initialLiveTicket?: LiveTicket | null;
 }
 
-export function DocPage({ initialDoc, account }: DocPageProps) {
+export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps) {
   const client = useQueryClient();
   const { registerDoc, consumeEditorFocus } = useWorkspaceTabs();
   const docId = initialDoc.id;
@@ -79,8 +79,6 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     live?.provider.on("sync", listener);
     return () => { live?.provider.off("sync", listener); };
   }, [live]), () => live?.hasLoaded ?? false, () => false);
-  const cachedContent = useSyncExternalStore(contentCache.subscribe,
-    () => contentCache.get(docId, account?.uuid ?? null)?.content, () => undefined);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   // The thread to open first comes from a link (?thread=…).
@@ -140,7 +138,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
     if (doc.kind !== "doc" || doc.deleted_at) return;
     let disposed = false;
     let current: Awaited<ReturnType<typeof acquireWorkspaceLive>> | null = null;
-    acquireWorkspaceLive(docId, account?.uuid ?? null)
+    acquireWorkspaceLive(docId, account?.uuid ?? null, initialLiveTicket)
       .then(next => {
         if (disposed) {
           next.release();
@@ -167,7 +165,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       current?.release();
       setLive(null);
     };
-  }, [docId, doc.kind, doc.deleted_at, account?.uuid]);
+  }, [docId, doc.kind, doc.deleted_at, account?.uuid, initialLiveTicket]);
 
   // What the service tells everyone with the doc open.
   useEffect(() => {
@@ -195,27 +193,6 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
       }
     });
   }, [live, client, docId]);
-
-  // Only cache acknowledged text. Never turn unconfirmed/rejected local edits into a saved preview.
-  useEffect(() => {
-    if (!editor || !live || !account || lostAccess || emailRequired || doc.deleted_at) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let revoked = false;
-    const save = () => {
-      clearTimeout(timer);
-      if (!revoked && !editor.isDestroyed && live.provider.synced && !live.hasPendingChanges() && !live.rejectionReason) {
-        contentCache.remember(doc, account.uuid, editor.getJSON());
-      }
-    };
-    const schedule = () => { clearTimeout(timer); timer = setTimeout(save, 250); };
-    editor.on("update", schedule);
-    const off = live.on(event => {
-      if (event.type === "email_required" || event.type === "role" && event.role === null) { revoked = true; contentCache.remove(docId); }
-      if (event.type === "saved") save();
-    });
-    save();
-    return () => { clearTimeout(timer); editor.off("update", schedule); off(); };
-  }, [editor, live, account, doc, docId, lostAccess, emailRequired]);
 
   // Suggestions changed in the doc: refresh their list.
   useEffect(() => {
@@ -374,6 +351,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
   }
 
   const writable = canEdit || (canComment && mode === "suggesting");
+  const contentReady = doc.kind === "pdf" || Boolean(doc.deleted_at) || Boolean(liveReady && editor);
 
   return (
     <div className={styles.page} data-panel={panel ?? "none"} data-comments={threads.length ? "present" : undefined} data-formatting={formatOpen && writable && mode !== "viewing" ? "open" : "closed"}>
@@ -401,7 +379,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
         </div>
       ) : null}
       <div className={styles.body}>
-        <main id="main" className={styles.main} tabIndex={-1}>
+        <main id="main" className={styles.main} tabIndex={-1} aria-busy={!contentReady && !liveError}>
           <DocHeading doc={doc} canEdit={canEdit} />
           {live?.rejectionReason ? <div className={styles.saveWarning} role="alert">
             <p><strong>That change wasn’t saved.</strong> {live.rejectionReason}</p>
@@ -410,10 +388,13 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
           </div> : null}
           {doc.deleted_at ? <p className={styles.trashNotice}>This doc is in the trash. Restore it to edit it again.</p> : null}
           {findOpen && editor ? <FindBar editor={editor} canReplace={canEdit && mode === "editing"} onClose={() => setFindOpen(false)} /> : null}
+          {doc.kind === "doc" && !contentReady ? (
+            liveError ? <div className={styles.loading} role="alert"><p className={styles.error}>{liveError}</p><button type="button" className={styles.textButton} onClick={() => window.location.reload()}>Try again</button></div> : <ContentLoading />
+          ) : null}
           {doc.kind === "pdf" ? (
             <PdfView doc={doc} canComment={canComment} canEdit={canEdit} threads={threads} activeThread={activeThread} onActivate={openThread} onCommentArea={(anchor, at) => { openThread(null); setPending({ anchor, ...at }); }} />
           ) : live && liveReady ? (
-            <div className={styles.column}>
+            <div className={styles.column} hidden={!contentReady}>
               <DocEditor
                 live={live}
                 docId={docId}
@@ -434,14 +415,7 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
             </div>
-          ) : cachedContent && !doc.deleted_at ? (
-            <div className={styles.column}>
-              <CachedContent content={cachedContent} />
-              <p className={styles.cacheNotice} role="status">{liveError ? "Showing saved content. Reconnect to edit the latest version." : "Checking for changes…"}</p>
-            </div>
-          ) : (
-            <div className={styles.loading}>{liveError ? <p className={styles.error}>{liveError}</p> : <p>Opening…</p>}</div>
-          )}
+          ) : null}
           {canComment && (editor || doc.kind === "pdf") ? (
             <SelectionComment
               editor={editor}

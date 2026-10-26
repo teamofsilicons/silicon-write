@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { keys } from "@/lib/write/queries";
 import { useEditorState, type Editor } from "@tiptap/react";
@@ -24,7 +24,8 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
   const focusOnClose = useRef(false);
   const selection = useEditorState({ editor, selector: ({ editor: e }) => ({ empty: e.state.selection.empty, suggestions: suggestionsIn(e.state.doc) }) });
   const reviewExists = review && selection.suggestions.some(s => s.id === review.id);
-  useEffect(() => {
+  // Install before the newly ready document paints, so its first right-click works.
+  useLayoutEffect(() => {
     const dom = editor.view.dom;
     const open = (x: number, y: number) => { setReview(null); focusOnClose.current = false; setPoint({ x, y }); };
     const context = (event: MouseEvent) => {

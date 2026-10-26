@@ -14,7 +14,7 @@ import { useWorkspaceTabs } from "./workspace-tabs";
 import styles from "./workspace-tabs.module.css";
 
 /** Initial loading is server-authorized; subsequent tabs load inside this workspace. */
-export function WorkspaceDocPage({ initialDoc, account }: DocPageProps) {
+export function WorkspaceDocPage({ initialDoc, account, initialLiveTicket }: DocPageProps) {
   const { consumeEditorFocus } = useWorkspaceTabs();
   const pathname = usePathname();
   const id = /^\/d\/(d_[A-Za-z0-9]+)$/.exec(pathname)?.[1] ?? initialDoc.id;
@@ -50,5 +50,5 @@ export function WorkspaceDocPage({ initialDoc, account }: DocPageProps) {
       {query.error ? <><p>{query.error.message}</p>{query.error.hint ? <p>{query.error.hint}</p> : null}<Button variant="secondary" size="sm" onClick={() => void query.refetch()}>Try again</Button></> : null}
     </main>
   );
-  return <DocPage key={id} initialDoc={query.data} account={account} />;
+  return <DocPage key={id} initialDoc={query.data} account={account} initialLiveTicket={id === initialDoc.id ? initialLiveTicket : undefined} />;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { connectLive, type LiveDoc } from "./live";
+import type { LiveTicket } from "./types";
 
 interface Entry { promise: Promise<LiveDoc>; live: LiveDoc | null; readers: number; retained: boolean; closing: boolean }
 interface Runtime { entries: Map<string, Entry>; scope: string | null | undefined; unloadInstalled: boolean }
@@ -50,12 +51,12 @@ export function retainWorkspaceDocs(ids: readonly string[], account: string | nu
 }
 
 /** Each mounted editor holds a lease; changing routes never destroys an open doc's Yjs state. */
-export async function acquireWorkspaceLive(id: string, account: string | null): Promise<LiveDoc & { release(): void }> {
+export async function acquireWorkspaceLive(id: string, account: string | null, initialTicket?: LiveTicket | null): Promise<LiveDoc & { release(): void }> {
   setWorkspaceLiveScope(account);
   installUnloadGuard();
   let entry = entries.get(id);
   if (!entry) {
-    const promise = connectLive(id);
+    const promise = connectLive(id, initialTicket);
     entry = { promise, live: null, readers: 0, retained: true, closing: false };
     entries.set(id, entry);
     const created = entry;

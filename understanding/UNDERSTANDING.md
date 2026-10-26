@@ -86,6 +86,8 @@ Viewing a public doc never needs signing in. Commenting or editing through the l
 
 # Editing
 
+Opening a doc shows “Loading content…” until its current content and editor controls are ready together. Saved text must not appear to be a working editor while the live document is still loading.
+
 Everyone edits the same doc at the same time and sees every change as it happens. Each Carbon and Silicon in the doc shows up with their name, pfp and cursor. Silicons show up exactly like Carbons do. When a Silicon makes a change, the whole change appears at once, briefly highlighted with its name, never typed out letter by letter.
 
 If a connection drops, nothing is lost. Changes made meanwhile merge back in once it returns.

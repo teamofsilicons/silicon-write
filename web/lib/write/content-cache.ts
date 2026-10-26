@@ -1,14 +1,13 @@
-import type { JSONContent } from "@tiptap/core";
 import type { Doc } from "./types";
 
 const KEY = "silicon-write:content-cache:v1";
 const MAX_CHARS = 1_000_000; // At most ~2 MB of UTF-16 storage, across all documents.
 const MAX_DOCS = 20;
 const MAX_AGE = 7 * 24 * 60 * 60_000;
-interface CachedDoc { doc: Doc; content?: JSONContent; touched: number }
+interface CachedDoc { doc: Doc; touched: number }
 interface Stored { account: string; docs: CachedDoc[] }
 
-/** A disposable reading cache, never an input to the collaborative Yjs document. */
+/** Account-scoped tab metadata. Document text comes only from the live connection. */
 export class ContentCache {
   private account: string | null | undefined;
   private docs = new Map<string, CachedDoc>();
@@ -28,9 +27,10 @@ export class ContentCache {
         if (stored?.account === account && Array.isArray(stored.docs)) {
           for (const entry of stored.docs.slice(0, MAX_DOCS)) {
             if (entry?.doc?.kind === "doc" && typeof entry.doc.id === "string" && !entry.doc.deleted_at &&
-                Number.isFinite(entry.touched) && entry.touched <= this.now() && this.now() - entry.touched < MAX_AGE &&
-                (!entry.content || entry.content.type === "doc" && Array.isArray(entry.content.content))) {
-              this.docs.set(entry.doc.id, entry);
+                Number.isFinite(entry.touched) && entry.touched <= this.now() && this.now() - entry.touched < MAX_AGE) {
+              // Drop saved bodies from older versions; don't keep parsing/serializing
+              // the whole document on every tab or metadata update.
+              this.docs.set(entry.doc.id, { doc: entry.doc, touched: entry.touched });
             }
           }
         }
@@ -44,12 +44,11 @@ export class ContentCache {
     const entry = this.docs.get(id);
     return entry && this.now() - entry.touched < MAX_AGE ? entry : undefined;
   }
-  remember(doc: Doc, account: string | null, content?: JSONContent) {
+  remember(doc: Doc, account: string | null) {
     if (!account || account !== this.account) return;
     if (doc.deleted_at || doc.kind !== "doc") { this.remove(doc.id); return; }
-    const previous = this.docs.get(doc.id);
     this.docs.delete(doc.id);
-    const entry = { doc, content: content ?? previous?.content, touched: this.now() };
+    const entry = { doc, touched: this.now() };
     if (JSON.stringify(entry).length < MAX_CHARS - 100) this.docs.set(doc.id, entry);
     this.persist();
     this.emit();

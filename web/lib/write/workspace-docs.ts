@@ -1,7 +1,7 @@
 import { contentCache } from "./content-cache";
 import type { Doc } from "./types";
 
-/** Metadata and saved reading previews are scoped to the current signed-in account. */
+/** Metadata is scoped to the current signed-in account. */
 let scope: string | null | undefined;
 const docs = new Map<string, Doc>();
 const denied = new Set<string>();

@@ -13,20 +13,34 @@ import { Providers } from "@/components/foundation/providers";
 import { WorkspaceDocPage } from "@/components/workspace/workspace-doc-page";
 import { apiFetch, getSession } from "@/lib/server/rsc";
 import { serverEnv } from "@/lib/server/env";
-import type { Account, Doc } from "@/lib/write/types";
+import type { Account, Doc, LiveTicket } from "@/lib/write/types";
 
 export const dynamic = "force-dynamic";
 
-const load = cache(async (id: string): Promise<{ doc: Doc | null; signedIn: boolean }> => {
+const load = cache(async (id: string): Promise<{ doc: Doc | null; signedIn: boolean; initialLiveTicket?: LiveTicket | null }> => {
   if (!/^d_[A-Za-z0-9]+$/.test(id)) notFound();
   const session = await getSession();
   const grantHeaders = viewGrantHeaders(await cookies());
+  // Start both access checks together. The ticket is scoped to this doc/reader and
+  // already intended for the browser; no account bearer token leaves the server.
+  // This is optional: the normal client request handles unavailable/expired tickets.
+  const ticket = (session
+    ? apiFetch<LiveTicket>(`/v1/docs/${id}/live`, { method: "POST", headers: grantHeaders, signal: AbortSignal.timeout(5_000) })
+    : fetch(`${serverEnv().appApiUrl}/v1/docs/${id}/live`, { method: "POST", cache: "no-store", headers: { accept: "application/json", ...grantHeaders }, signal: AbortSignal.timeout(5_000) })
+      .then(async response => response.ok ? await response.json() as LiveTicket : null)
+  ).catch(() => null);
   if (session) {
-    try { return { doc: await apiFetch<Doc>(`/v1/docs/${id}`, { notFound: true, headers: grantHeaders }), signedIn: true }; }
+    try {
+      const doc = await apiFetch<Doc>(`/v1/docs/${id}`, { notFound: true, headers: grantHeaders });
+      return { doc, signedIn: true, initialLiveTicket: doc.kind === "doc" && !doc.deleted_at ? await ticket : null };
+    }
     catch (error) { if (error instanceof ApiError && error.code === "email_required") return { doc: null, signedIn: true }; throw error; }
   }
   const response = await fetch(`${serverEnv().appApiUrl}/v1/docs/${id}`, { cache: "no-store", headers: { accept: "application/json", ...grantHeaders } }).catch(() => null);
-  if (response?.ok) return { doc: (await response.json()) as Doc, signedIn: false };
+  if (response?.ok) {
+    const doc = await response.json() as Doc;
+    return { doc, signedIn: false, initialLiveTicket: doc.kind === "doc" && !doc.deleted_at ? await ticket : null };
+  }
   if (response?.status === 403 && (await response.clone().json().catch(() => null))?.error?.code === "email_required") return { doc: null, signedIn: false };
   if (response?.status === 404) notFound();
   redirect(`/auth/sign-in?return_to=${encodeURIComponent(`/d/${id}`)}`);
@@ -44,14 +58,14 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function DocRoute({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { doc, signedIn } = await load(id);
+  const { doc, signedIn, initialLiveTicket } = await load(id);
   const session = await getSession();
   const account: Account | null = session
     ? { uuid: session.account.uuid, id: session.account.id, kind: session.account.kind, display_name: session.account.display_name, pfp_url: session.account.pfp_url ?? "" }
     : null;
   return (
     <Providers session={{ signedIn, account: session?.account ?? null, expiresAt: session?.expiresAt ?? null }}>
-      {doc ? <WorkspaceDocPage initialDoc={doc} account={account} /> : <EmailGate docId={id} />}
+      {doc ? <WorkspaceDocPage initialDoc={doc} account={account} initialLiveTicket={initialLiveTicket} /> : <EmailGate docId={id} />}
     </Providers>
   );
 }
