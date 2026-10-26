@@ -1,0 +1,123 @@
+{
+  "checked_at": "2026-10-26T23:33:36.159282+00:00",
+  "source_revision": "5b0a00f874d406291ab980b4660104d6e58f2b1a",
+  "scrolling_revision": "1cf638910d139afb5f380aeacb0e6afe18745939",
+  "deployment": "dpl_5PkKp9ULrUd6MuSv1MMycsCM3XdA",
+  "previous_deployment": "dpl_9E9wi6g5BF2w7SuzkAUJomnwDcqH",
+  "url": "https://write.teamofsilicons.com",
+  "upload_note": "The final CLI upload began before the source commit; the uploaded working tree was committed unchanged as 5b0a00f.",
+  "behavior": [
+    "Selection Comment button and new-comment draft use a document-relative layer and scroll with their passage.",
+    "Every signed-in document Back button returns to /library, including shared and nested documents.",
+    "The visible comment mirror and typing field share microphone padding, keeping wrapped text and caret aligned.",
+    "Image and PDF draft areas stay highlighted until cancellation or successful posting.",
+    "Selected-image comment controls remain below the measured document header while the image is visible."
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "unit_tests_passed": 117,
+    "scroll_reproduction": "Before the fix, a 180px document scroll moved the Comment button 0px.",
+    "focused_browser_cases_including_setup": 8,
+    "focused_log": ".dev/comment-polish-focused-final.log",
+    "image_scroll_followup": "Passed with explicit wait for wheel scrolling before checking image-area alignment, cancellation and posting.",
+    "image_scroll_followup_log": ".dev/comment-area-final.log",
+    "broader_browser": {
+      "passed": 65,
+      "failed": 3,
+      "not_run": 58,
+      "failure_limit": 3,
+      "log": ".dev/comment-scroll-suite.log",
+      "known_failures": [
+        "image comment toolbar after posting a whole-image comment",
+        "PDF existing-thread control assertion",
+        "library import outdated title-in-banner assertion"
+      ],
+      "baseline_receipt": "deploy/verification-beautiful-pdf-20261027.json"
+    },
+    "live": {
+      "pill": {
+        "before": {
+          "pillY": 689.1328125,
+          "position": "absolute",
+          "scrollY": 44,
+          "selectionY": 664.6328125
+        },
+        "after": {
+          "pillY": 399.1328125,
+          "scrollY": 334,
+          "selectionY": 374.6328125
+        }
+      },
+      "draft": {
+        "before": {
+          "cardY": 402.6328125,
+          "scrollY": 332.5,
+          "value": "This draft stays with Passage 3 while scrolling."
+        },
+        "after": {
+          "cardY": -919.8671875,
+          "scrollY": 1655,
+          "value": "This draft stays with Passage 3 while scrolling."
+        }
+      },
+      "imageControls": {
+        "buttons": [
+          {
+            "receivesPointer": true,
+            "text": "Comment on image",
+            "top": 108,
+            "visibleBelowHeader": true
+          },
+          {
+            "receivesPointer": true,
+            "text": "Comment on an area",
+            "top": 108,
+            "visibleBelowHeader": true
+          }
+        ],
+        "chromeBottom": 100,
+        "imageTop": 40.4453125
+      },
+      "caret": {
+        "caret": 51,
+        "highlight": true,
+        "typingPaddingBottom": "34px",
+        "typingPaddingRight": "42px",
+        "value": "@Saket UDD (si:udd-saket) how is the graph decided?",
+        "visiblePaddingBottom": "34px",
+        "visiblePaddingRight": "42px"
+      },
+      "imageArea": {
+        "before": {
+          "areaTop": 155,
+          "cardTop": 443,
+          "imageTop": 40.4453125,
+          "scrollY": 470.5
+        },
+        "after": {
+          "areaTop": 108.5,
+          "cardTop": 396.5,
+          "imageTop": -6.0546875,
+          "scrollY": 517
+        }
+      },
+      "home": "https://write.teamofsilicons.com/library"
+    },
+    "live_draft_cancel_removed_highlight": true,
+    "live_home_heading_verified": true,
+    "structured_mention_caret": "Desktop and phone browser tests clicked after the visible question mark and verified insertion at the end; the live temporary public document verified matching layout metrics with plain mention text.",
+    "screenshot": ".dev/production/comment-polish-live.jpg",
+    "image_controls_screenshot": ".dev/production/comment-image-controls-live.jpg"
+  },
+  "cleanup": {
+    "fixture": "d_M7QYVES8GP5Xi6MYm6nZ",
+    "seq": 2,
+    "public_access": "none",
+    "deleted_at": "2026-10-26T23:32:45.190888Z",
+    "test_browser_tab_closed": true,
+    "test_draft_discarded": true,
+    "user_appearance_unchanged": true
+  }
+}

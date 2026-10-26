@@ -1453,8 +1453,10 @@ test.describe("comments", () => {
       };
       await assertArea();
       await composer.getByRole("combobox", { name: "Comment", exact: true }).fill("This area stays visible while I write.");
+      const scroll = await page.evaluate(() => window.scrollY);
       await page.mouse.move(20, 800);
       await page.mouse.wheel(0, 100);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scroll + 100);
       await assertArea();
       await shot(page, "comment-image-pending-highlight");
       await composer.getByRole("button", { name: post ? "Comment" : "Discard", exact: true }).click();
