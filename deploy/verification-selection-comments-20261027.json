@@ -1,0 +1,64 @@
+{
+  "source_revision": "ba594b4570793ac32cc4f89e3d852e42b5e0b091",
+  "deployment": "dpl_FsTH4Jpv5FQqLw5iNh83cef4CYck",
+  "previous_deployment": "dpl_4K7VUUtt2QB6qKuaSeELPtupLMXM",
+  "url": "https://write.teamofsilicons.com",
+  "checked_at": "2026-10-26T20:49:21.166115+00:00",
+  "behavior": "Selecting or pausing on text in Commenting or Reading mode only offers the Comment button. The composer opens through an explicit comment action, using the selected range.",
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "focused_browser_cases_passed": 4,
+    "focused_browser_cases": [
+      "paused Reading-mode selections and explicit posting",
+      "Editing-mode selection button and keyboard shortcut",
+      "Commenting-mode selection changes, move-away, explicit posting, and suggestion permissions",
+      "document creation and comment smoke journey"
+    ],
+    "broader_browser_run": {
+      "passed": 46,
+      "failed": 3,
+      "not_run": 69,
+      "failure_limit": 3,
+      "log": ".dev/comment-selection-suite.log"
+    },
+    "broader_browser_notes": [
+      "Two image-loading failures were caused by the local API generating localhost:4370 asset URLs while the test site ran on 127.0.0.1:4380.",
+      "After correcting WRITE_WEB_URL, image upload passed. The combined cell/image test reached its existing image-toolbar assertion failure; the PDF thread-control assertion also failed in the broader run.",
+      "The image-toolbar and PDF-thread cases correspond to known baseline cases recorded in deploy/verification-clean-suggestions-20261025.json."
+    ],
+    "image_environment_recheck_log": ".dev/comment-selection-images.log",
+    "production_site_http_status": 200,
+    "production_api_ready_http_status": 200,
+    "production_homepage_updated_comment_copy": true
+  },
+  "live_browser": {
+    "passed": true,
+    "browser": "Chrome",
+    "role": "commenter",
+    "mode": "Commenting",
+    "fixture_author": "si:udd-saket",
+    "fixture_document": "d_YUG28j3LtwgdMtksuKfh",
+    "first_selection": {
+      "quote": "first passage",
+      "pause_ms": 18676,
+      "selection_retained": true,
+      "composer_open": false
+    },
+    "mouse_drag_selection": {
+      "quote": "second passage",
+      "pause_ms": 24666,
+      "selection_retained": true,
+      "composer_open": false
+    },
+    "explicit_comment_button_opened_correct_quote": true,
+    "explicit_comment_focused_composer": true,
+    "cancel_and_move_away_left_composer_closed": true,
+    "comment_threads_created": 0,
+    "document_content_unchanged": true,
+    "appearance_unchanged": true,
+    "fixture_trashed": true,
+    "screenshot": ".dev/production/selection-comments-live-20261027.jpg"
+  }
+}
