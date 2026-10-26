@@ -61,6 +61,14 @@ const nextConfig: NextConfig = {
   // The kit lives in an app repository's web/ next to other lockfiles: this directory is its own root.
   turbopack: { root },
   outputFileTracingRoot: root,
+  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
+  outputFileTracingIncludes: {
+    "/api/v1/docs/*/beautiful-pdf": [
+      "./components/silicon-ui/foundation.css", "./styles/tokens.css", "./styles/fonts.css",
+      "./components/editor/editor.module.css", "./lib/server/pdf/print.css", "./lib/server/pdf/fonts/*", "./public/fonts/**/*.woff2",
+      "./node_modules/@sparticuz/chromium/bin/**",
+    ],
+  },
   // Profile photos are arbitrary https URLs from Silicon Accounts and Iris: shown as they are, never fetched here.
   images: { unoptimized: true },
   // `next dev` answers its dev assets to localhost only by default; a local stack is also opened on 127.0.0.1.

@@ -1,0 +1,39 @@
+/* The editor's typography and spacing come from editor.module.css and the shared tokens.
+   These rules only adapt the reading column to paged media. */
+@page {
+  size: A4;
+  margin: 20mm 18mm 22mm;
+  background: var(--background);
+  @bottom-right {
+    content: counter(page);
+    font: 400 9pt "BDO Grotesk", sans-serif;
+    color: var(--text-muted);
+  }
+}
+html { font-size: 16px; background: var(--background); color: var(--foreground); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+body { margin: 0; padding: 0; max-width: none; background: transparent; font-family: var(--font-body); }
+* { box-sizing: border-box; }
+.write-title { margin: 0 0 48px; font: 400 56px/1.12 var(--font-serif); letter-spacing: -.025em; text-wrap: balance; overflow-wrap: anywhere; break-after: avoid; }
+.prose { --reading: var(--font-body); min-height: 0; padding: 0; }
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 { break-after: avoid; }
+.prose p, .prose li { orphans: 3; widows: 3; }
+.prose p, .prose blockquote, .prose pre { break-inside: avoid; }
+.prose pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
+.prose figure { margin: 1em 0; break-inside: avoid; }
+.prose figcaption { color: var(--text-muted); font-size: .85em; text-align: center; }
+.prose img { max-height: 235mm; object-fit: contain; break-inside: avoid; }
+.prose table { width: 100%; table-layout: fixed; }
+.prose thead { display: table-header-group; }
+.prose tr { break-inside: avoid; }
+.prose th p, .prose td p { orphans: 1; widows: 1; }
+.prose a { overflow-wrap: anywhere; }
+.prose ul.task-list { list-style: none; padding-left: .2em; }
+.prose input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0 .55em 0 0; accent-color: var(--accent); vertical-align: middle; }
+.prose math[display="block"] { margin: 1em 0; }
+.prose math { font-family: "STIX Two Math", math; }
+.prose .footnotes { margin-top: 2.5em; font-size: .85em; }
+.prose .footnote-ref { font-size: .75em; line-height: 0; }
+.prose #TOC { border-left: 2px solid var(--accent); padding: 16px 20px; margin: 0 0 32px; }
+.prose #TOC ul { list-style: none; }
+.prose #TOC > ul { padding: 0; }
+.prose #TOC a { color: var(--foreground); text-decoration: none; }

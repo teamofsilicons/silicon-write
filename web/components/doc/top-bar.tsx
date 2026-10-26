@@ -20,6 +20,7 @@ import { Tooltip } from "@/components/silicon-ui/tooltip/tooltip";
 import { api, seg } from "@/lib/client/api";
 import { beginSignIn } from "@/lib/client/session";
 import { notify, notifyError } from "@/lib/notify";
+import { currentTheme, type Theme } from "@/lib/theme";
 import type { LiveDoc } from "@/lib/write/live";
 import { keys, useRefreshLibrary } from "@/lib/write/queries";
 import type { Account, Doc } from "@/lib/write/types";
@@ -29,6 +30,7 @@ import { ShareDialog } from "@/components/share/share-dialog";
 import { MoveDialog } from "@/components/library/move-dialog";
 import type { Panel } from "./doc-page";
 import { SyncState } from "./status-bar";
+import { BeautifulPdfDialog } from "./beautiful-pdf-dialog";
 import styles from "./doc.module.css";
 
 const FORMATS: { format: string; label: string }[] = [
@@ -98,6 +100,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
   const pendingSuggestions = useEditorState({ editor, selector: ({ editor: current }) => current ? suggestionsIn(current.state.doc).length : 0 }) ?? 0;
   const [shareOpen, setShareOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [pdfTheme, setPdfTheme] = useState<Theme | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const back = doc.path.length ? { href: `/library/${doc.path[doc.path.length - 1].id}`, label: doc.path[doc.path.length - 1].name } : { href: doc.role === "owner" ? "/library" : "/shared", label: doc.role === "owner" ? "My docs" : "Shared with me" };
 
@@ -259,6 +262,10 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
             <DropdownMenuSub>
               <DropdownMenuSubTrigger icon={<Download size={16} />}>Download as</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
+                {doc.kind === "doc" ? <>
+                  <DropdownMenuItem disabled={!editor} onSelect={() => setPdfTheme(currentTheme())}>Beautiful PDF…</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </> : null}
                 {FORMATS.map(f => (
                   <DropdownMenuItem key={f.format} onSelect={() => download(f.format)}>
                     {f.label}
@@ -314,6 +321,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
         </DropdownMenuRoot>
       </div>
       {shareOpen ? <ShareDialog kind="docs" id={doc.id} title={doc.title} open={shareOpen} onOpenChange={setShareOpen} /> : null}
+      {pdfTheme ? <BeautifulPdfDialog id={doc.id} title={doc.title} initialTheme={pdfTheme} live={live} onClose={() => setPdfTheme(null)} /> : null}
       {moveOpen ? (
         <MoveDialog
           open={moveOpen}

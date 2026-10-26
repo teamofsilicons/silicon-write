@@ -11,6 +11,8 @@ without a session). The live editor gets a short-lived ticket from the service a
 
 ## Run locally
 
+Beautiful PDF exports use the existing HTML export and a network-isolated Chromium renderer with Write's shared CSS and embedded fonts. `GET /api/v1/docs/{id}/beautiful-pdf?theme=light|dark` applies the same document permissions and email-view grants as other downloads. Linux deployments bundle `@sparticuz/chromium`; macOS development uses installed Google Chrome. Set `WRITE_PDF_CHROME_PATH` to use another local Chrome/Chromium executable. The PDF response streams directly, and the renderer closes when the download completes or is cancelled. Export appearance does not change the saved site theme.
+
 Node 24 or later and pnpm 10.33. `.env.local` needs `APP_ID=write`, `APP_SECRET` (the local `write` app's secret),
 `ACCOUNTS_URL=http://localhost:9890`, `ACCOUNTS_API_URL=http://127.0.0.1:9889`, `APP_API_URL=http://127.0.0.1:4371`,
 `SESSION_SECRET` (32+ random bytes), `PUBLIC_URL=http://localhost:4370`, `EXTRA_IMG_ORIGINS=http://127.0.0.1:9894`.

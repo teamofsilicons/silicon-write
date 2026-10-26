@@ -57,6 +57,8 @@ Silicon Write handles every common document format. Any of these can be opened, 
 
 Formatting that Markdown has no way of writing, like underline or text colour, is never dropped. It stays in the doc and comes back out in every format that supports it.
 
+The website also offers **Beautiful PDF** under **More → Download as** for text docs. It uses Write's own fonts, typography, colors and generous spacing on paginated A4 pages, with selectable text. Choose Light or Dark for the export; the initial choice matches the appearance currently on screen, including when following System. This choice does not change the website's appearance. Pending edits save before export; comments and unaccepted suggestions are omitted, as with the other downloads.
+
 A PDF opens as it is, to read and comment on. It can be turned into a normal doc to edit it.
 
 
