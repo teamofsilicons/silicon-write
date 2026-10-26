@@ -6,7 +6,7 @@ import type { Editor } from "@tiptap/react";
 import { ArrowUpRight, X } from "lucide-react";
 import { Popover, PopoverContent } from "@/components/silicon-ui/popover/popover";
 import type { Account, Thread } from "@/lib/write/types";
-import { ThreadCard } from "./comments-panel";
+import { focusCommentReply, ThreadCard } from "./comments-panel";
 import { useMentionPeople } from "./selection-comment";
 import { threadAnchor } from "./thread-anchor";
 import styles from "./comments.module.css";
@@ -87,8 +87,8 @@ export function FocusedComment({ docId, thread, account, editor, onClose, onAll 
       onOpenAutoFocus={event => {
         event.preventDefault();
         returnFocus.current = document.querySelector<HTMLElement>(`[data-comment-marker~="${CSS.escape(thread.id)}"]`) ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-        // Keep the reply blank and the page still; the next Tab reaches the note's controls.
-        card.current?.focus({ preventScroll: true });
+        // Open ready to reply, while keeping the page still. Resolved threads have no input.
+        if (!focusCommentReply(card.current)) card.current?.focus({ preventScroll: true });
       }}
       onEscapeKeyDown={() => { restoreFocus.current = true; }}
       onCloseAutoFocus={event => {

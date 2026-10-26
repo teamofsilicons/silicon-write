@@ -619,7 +619,7 @@ export const CommentThread = forwardRef<HTMLElement, CommentThreadProps>(functio
               ? <ul className={styles.list}><AnimatePresence initial={false}>{list.map(comment => renderComment(comment, 0))}</AnimatePresence></ul>
               : <p className={styles.empty}>{t.empty}</p>}
 
-            <div className={styles.composerArea}>
+            <div className={styles.composerArea} data-comment-reply>
               <AnimatePresence initial={false}>
                 {replyTo && <motion.div key="replying" className={styles.replying} {...grow}>
                   <span className={styles.replyingInner}>

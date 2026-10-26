@@ -47,6 +47,15 @@ function toThreadComments(thread: Thread): ThreadComment[] {
   return [{ ...map(first), replies: rest.map(map) }];
 }
 
+/** Start typing in the reply without moving the document or selecting an edit field. */
+export function focusCommentReply(root: HTMLElement | null): boolean {
+  const field = root?.querySelector<HTMLTextAreaElement>("[data-comment-reply] textarea:not(:disabled)");
+  if (!field) return false;
+  field.focus({ preventScroll: true });
+  field.setSelectionRange(field.value.length, field.value.length);
+  return true;
+}
+
 export function ThreadCard({ thread, active, account, people, onActivate, docId, scrollToActive = false }: { thread: Thread; active: boolean; account: Account; people: { id: string; name: string; avatar?: string }[]; onActivate?: () => void; docId: string; scrollToActive?: boolean }) {
   const client = useQueryClient();
   const ref = useRef<HTMLDivElement>(null);
@@ -104,7 +113,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   </>;
   return (
     <div ref={ref} className={commentStyles.threadCard} data-active={active ? "" : undefined} data-thread-card={thread.id}>
-      {onActivate ? <button type="button" className={commentStyles.threadQuote} title="Show comment in document" onClick={onActivate}>{quoteContent}</button> : <div className={commentStyles.threadQuote}>{quoteContent}</div>}
+      {onActivate ? <button type="button" className={commentStyles.threadQuote} title="Show comment in document" onClick={() => { onActivate(); focusCommentReply(ref.current); }}>{quoteContent}</button> : <div className={commentStyles.threadQuote}>{quoteContent}</div>}
       <CommentThread
         comments={comments}
         onCommentsChange={onChange}

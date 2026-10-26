@@ -23,6 +23,11 @@
 .prose p { margin: 0; }
 .prose p + p { margin-top: 1em; }
 
+/* Cmd/Ctrl-click selects a block. ProseMirror hides the native selection fill,
+   so also undo the site's inverted selection text or the block disappears. */
+.prose:global(.ProseMirror-hideselection) *::selection { background: transparent; color: currentColor; }
+.prose :global(.ProseMirror-selectednode) { outline: 2px solid var(--accent); outline-offset: 3px; }
+
 .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
   font-family: var(--font-body);
   font-weight: 500;
@@ -83,7 +88,6 @@
 
 .prose img { max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 1em auto; }
 .prose img[data-inline-image] { display: inline-block; margin: 0; vertical-align: middle; }
-.prose img:global(.ProseMirror-selectednode) { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .prose table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 1rem; table-layout: fixed; }
 .prose th, .prose td { border: 1px solid var(--border); padding: .45em .65em; vertical-align: top; position: relative; }

@@ -455,6 +455,47 @@ const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"
 /* ---------------------------------------------------------------------------------------------------------------- */
 
 test.describe("writing", () => {
+  test("Cmd/Ctrl-click keeps selected blocks visible in light and dark mode", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Block selection ${tag()}`, '## A visible heading\n\nA paragraph with **bold words**, `inline code` and <span style="color: #B42318">colored words</span>.\n\n> A visible quotation.\n\n- A visible list item.');
+    await openDoc(page, doc.id);
+    const editor = editorOf(page);
+    const original = await markdownOf(page, doc.id);
+    const modifier = process.platform === "darwin" ? "Meta" : "Control";
+    for (const theme of ["Light", "Dark"] as const) {
+      await page.getByRole("button", { name: "More", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Appearance", exact: true }).hover();
+      await page.getByRole("menuitemradio", { name: theme, exact: true }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme.toLowerCase());
+      for (const mode of ["Editing", "Suggesting"] as const) {
+        await chooseDocMode(page, mode);
+        for (const block of [editor.locator("h2"), editor.locator(":scope > p"), editor.locator("blockquote p"), editor.locator("li p")]) {
+          await block.click({ modifiers: [modifier] });
+          await expect(block).toHaveClass(/ProseMirror-selectednode/);
+          // A transparent native selection must retain every run's actual text color.
+          // Visibility assertions alone miss the old bug: the text existed but matched the paper.
+          const colors = await block.evaluate(node => [node, ...node.querySelectorAll("*")].map(element => ({
+            text: getComputedStyle(element).color,
+            selected: getComputedStyle(element, "::selection").color,
+            fill: getComputedStyle(element, "::selection").backgroundColor,
+          })));
+          for (const color of colors) {
+            expect(color.selected).toBe(color.text);
+            expect(color.fill).toBe("rgba(0, 0, 0, 0)");
+          }
+          await expect(block).toHaveCSS("outline-style", "solid");
+        }
+        await editor.locator("h2").click();
+        await select(page, "A visible heading");
+        await expect(editor).not.toHaveClass(/ProseMirror-hideselection/);
+        const selection = await editor.locator("h2").evaluate(element => getComputedStyle(element, "::selection").backgroundColor);
+        expect(selection).not.toBe("rgba(0, 0, 0, 0)");
+      }
+    }
+    await expectMarkdown(page, doc.id, original);
+    await context.close();
+  });
+
   test("typing and every toolbar format reach the service's Markdown exactly", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Formats ${tag()}`);
@@ -1709,6 +1750,11 @@ test.describe("comments", () => {
     await expect(threadCards(page)).toHaveCount(1);
     await expect(focused).toContainText("Only the first note.");
     await expect(focused).not.toContainText("Only the second note.");
+    const reply = focused.getByRole("combobox", { name: "Reply, or @mention someone" });
+    await expect(reply).toBeFocused();
+    await page.keyboard.type("A draft reply");
+    await expect(reply).toHaveValue("A draft reply");
+    await expectMarkdown(page, doc.id, "Alpha paragraph here.\n\nBeta paragraph here.\n");
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(before);
     await expect(page.getByRole("complementary", { name: "All comments", exact: true })).toBeHidden();
 
@@ -1718,16 +1764,24 @@ test.describe("comments", () => {
     await expect(marker).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(focused).toBeVisible();
+    await expect(reply).toBeFocused();
+    await page.keyboard.type(" continues here.");
+    await expect(reply).toHaveValue("A draft reply continues here.");
+    await reply.fill("");
     await focused.getByRole("button", { name: "All comments", exact: true }).click();
     const all = page.getByRole("complementary", { name: "All comments", exact: true });
     await expect(all).toBeVisible();
     await expect(focused).toBeHidden();
     await expect(threadCards(page)).toHaveCount(2);
+    const firstCard = all.locator(`[data-thread-card="${first.id}"]`);
+    await firstCard.getByTitle("Show comment in document").click();
+    await expect(firstCard.getByRole("combobox", { name: "Reply, or @mention someone" })).toBeFocused();
     await all.getByRole("button", { name: "Close comments" }).click();
 
     // Text opens the same focused mode. Resolving does not replace it with another thread.
     await editorOf(page).locator(`[data-thread="${second.id}"]`).click();
     await expect(focused).toContainText("Only the second note.");
+    await expect(reply).toBeFocused();
     await focused.getByRole("button", { name: "Resolve", exact: true }).click();
     await expect(focused).toContainText("Resolved comment");
     await expect(threadCards(page)).toHaveCount(1);
@@ -1740,6 +1794,7 @@ test.describe("comments", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator(`[data-comment-marker="${second.id}"]`).click();
     await expect(focused).toBeVisible();
+    await expect(reply).toBeFocused();
     const box = (await focused.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(390);
