@@ -1183,7 +1183,7 @@ test.describe("together", () => {
 /* ---------------------------------------------------------------------------------------------------------------- */
 
 test.describe("comments", () => {
-  test("in Reading mode, selecting text opens the comment box at once and Enter posts it", async ({ browser }) => {
+  test("in Reading mode, selecting text waits for Comment and Enter posts it", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Reading ${tag()}`, "Opening line.\n\nThe quick brown fox jumps over the lazy dog.");
     await openDoc(page, doc.id);
@@ -1191,15 +1191,27 @@ test.describe("comments", () => {
     await expect(page.getByRole("button", { name: "Mode: Reading", exact: true })).toBeVisible();
     await expect(toolbarOf(page)).toBeHidden();
     await expect(editorOf(page)).toHaveAttribute("contenteditable", "false");
-    // Escape closes the box without posting anything.
+    // A paused selection stays selected until Comment is explicitly chosen.
     await dragSelect(page, "Opening line");
     const box = newCommentBox(page);
+    const pill = page.locator('[class*="commentPill"]').getByRole("button", { name: "Comment" });
+    await page.waitForTimeout(1_000);
+    await expect(box).toBeHidden();
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("Opening line");
+    expect(await threadsOf(page, doc.id)).toHaveLength(0);
+    await pill.click();
     await expect(box).toBeVisible({ timeout: 2_000 });
+    await expect(box).toContainText("“Opening line”");
+    // Escape closes the box without posting anything.
     await page.keyboard.press("Escape");
     await expect(box).toBeHidden();
     await page.mouse.click(10, 300);
 
     await dragSelect(page, "brown fox jumps");
+    await page.waitForTimeout(1_000);
+    await expect(box).toBeHidden();
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("brown fox jumps");
+    await pill.click();
     await expect(box).toBeVisible({ timeout: 2_000 });
     await expect(box).toContainText("“brown fox jumps”");
     await expect(page.locator('[class*="commentPill"]')).toHaveCount(0);
@@ -1697,9 +1709,24 @@ test.describe("suggestions and roles", () => {
     await page.keyboard.press("Escape");
     await expect(toolbarOf(page)).toBeHidden();
     await expect(editorOf(page)).toHaveAttribute("contenteditable", "false");
-    // Selecting opens the comment box straight away.
+    // Selecting, pausing, changing the selection and moving away never starts a comment.
+    const pill = page.locator('[class*="commentPill"]').getByRole("button", { name: "Comment" });
+    for (const text of ["commenter", "reads this line"]) {
+      await select(page, text, { focus: false });
+      await page.waitForTimeout(1_000);
+      await expect(newCommentBox(page)).toBeHidden();
+      await expect(pill).toBeVisible();
+      expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(text);
+    }
+    expect(await threadsOf(owner.page, doc.id)).toHaveLength(0);
+    await page.mouse.click(10, 300);
+    await expect(pill).toBeHidden();
+    await expect(newCommentBox(page)).toBeHidden();
     await dragSelect(page, "reads this line");
+    await pill.click();
     await expect(newCommentBox(page)).toBeVisible({ timeout: 2_000 });
+    await expect(newCommentBox(page)).toContainText("“reads this line”");
+    await expect(newCommentBox(page).getByRole("combobox", { name: "Comment" })).toBeFocused();
     await page.keyboard.type("Could it say more?");
     await page.keyboard.press("Enter");
     await expect(threadCards(page)).toHaveCount(1);
@@ -1720,6 +1747,7 @@ test.describe("suggestions and roles", () => {
     await expect(toolbarOf(page).getByRole("button", { name: "Bold", exact: true })).toBeVisible();
     await shot(page, "commenter-suggesting");
     // A commenter can propose changes but cannot decide them.
+    await openComments(page);
     await expect(suggestionsList(page)).toBeVisible();
     await expect(suggestionsList(page).getByRole("button", { name: /^(Accept|Reject)/ })).toHaveCount(0);
     await openDoc(owner.page, doc.id);

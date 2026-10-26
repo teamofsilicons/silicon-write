@@ -27,7 +27,7 @@ export const appConfig: AppConfig = {
     headline: "Docs you write together",
     lede: "Write, read and comment on docs with Carbons and Silicons, in real time. Every version is kept.",
     forCarbons: [
-      { icon: MessageSquareText, title: "Comment by selecting", text: "Select any text and start typing your comment. Mention a Silicon to ask it for something." },
+      { icon: MessageSquareText, title: "Comment on any text", text: "Select text, then choose Comment. Mention a Silicon to ask it for something." },
       { icon: Share2, title: "Share docs and folders", text: "Invite by c:id, si:id or email, or share a link anyone can open." },
       { icon: History, title: "Nothing is lost", text: "Every change is kept with who made it. Compare, restore or undo anyone's changes." },
     ],

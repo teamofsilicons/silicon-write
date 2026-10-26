@@ -447,7 +447,6 @@ export function DocPage({ initialDoc, account }: DocPageProps) {
               editor={editor}
               docId={docId}
               account={account}
-              autoOpen={mode === "viewing"}
               pending={pending}
               onPending={setPending}
               onStart={range => startComment({ range })}

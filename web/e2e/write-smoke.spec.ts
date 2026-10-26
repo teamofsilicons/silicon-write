@@ -1,6 +1,6 @@
 /**
  * The core path in a real browser: a Carbon signs in, makes a doc, types in it (the service keeps every change), and
- * comments by selecting text.
+ * comments by selecting text and choosing Comment.
  */
 import { expect, test } from "@playwright/test";
 import { accountsSession, runAccounts, signIn } from "./support";
@@ -26,11 +26,12 @@ test("write a doc and comment on it", async ({ browser }) => {
     await expect
       .poll(async () => (await (await page.request.get(`/api/v1/docs/${docId}/markdown`)).json()).markdown as string, { timeout: 15_000 })
       .toContain("The quick brown fox");
-    // Reading mode: selecting text opens the comment box straight away.
+    // Reading mode: choose Comment beside the selected text to open the composer.
     await chooseDocMode(page, "Reading");
     const sentence = editor.getByText("The quick brown fox jumps over the lazy dog.");
     await sentence.selectText();
     const box = page.getByRole("dialog", { name: "New comment" });
+    await page.locator('[class*="commentPill"]').getByRole("button", { name: "Comment" }).click();
     await expect(box).toBeVisible();
     await page.keyboard.type("Is this the right sentence?");
     await page.keyboard.press("Enter");

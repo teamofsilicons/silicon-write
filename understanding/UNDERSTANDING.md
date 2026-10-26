@@ -99,7 +99,7 @@ Anyone who can edit can switch to suggesting, so their changes become suggestion
 
 # Comments
 
-Commenting has to be as easy as selecting text. For anyone who can't edit, or who is just reading, selecting text opens the comment box right there, with no button or menu in between. Editors get a small `Comment` button next to their selection and a keyboard shortcut.
+Selecting text never opens the comment box automatically, in any mode. Anyone who can comment gets a small `Comment` button next to their selection and a keyboard shortcut. They can freely select text, pause, change the selection or move away; the comment box opens only when they explicitly choose to comment.
 
 A comment can be on any part of a doc:
 - some text

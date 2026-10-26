@@ -9,7 +9,7 @@
  * maths, tables, checklists, images, find and replace, and the `/` and `[[` menus.
  *
  * Modes: `editing` (editors), `suggesting` (edits become suggestions; commenters can only suggest) and `viewing`
- * (reading: selecting text opens a comment).
+ * (reading or commenting without changing the document).
  */
 import { useEffect, useMemo, useRef } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";

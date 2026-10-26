@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Commenting by selecting (UNDERSTANDING.md, "Comments"): for anyone reading (viewing or commenting mode), selecting
- * text opens the comment box right there, with nothing in between. Editors get a small Comment button next to their
- * selection (or ⌘⌥M). Mentions offer the doc's people and are written as @c:id / @si:id.
+ * Selecting text offers a small Comment button in every mode; only an explicit comment action (or ⌘⌥M) opens the
+ * composer. Mentions offer the doc's people and are written as @c:id / @si:id.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
@@ -61,18 +60,17 @@ export function useMentionPeople(docId: string, enabled: boolean) {
 }
 
 export function SelectionComment({
-  editor, docId, account, autoOpen, pending, onPending, onStart, onCreated,
+  editor, docId, account, pending, onPending, onStart, onCreated,
 }: {
   editor: Editor | null;
   docId: string;
   account: Account | null;
-  autoOpen: boolean;
   pending: PendingComment | null;
   onPending: (pending: PendingComment | null) => void;
   onStart: (range?: { from: number; to: number }) => void;
   onCreated: (thread: Thread, activate: boolean) => void;
 }) {
-  const [pill, setPill] = useState<{ top: number; left: number } | null>(null);
+  const [pill, setPill] = useState<{ top: number; left: number; range: { from: number; to: number } } | null>(null);
   const { key, value, setValue, clear, appendTranscript } = useCommentDraft(account?.uuid ?? null, docId, pending ? commentAnchorTarget(pending.anchor) : null);
   const voice = useVoiceDraft(key, docId, appendTranscript);
   const [sending, setSending] = useState(false);
@@ -85,8 +83,7 @@ export function SelectionComment({
 
   useLayoutEffect(() => { activePending.current = pending; }, [pending]);
 
-  // Watch the selection (the page's own, so it works in reading mode too, where the editor isn't editable): readers
-  // get the comment box straight away; editors a button.
+  // Watch the page's selection so the Comment button also works when the editor isn't editable.
   useEffect(() => {
     if (!editor) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -98,14 +95,9 @@ export function SelectionComment({
           setPill(null);
           return;
         }
-        if (autoOpen) {
-          setPill(null);
-          if (!pending || !value.text.trim()) onStart(range);
-        } else {
-          const end = editor.view.coordsAtPos(range.to);
-          setPill({ top: end.bottom + 6, left: end.left });
-        }
-      }, autoOpen ? 280 : 120);
+        const end = editor.view.coordsAtPos(range.to);
+        setPill({ top: end.bottom + 6, left: end.left, range });
+      }, 120);
     };
     document.addEventListener("selectionchange", check);
     editor.on("selectionUpdate", check);
@@ -114,7 +106,7 @@ export function SelectionComment({
       editor.off("selectionUpdate", check);
       if (timer) clearTimeout(timer);
     };
-  }, [editor, autoOpen, onStart, pending, value.text]);
+  }, [editor]);
 
   useLayoutEffect(() => {
     if (pending) input.current?.focus();
@@ -216,7 +208,7 @@ export function SelectionComment({
     <>
       {pill && !pending ? (
         <div className={`${styles.commentPill} ${commentStyles.commentPill}`} style={position(pill.top - 8, pill.left)}>
-          <Button variant="secondary" size="sm" onMouseDown={e => e.preventDefault()} onClick={() => onStart()}>
+          <Button variant="secondary" size="sm" onMouseDown={e => e.preventDefault()} onClick={() => onStart(pill.range)}>
             <MessageSquarePlus size={15} aria-hidden="true" /> Comment
           </Button>
         </div>
