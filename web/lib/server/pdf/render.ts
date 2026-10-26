@@ -9,13 +9,14 @@ let chromiumPath: Promise<string> | undefined;
 function printStyles(): Promise<string> {
   stylesPromise ??= (async () => {
     const root = process.cwd();
-    const [foundation, tokens, fonts, editor, print, mathFont] = await Promise.all([
+    const [foundation, tokens, fonts, editor, print, mathFont, monoFont] = await Promise.all([
       readFile(join(root, "components/silicon-ui/foundation.css"), "utf8"),
       readFile(join(root, "styles/tokens.css"), "utf8"),
       readFile(join(root, "styles/fonts.css"), "utf8"),
       readFile(join(root, "components/editor/editor.module.css"), "utf8"),
       readFile(join(root, "lib/server/pdf/print.css"), "utf8"),
       readFile(join(root, "lib/server/pdf/fonts/STIXTwoMath-Regular.ttf")),
+      readFile(join(root, "lib/server/pdf/fonts/JetBrainsMono.ttf")),
     ]);
     let embedded = fonts;
     for (const match of fonts.matchAll(/url\("(\/fonts\/[^"?#]+\.woff2)"\)/g)) {
@@ -23,7 +24,8 @@ function printStyles(): Promise<string> {
       embedded = embedded.replaceAll(match[0], `url("data:font/woff2;base64,${bytes.toString("base64")}")`);
     }
     const math = `@font-face { font-family: "STIX Two Math"; src: url("data:font/ttf;base64,${mathFont.toString("base64")}") format("truetype"); }`;
-    return [foundation, tokens, embedded, math, editor.replace(/:global\(([^)]+)\)/g, "$1"), print].join("\n");
+    const mono = `@font-face { font-family: "JetBrains Mono"; font-weight: 100 800; src: url("data:font/ttf;base64,${monoFont.toString("base64")}") format("truetype"); }`;
+    return [foundation, tokens, embedded, math, mono, editor.replace(/:global\(([^)]+)\)/g, "$1"), print].join("\n");
   })().catch(error => { stylesPromise = undefined; throw error; });
   return stylesPromise;
 }

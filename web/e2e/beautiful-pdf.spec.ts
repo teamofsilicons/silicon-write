@@ -70,6 +70,7 @@ test("Beautiful PDF downloads Write-styled light and dark pages, defaults to the
     const dialog = await exportDialog(page);
     await expect(dialog.getByRole("radio", { name: "Dark", exact: true })).toBeChecked();
     await dialog.getByRole("radio", { name: "Light", exact: true }).check();
+    await expect(dialog).toHaveCSS("transform", "none");
     await page.screenshot({ path: `${output}/dialog.png` });
     const lightDownload = page.waitForEvent("download");
     await dialog.getByRole("button", { name: "Download PDF", exact: true }).click();
@@ -97,6 +98,7 @@ test("Beautiful PDF downloads Write-styled light and dark pages, defaults to the
     const lightDefault = await exportDialog(page);
     await expect(lightDefault.getByRole("radio", { name: "Light", exact: true })).toBeChecked();
     await page.setViewportSize({ width: 390, height: 844 });
+    await expect(lightDefault).toHaveCSS("transform", "none");
     await page.screenshot({ path: `${output}/dialog-mobile.png` });
     await expect(lightDefault.getByRole("button", { name: "Download PDF", exact: true })).toBeInViewport();
     await lightDefault.getByRole("button", { name: "Cancel", exact: true }).click();

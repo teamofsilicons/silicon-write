@@ -10,6 +10,7 @@
     color: var(--text-muted);
   }
 }
+:root { --font-mono: "JetBrains Mono", monospace; }
 html { font-size: 16px; background: var(--background); color: var(--foreground); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 body { margin: 0; padding: 0; max-width: none; background: transparent; font-family: var(--font-body); }
 * { box-sizing: border-box; }
