@@ -10,7 +10,7 @@ import { NodeSelection } from "@tiptap/pm/state";
 import { Crop, MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/silicon-ui/button/button";
 import { rangeOf } from "@/components/editor/anchors";
-import type { Thread } from "@/lib/write/types";
+import type { Anchor, Thread } from "@/lib/write/types";
 import styles from "./doc.module.css";
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -21,10 +21,11 @@ function imageBox(editor: Editor, pos: number): DOMRect | null {
   return img ? img.getBoundingClientRect() : null;
 }
 
-export function ImageAreas({ editor, threads, activeThread, canComment, onActivate, onCommentArea }: {
+export function ImageAreas({ editor, threads, activeThread, pending, canComment, onActivate, onCommentArea }: {
   editor: Editor;
   threads: Thread[];
   activeThread: string | null;
+  pending: Anchor | null;
   canComment: boolean;
   onActivate: (id: string) => void;
   onCommentArea: (imagePos: number, rect: Rect | undefined, at: { top: number; left: number }) => void;
@@ -61,9 +62,25 @@ export function ImageAreas({ editor, threads, activeThread, canComment, onActiva
     .filter(Boolean) as { thread: Thread; box: DOMRect; rect: Rect }[];
 
   const selectedBox = selected !== null ? imageBox(editor, selected) : null;
+  const pendingRange = pending?.kind === "image" && pending.rect ? rangeOf(editor, pending) : null;
+  const pendingBox = pendingRange ? imageBox(editor, pendingRange.from) : null;
+  // The selected image can pass behind the sticky document chrome. Keep its
+  // actions below the actual bars while any of the image remains on screen.
+  const page = editor.view.dom.closest("[data-panel]");
+  const chromeBottom = Math.max(0, ...Array.from(page?.querySelectorAll("header, #doc-formatting") ?? []).map(bar => bar.getBoundingClientRect().bottom));
+  const imageVisible = selectedBox && selectedBox.bottom > chromeBottom && selectedBox.top < window.innerHeight;
 
   return (
     <>
+      {pendingBox && pending?.rect ? (
+        <span
+          role="img"
+          aria-label="Selected area for new comment"
+          className={`${styles.imageArea} ${styles.pendingArea}`}
+          data-active=""
+          style={{ position: "fixed", left: pendingBox.left + pending.rect.x * pendingBox.width, top: pendingBox.top + pending.rect.y * pendingBox.height, width: pending.rect.w * pendingBox.width, height: pending.rect.h * pendingBox.height }}
+        />
+      ) : null}
       {areas.map(({ thread, box, rect }) => (
         <button
           key={thread.id}
@@ -75,8 +92,8 @@ export function ImageAreas({ editor, threads, activeThread, canComment, onActiva
           onClick={() => onActivate(thread.id)}
         />
       ))}
-      {canComment && selectedBox && !drawing ? (
-        <div className={styles.imageBar} style={{ position: "fixed", left: selectedBox.left + 8, top: Math.max(76, selectedBox.top - 40) }}>
+      {canComment && selectedBox && imageVisible && !drawing ? (
+        <div className={styles.imageBar} style={{ position: "fixed", left: Math.max(16, selectedBox.left + 8), top: Math.max(chromeBottom + 8, selectedBox.top - 40) }}>
           <Button variant="secondary" size="sm" onClick={() => {
             const coords = { top: selectedBox.bottom, left: selectedBox.left };
             onCommentArea(selected!, undefined, coords);

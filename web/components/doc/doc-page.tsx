@@ -392,7 +392,7 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
             liveError ? <div className={styles.loading} role="alert"><p className={styles.error}>{liveError}</p><button type="button" className={styles.textButton} onClick={() => window.location.reload()}>Try again</button></div> : <ContentLoading />
           ) : null}
           {doc.kind === "pdf" ? (
-            <PdfView doc={doc} canComment={canComment} canEdit={canEdit} threads={threads} activeThread={activeThread} onActivate={openThread} onCommentArea={(anchor, at) => { openThread(null); setPending({ anchor, ...at }); }} />
+            <PdfView doc={doc} canComment={canComment} canEdit={canEdit} threads={threads} activeThread={activeThread} pending={pending?.anchor ?? null} onActivate={openThread} onCommentArea={(anchor, at) => { openThread(null); setPending({ anchor, ...at }); }} />
           ) : live && liveReady ? (
             <div className={styles.column} hidden={!contentReady}>
               <DocEditor
@@ -413,7 +413,7 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
               {editor ? <EditorMenu editor={editor} docId={docId} live={live} canEdit={canEdit} canComment={canComment} writable={writable && mode !== "viewing"} onComment={() => startComment()} onReview={() => showPanel("comments")} /> : null}
               {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={activeThread} onActivate={openThread} /> : null}
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
-              {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
+              {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} pending={pending?.anchor ?? null} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
             </div>
           ) : null}
           {canComment && (editor || doc.kind === "pdf") ? (

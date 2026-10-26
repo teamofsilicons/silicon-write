@@ -1332,6 +1332,138 @@ test.describe("comments", () => {
     });
   }
 
+  test("Back always returns Home for owned and shared documents, including documents in folders", async ({ browser }) => {
+    const owner = await signedIn(browser, "carbon"), friend = await signedIn(browser, "friend");
+    const folder = await ok<{ id: string }>(owner.page, "POST", "/v1/folders", { name: `Back home ${tag()}` });
+    const docs = [await newDoc(owner.page, `Home root ${tag()}`, "Root document."), await ok<Doc>(owner.page, "POST", "/v1/docs", { title: `Home folder ${tag()}`, folder_id: folder.id, markdown: "Nested document." })];
+    for (const doc of docs) {
+      await share(owner.page, doc.id, friend.account.id, "commenter");
+      for (const { page } of [owner, friend]) {
+        await openDoc(page, doc.id);
+        const back = page.getByRole("link", { name: "Back to My docs" });
+        await expect(back).toHaveAttribute("href", "/library");
+        await back.click();
+        await page.waitForURL(/\/library$/);
+        await expect(page.getByRole("heading", { name: "My docs", exact: true })).toBeVisible();
+      }
+    }
+    await owner.context.close();
+    await friend.context.close();
+  });
+
+  test("the comment caret follows visible wrapped text after a mention", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Mention caret ${tag()}`, "A passage to discuss.");
+    await openDoc(page, doc.id);
+    await select(page, "passage");
+    await page.keyboard.press("ControlOrMeta+Alt+m");
+    const composer = newCommentBox(page);
+    const checkCaret = async (field: Locator, width: number) => {
+      await page.setViewportSize({ width, height: 844 });
+      await field.fill("@");
+      await page.getByRole("listbox", { name: "People" }).getByRole("option").first().click();
+      await page.keyboard.type("how is the graph decided?");
+      const value = await field.inputValue();
+      const visibleEnd = await field.evaluate(area => {
+        const backdrop = area.previousElementSibling!;
+        const walker = document.createTreeWalker(backdrop, NodeFilter.SHOW_TEXT);
+        let last: Text | null = null;
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.textContent?.replace(/\u200b/g, "").length) last = node as Text;
+        if (!last) throw new Error("The visible comment has no text");
+        const end = last.textContent!.replace(/\u200b+$/, "").length;
+        const range = document.createRange();
+        range.setStart(last, end - 1);
+        range.setEnd(last, end);
+        const box = range.getBoundingClientRect();
+        return { x: box.right + 1, y: box.top + box.height / 2 };
+      });
+      // Click immediately after the rendered question mark. A differently wrapped
+      // textarea puts the caret inside the sentence instead of at its visible end.
+      await page.mouse.click(visibleEnd.x, visibleEnd.y);
+      expect(await field.evaluate((area: HTMLTextAreaElement) => area.selectionStart)).toBe(value.length);
+      await page.keyboard.type(" Yes.");
+      await expect(field).toHaveValue(`${value} Yes.`);
+    };
+    const field = composer.getByRole("combobox", { name: "Comment", exact: true });
+    await checkCaret(field, 1440);
+    await checkCaret(field, 390);
+    await shot(page, "comment-mention-caret");
+    await composer.getByRole("button", { name: "Comment", exact: true }).click();
+    const reply = page.getByRole("dialog", { name: "Comment thread" }).getByRole("combobox", { name: "Reply, or @mention someone" });
+    // Replies use a native textarea, but still need space for the microphone.
+    expect(await reply.evaluate(area => parseFloat(getComputedStyle(area).paddingRight))).toBeGreaterThanOrEqual(42);
+    await reply.fill("A reply with room for its microphone.");
+    await reply.press("End");
+    await page.keyboard.type(" Yes.");
+    await expect(reply).toHaveValue("A reply with room for its microphone. Yes.");
+    await context.close();
+  });
+
+  test("selected image comment actions stay below the header while the image is scrolled", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Image controls ${tag()}`, "Image review.");
+    const src = await uploadImage(page, doc.id, "chart.png", png(480, 480));
+    await ok(page, "PUT", `/v1/docs/${doc.id}/markdown`, { markdown: `Image review.\n\n![chart](${src})\n\n${Array.from({ length: 20 }, () => "More document text.").join("\n\n")}\n` });
+    await openDoc(page, doc.id);
+    const image = editorOf(page).locator("img");
+    await image.click();
+    for (const formatOpen of [true, false]) {
+      if (!formatOpen) await page.getByRole("button", { name: "Format", exact: true }).click();
+      await image.evaluate(img => {
+        const chrome = Math.max(...Array.from(document.querySelectorAll('header, #doc-formatting')).map(e => e.getBoundingClientRect().bottom));
+        window.scrollBy(0, img.getBoundingClientRect().top - chrome + 60);
+      });
+      for (const name of ["Comment on image", "Comment on an area"]) {
+        const button = page.getByRole("button", { name, exact: true });
+        await expect.poll(() => button.evaluate(node => {
+          const box = node.getBoundingClientRect();
+          const chrome = Math.max(...Array.from(document.querySelectorAll('header, #doc-formatting')).map(e => e.getBoundingClientRect().bottom));
+          const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return box.top >= chrome && node.contains(hit);
+        })).toBe(true);
+      }
+    }
+    await page.getByRole("button", { name: "Comment on an area", exact: true }).click();
+    await expect(page.getByRole("application", { name: "Drag over the image to choose the area" })).toBeVisible();
+    await context.close();
+  });
+
+  test("a selected image area stays highlighted while drafting and clears on cancellation", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Image draft highlight ${tag()}`, "Image review.");
+    const src = await uploadImage(page, doc.id, "chart.png", png(480, 240));
+    await ok(page, "PUT", `/v1/docs/${doc.id}/markdown`, { markdown: `Image review.\n\n![chart](${src})\n\n${Array.from({ length: 20 }, () => "More document text.").join("\n\n")}\n` });
+    await openDoc(page, doc.id);
+    const image = editorOf(page).locator("img");
+    await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(480);
+    const draft = page.getByRole("img", { name: "Selected area for new comment" });
+    const composer = newCommentBox(page);
+    for (const post of [false, true]) {
+      await image.click();
+      await page.getByRole("button", { name: "Comment on an area", exact: true }).click();
+      const canvas = page.getByRole("application", { name: "Drag over the image to choose the area" });
+      await dragOver(page, (await canvas.boundingBox())!, [0.55, 0.15], [0.85, 0.55]);
+      await expect(composer).toBeVisible();
+      await expect(draft).toBeVisible();
+      const assertArea = async () => {
+        await expect.poll(() => draft.evaluate(area => {
+          const box = document.querySelector('.ProseMirror img')!.getBoundingClientRect(), highlighted = area.getBoundingClientRect();
+          return [(highlighted.x - box.x) / box.width, (highlighted.y - box.y) / box.height, highlighted.width / box.width, highlighted.height / box.height].map(n => Math.round(n * 100));
+        })).toEqual([55, 15, 30, 40]);
+      };
+      await assertArea();
+      await composer.getByRole("combobox", { name: "Comment", exact: true }).fill("This area stays visible while I write.");
+      await page.mouse.move(20, 800);
+      await page.mouse.wheel(0, 100);
+      await assertArea();
+      await shot(page, "comment-image-pending-highlight");
+      await composer.getByRole("button", { name: post ? "Comment" : "Discard", exact: true }).click();
+      await expect(draft).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Comment on this area" })).toHaveCount(post ? 1 : 0);
+    }
+    await context.close();
+  });
+
   test("the toolbar's Comment button with nothing selected comments on the whole section", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Section comment ${tag()}`, "First section text.\n\nSecond section text.");

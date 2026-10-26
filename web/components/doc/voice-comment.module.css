@@ -10,7 +10,8 @@
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
 .field { position: relative; min-width: 0; }
-.field[data-mic] textarea { padding-right: 42px !important; padding-bottom: 34px !important; }
+.field[data-mic] { --mention-padding-right: 42px; --mention-padding-bottom: 34px; }
+.field[data-mic] textarea { padding-right: var(--mention-padding-right) !important; padding-bottom: var(--mention-padding-bottom) !important; }
 .mic { position: absolute; right: 6px; bottom: 6px; padding: 6px !important; min-width: 30px; }
 .recorder { padding: 12px; background: var(--surface-secondary, #f7f7f7); border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
 .recordingHeader { display: flex; justify-content: space-between; gap: 8px; font-size: .75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }

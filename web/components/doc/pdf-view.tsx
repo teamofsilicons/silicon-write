@@ -21,12 +21,13 @@ interface PageImage {
   height: number;
 }
 
-export function PdfView({ doc, canComment, canEdit, threads, activeThread, onActivate, onCommentArea }: {
+export function PdfView({ doc, canComment, canEdit, threads, activeThread, pending, onActivate, onCommentArea }: {
   doc: Doc;
   canComment: boolean;
   canEdit: boolean;
   threads: Thread[];
   activeThread: string | null;
+  pending: Anchor | null;
   onActivate: (id: string) => void;
   onCommentArea: (anchor: Anchor, at: { top: number; left: number }) => void;
 }) {
@@ -149,6 +150,9 @@ export function PdfView({ doc, canComment, canEdit, threads, activeThread, onAct
               ))}
             {draft?.page === page.number && draft.rect ? (
               <span className={styles.pdfDraft} style={{ left: `${draft.rect.x * 100}%`, top: `${draft.rect.y * 100}%`, width: `${draft.rect.w * 100}%`, height: `${draft.rect.h * 100}%` }} />
+            ) : null}
+            {pending?.kind === "pdf" && pending.rect?.page === page.number ? (
+              <span role="img" aria-label="Selected area for new comment" className={`${styles.pdfArea} ${styles.pendingArea}`} data-active="" style={{ left: `${pending.rect.x * 100}%`, top: `${pending.rect.y * 100}%`, width: `${pending.rect.w * 100}%`, height: `${pending.rect.h * 100}%` }} />
             ) : null}
             <span className={styles.pdfPageNumber}>{page.number}</span>
           </div>

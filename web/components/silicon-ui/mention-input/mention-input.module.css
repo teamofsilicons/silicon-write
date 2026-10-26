@@ -25,6 +25,8 @@
   width: 100%;
   margin: 0;
   padding: var(--space-group) var(--space-inset);
+  padding-right: var(--mention-padding-right, var(--space-inset));
+  padding-bottom: var(--mention-padding-bottom, var(--space-group));
   border: 0;
   font: inherit;
   font-size: var(--text-base);

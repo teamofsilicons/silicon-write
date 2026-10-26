@@ -34,6 +34,8 @@ Docs are personal. Every doc belongs to the Carbon or Silicon who created it. Th
 
 An owner can sort their docs into folders, and folders into other folders.
 
+The back button in any open document returns to the main My docs home, including shared documents and documents inside folders.
+
 A doc created inside someone else's shared folder belongs to that folder's owner, so a folder never holds docs its owner doesn't control. The doc still shows who created it.
 
 The owner can transfer a doc or folder to another Carbon or Silicon, who has to accept before it moves. The owner can delete a doc or folder. Anything deleted goes to the trash with its full history, and can be restored from there at any time. It stays in the trash until the owner permanently deletes it, which asks them to confirm first. That is the only way anything in Silicon Write is ever truly gone.
@@ -112,6 +114,8 @@ A comment can be on any part of a doc:
 - a whole section, by clicking next to it in the margin
 - a table cell
 - an image, or an area drawn on an image
+
+An area selected on an image or PDF stays highlighted while its comment is being written. Cancelling removes the draft highlight; posting keeps the saved comment's area. A selected image's comment controls stay visible below the document header while the image is on screen.
 
 Comments can be replied to, reacted to, edited, and resolved. Resolved threads can be reopened. A comment stays on its text as the doc changes around it. If that text is deleted, the comment stays, showing the text it was on.
 

@@ -398,8 +398,9 @@ test("New folder, open it, a folder inside it, and the breadcrumbs lead back up"
   const doc = await must<Doc>(page, "GET", `/v1/docs/${docId}`);
   expect(doc.folder_id).toBe(childId);
   expect(doc.path.map(part => part.name)).toEqual([parent, child]);
-  await page.getByRole("link", { name: `Back to ${child}` }).click();
-  await page.waitForURL(new RegExp(`/library/${childId}$`));
+  await page.getByRole("link", { name: "Back to My docs" }).click();
+  await page.waitForURL(/\/library$/);
+  await page.goto(`/library/${childId}`);
   await expect(link(page, child, "Untitled")).toHaveAttribute("href", `/d/${docId}`);
 
   // Up through the breadcrumbs.
@@ -795,7 +796,7 @@ test("the share dialog: share with the friend by c:id, they open it from Shared 
   await expect(editor).toContainText("The brief, for review.");
   await expect(editor).toHaveAttribute("contenteditable", "false");
   await expect(friend.page.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
-  await expect(friend.page.getByRole("link", { name: "Back to Shared with me" })).toBeVisible();
+  await expect(friend.page.getByRole("link", { name: "Back to My docs" })).toHaveAttribute("href", "/library");
   expect((await must<Doc>(friend.page, "GET", `/v1/docs/${doc.id}`)).role).toBe("viewer");
 
   // Made an editor, they can edit.
@@ -1058,7 +1059,7 @@ test("a shared folder: the friend opens it from Shared with me, and a doc they m
   expect(theirDoc.created_by.id).toBe(friend.id);
   expect(theirDoc.folder_id).toBe(team.id);
   expect(theirDoc.role).toBe("editor");
-  await expect(friend.page.getByRole("link", { name: `Back to ${team.name}` })).toBeVisible();
+  await expect(friend.page.getByRole("link", { name: "Back to My docs" })).toHaveAttribute("href", "/library");
   await carbon.page.goto(`/library/${team.id}`);
   const theirs = list(carbon.page, team.name).getByRole("listitem").filter({ has: carbon.page.locator(`a[href="/d/${madeId}"]`) });
   await expect(theirs).toBeVisible();
@@ -1130,12 +1131,12 @@ test("a folder shared as viewer: the friend opens everything in it, can't add, r
   expect((await call(page, "POST", "/v1/docs", { title: "Sneaked in", folder_id: shared.id })).status).toBe(403);
   expect((await call(page, "DELETE", `/v1/docs/${doc.id}`)).status).toBe(403);
 
-  // A doc inside opens read only, with the way back to the folder.
+  // A doc inside opens read only, with the way back to Home.
   await link(page, shared.name, doc.title).click();
   await page.waitForURL(new RegExp(`/d/${doc.id}$`));
   await expect(page.locator(".ProseMirror")).toContainText("Every book we have.");
   await expect(page.locator(".ProseMirror")).toHaveAttribute("contenteditable", "false");
-  await expect(page.getByRole("link", { name: `Back to ${shared.name}` })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to My docs" })).toHaveAttribute("href", "/library");
   // Deeper in, the breadcrumbs start at what was shared.
   await page.goto(`/library/${inner.id}`);
   await expect(crumbs.getByRole("link")).toHaveText(["Shared with me", shared.name]);

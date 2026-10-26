@@ -102,7 +102,6 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
   const [moveOpen, setMoveOpen] = useState(false);
   const [pdfTheme, setPdfTheme] = useState<Theme | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
-  const back = doc.path.length ? { href: `/library/${doc.path[doc.path.length - 1].id}`, label: doc.path[doc.path.length - 1].name } : { href: doc.role === "owner" ? "/library" : "/shared", label: doc.role === "owner" ? "My docs" : "Shared with me" };
 
   const download = (format: string) => {
     // A download, not a page: a link the browser saves.
@@ -173,7 +172,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
     <header className={styles.topBar}>
       <div className={styles.topLeft}>
         {account ? (
-          <Link href={back.href} className={styles.back} data-sq="control" aria-label={`Back to ${back.label}`} title={`Back to ${back.label}`}>
+          <Link href="/library" className={styles.back} data-sq="control" aria-label="Back to My docs" title="Back to My docs">
             <ArrowLeft size={16} aria-hidden="true" />
           </Link>
         ) : (
