@@ -1,0 +1,110 @@
+{
+  "source_revision": "ee501e055cf6cad2124a5557aad93c667cfec316",
+  "deployment": "dpl_6r2XS39UTioiiUns6k9RUhCgKxm5",
+  "previous_deployment": "dpl_H886WyhYCYRNYimNv9XnroczA8nJ",
+  "url": "https://write.teamofsilicons.com",
+  "checked_at": "2026-10-26T22:56:05.254632+00:00",
+  "behavior": [
+    "Text docs offer More > Download as > Beautiful PDF with Light and Dark preview choices.",
+    "Initial export appearance matches the current resolved theme, including System, without changing the app preference.",
+    "Exports embed Write fonts, use editor typography and spacing, A4 pagination, page numbers, uniform theme backgrounds and selectable text.",
+    "Pending edits flush before export; comments and unaccepted suggestions follow existing HTML-export omission behavior.",
+    "The existing authorized HTML export is rendered with scripts disabled and all non-data resource requests blocked.",
+    "PDF responses stream directly and the isolated renderer closes after completion or cancellation."
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "unit_tests_passed": 117,
+    "focused_browser_cases_passed_including_setup": 4,
+    "focused_log": ".dev/beautiful-pdf/final-focused.log",
+    "focused_covers": [
+      "real light and dark downloads",
+      "current theme defaults and unchanged app preference",
+      "recent edits exported",
+      "Unicode filenames",
+      "multi-page rich content, tables, embedded image, math, code and footnotes",
+      "private access and email-view grants including revocation",
+      "invalid theme validation",
+      "errors, retry and cancellation",
+      "mobile dialog"
+    ],
+    "broader_browser": {
+      "passed": 63,
+      "failed": 3,
+      "not_run": 58,
+      "failure_limit": 3,
+      "log": ".dev/beautiful-pdf/full-suite.log",
+      "known_failures": [
+        "editor.spec.ts:1371 image comment toolbar",
+        "editor.spec.ts:2059 PDF comment thread control",
+        "library.spec.ts:674 outdated title-in-banner assertion"
+      ],
+      "baseline_receipt": "deploy/verification-clean-suggestions-20261025.json"
+    },
+    "server_bundle": "Shared CSS, fonts and Chromium traced only into PDF route; no local environment files or test artifacts traced.",
+    "local_visual_pages_checked": {
+      "light": 5,
+      "dark": 5
+    }
+  },
+  "production": {
+    "candidate_render_status": 200,
+    "candidate_render_seconds": 8.174627,
+    "renderer": "Chromium 153",
+    "live_menu_verified": true,
+    "signed_in_chrome_downloads": [
+      {
+        "theme": "light",
+        "path": ".dev/beautiful-pdf/live-light.pdf",
+        "bytes": 68590,
+        "sha256": "1b4b6cfa4355019e60c036c12ceed6a5cea26358fa954d7af4ef6ca0766efa24",
+        "pages": 2,
+        "embedded_fonts": [
+          "BDO Grotesk",
+          "Hedvig Letters Serif",
+          "STIX Two Math",
+          "JetBrains Mono"
+        ],
+        "visually_checked": true
+      },
+      {
+        "theme": "dark",
+        "path": ".dev/beautiful-pdf/live-dark.pdf",
+        "bytes": 68609,
+        "sha256": "a3c6bf5ba7453821077291084238c0f4a0808ea1e441328629595795369d04cd",
+        "pages": 2,
+        "embedded_fonts": [
+          "BDO Grotesk",
+          "Hedvig Letters Serif",
+          "STIX Two Math",
+          "JetBrains Mono"
+        ],
+        "visually_checked": true
+      }
+    ],
+    "default_export_theme": "dark",
+    "appearance_before": {
+      "preference": "system",
+      "theme": "dark"
+    },
+    "appearance_after": {
+      "preference": "system",
+      "theme": "dark"
+    },
+    "exported_text_identical_between_themes": true,
+    "anonymous_after_making_private_status": 401,
+    "screenshot": ".dev/production/beautiful-pdf-live-dialog.jpg",
+    "note": "The browser automation download-event wait timed out, but both completed browser downloads were located, moved into the verification directory, parsed and visually checked."
+  },
+  "cleanup": {
+    "fixture": "d_ipCW2CvhANuPoraSXdLH",
+    "seq": 1,
+    "public_access": "none",
+    "deleted_at": "2026-10-26T22:54:44.324559Z",
+    "browser_test_tab_closed": true,
+    "test_downloads_moved_out_of_downloads": true,
+    "local_test_services_stopped": true
+  }
+}
