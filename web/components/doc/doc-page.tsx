@@ -86,6 +86,7 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
   const [panel, setPanel] = useState<Panel>(null);
   const [activeThread, setActiveThread] = useState<string | null>(wantedThread);
   const [focusedThreadId, setFocusedThreadId] = useState<string | null>(canComment ? wantedThread : null);
+  const [focusedThreadSource, setFocusedThreadSource] = useState<"passage" | "marker">("passage");
   const [pending, setPending] = useState<PendingComment | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const formatKey = `silicon-write:format:${account?.uuid ?? "guest"}`;
@@ -299,9 +300,10 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
   );
 
   /** A passage or avatar opens just that conversation, without moving the document. */
-  const openThread = useCallback((id: string | null) => {
+  const openThread = useCallback((id: string | null, source: "passage" | "marker" = "passage") => {
     setActiveThread(id);
     setFocusedThreadId(id);
+    setFocusedThreadSource(source);
     setPending(null);
     setPanel(null);
   }, []);
@@ -411,7 +413,7 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
                 pickImage={pickImage}
               />
               {editor ? <EditorMenu editor={editor} docId={docId} live={live} canEdit={canEdit} canComment={canComment} writable={writable && mode !== "viewing"} onComment={() => startComment()} onReview={() => showPanel("comments")} /> : null}
-              {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={activeThread} onActivate={openThread} /> : null}
+              {editor ? <CommentMarkers editor={editor} threads={threads} activeThread={activeThread} onActivate={id => openThread(id, "marker")} /> : null}
               {editor && canComment ? <SectionGutter editor={editor} onComment={pos => startComment({ kind: "block", range: { from: pos, to: pos } })} /> : null}
               {editor ? <ImageAreas editor={editor} threads={threads} activeThread={activeThread} pending={pending?.anchor ?? null} canComment={canComment} onActivate={openThread} onCommentArea={startImageAreaComment} /> : null}
             </div>
@@ -438,7 +440,7 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
         {panel === "versions" && canEdit ? <VersionsPanel doc={doc} editor={editor} live={live} onClose={() => showPanel(null)} /> : null}
         {panel === "links" && account ? <LinksPanel doc={doc} onClose={() => showPanel(null)} /> : null}
       </div>
-      {focusedThread && canComment ? <FocusedComment key={focusedThread.id} docId={docId} thread={focusedThread} account={account!} editor={editor} onClose={() => openThread(null)} onAll={() => showPanel("comments")} /> : null}
+      {focusedThread && canComment ? <FocusedComment key={`${focusedThread.id}:${focusedThreadSource}`} docId={docId} thread={focusedThread} anchorSource={focusedThreadSource} account={account!} editor={editor} onClose={() => openThread(null)} onAll={() => showPanel("comments")} /> : null}
       {editor && doc.kind === "doc" ? <StatusBar editor={editor} /> : null}
       <input
         ref={imageInput}

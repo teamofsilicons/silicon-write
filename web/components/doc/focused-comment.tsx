@@ -12,9 +12,10 @@ import { threadAnchor } from "./thread-anchor";
 import styles from "./comments.module.css";
 
 /** One conversation beside its passage. It follows the live anchor without moving the page. */
-export function FocusedComment({ docId, thread, account, editor, onClose, onAll }: {
+export function FocusedComment({ docId, thread, anchorSource = "passage", account, editor, onClose, onAll }: {
   docId: string;
   thread: Thread;
+  anchorSource?: "passage" | "marker";
   account: Account;
   editor: Editor | null;
   onClose: () => void;
@@ -31,14 +32,18 @@ export function FocusedComment({ docId, thread, account, editor, onClose, onAll 
     getBoundingClientRect: () => {
       const at = threadAnchor(editor, thread);
       if (at) {
+        // An image's photo is at its top, but the commented area may be far below
+        // the viewport. Keep avatar-opened conversations beside the clicked photo.
+        const marker = anchorSource === "marker" ? document.querySelector<HTMLElement>(`[data-comment-marker~="${CSS.escape(thread.id)}"]`) : null;
+        const target = marker?.getBoundingClientRect() ?? at.rect;
         // On wide screens, put the note in the margin; on narrow ones it sits below this passage.
-        const rect = new DOMRect(at.column.left, at.rect.top, at.column.width, at.rect.height);
+        const rect = new DOMRect(at.column.left, target.top, at.column.width, target.height);
         fallback.current = rect;
         return rect;
       }
       return fallback.current ?? new DOMRect(Math.max(16, (window.innerWidth - 340) / 2), 112, 0, 0);
     },
-  } }), [editor, thread]);
+  } }), [editor, thread, anchorSource]);
 
   useEffect(() => {
     const page = document.getElementById("main")?.closest<HTMLElement>("[data-panel]");

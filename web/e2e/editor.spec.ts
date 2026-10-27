@@ -1469,6 +1469,74 @@ test.describe("comments", () => {
     await context.close();
   });
 
+  test("an image avatar opens its comment when the marked area is below the viewport", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Image avatar ${tag()}`, "A tall image to review.");
+    const src = await uploadImage(page, doc.id, "tall-chart.png", png(480, 1800));
+    await ok(page, "PUT", `/v1/docs/${doc.id}/markdown`, { markdown: `A tall image to review.\n\n![Tall chart](${src})\n\nEnd of review.\n` });
+    await openDoc(page, doc.id);
+    const image = editorOf(page).locator("img");
+    await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalHeight)).toBe(1800);
+    await image.evaluate(el => window.scrollBy(0, el.getBoundingClientRect().top + el.getBoundingClientRect().height * .75 - 300));
+    const imageBox = (await image.boundingBox())!;
+    await page.mouse.click(imageBox.x + 24, imageBox.y + imageBox.height * .75);
+    await page.getByRole("button", { name: "Comment on an area", exact: true }).click();
+    const canvas = page.getByRole("application", { name: "Drag over the image to choose the area" });
+    await dragOver(page, (await canvas.boundingBox())!, [.1, .75], [.5, .85]);
+    const composer = newCommentBox(page);
+    await composer.getByRole("combobox", { name: "Comment", exact: true }).fill("Review the lower part of the image.");
+    await composer.getByRole("button", { name: "Comment", exact: true }).click();
+    const focused = page.getByRole("dialog", { name: "Comment thread", exact: true });
+    await expect(focused).toBeVisible();
+    await focused.getByRole("button", { name: "Close comment", exact: true }).click();
+    const [thread] = await threadsOf(page, doc.id);
+    const marker = page.locator(`[data-comment-marker="${thread.id}"]`);
+    await marker.evaluate(el => window.scrollBy(0, el.getBoundingClientRect().top - 240));
+    const area = page.getByRole("button", { name: "Comment on this area", exact: true });
+    await expect.poll(async () => (await area.boundingBox())!.y).toBeGreaterThan(900);
+    const before = await page.evaluate(() => window.scrollY);
+    await marker.click();
+    await expect(focused).toBeVisible({ timeout: 3000 });
+    await expect(focused).toContainText("Review the lower part of the image.");
+    await expect(focused.getByRole("combobox", { name: "Reply, or @mention someone" })).toBeFocused();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(before);
+    const box = (await focused.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(900);
+    await shot(page, "comment-image-avatar");
+    await page.keyboard.press("Escape");
+    await expect(marker).toBeFocused();
+
+    // A grouped avatar must keep the same origin after choosing a conversation,
+    // including whole-image comments and a narrow screen.
+    await ok(page, "POST", `/v1/docs/${doc.id}/threads`, { anchor: { kind: "image", start: thread.anchor.start }, body: "Review the whole image." });
+    const group = page.locator(`[data-comment-marker~="${thread.id}"]`);
+    await expect(group).toHaveAccessibleName(/^2 comment threads/);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await group.evaluate(el => window.scrollBy(0, el.getBoundingClientRect().top - 240));
+      for (const body of ["Review the lower part of the image.", "Review the whole image."]) {
+        await group.click();
+        await page.getByRole("dialog", { name: "Comments on this passage" }).getByRole("button").filter({ hasText: body }).click();
+        await expect(focused).toBeVisible();
+        await expect(focused).toContainText(body);
+        await expect(focused.getByRole("combobox", { name: "Reply, or @mention someone" })).toBeFocused();
+        const bounds = (await focused.boundingBox())!;
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+        expect(bounds.y + bounds.height).toBeLessThanOrEqual(900);
+        await page.keyboard.press("Escape");
+        await expect(group).toBeFocused();
+      }
+    }
+    // Selecting the actual area still uses the area as the popup's anchor.
+    await area.evaluate(el => window.scrollBy(0, el.getBoundingClientRect().top - 300));
+    await area.click();
+    await expect(focused).toBeVisible();
+    await expect(focused).toContainText("Review the lower part of the image.");
+    await context.close();
+  });
+
   test("a selected image area stays highlighted while drafting and clears on cancellation", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Image draft highlight ${tag()}`, "Image review.");
