@@ -64,7 +64,7 @@ export const InlineImage = Image.extend({
     const attrs = mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { "data-inline-image": "" });
     const href = safeLink(node.attrs.link);
     return href
-      ? ["a", { href, ...(node.attrs.linkTitle ? { title: node.attrs.linkTitle } : {}), rel: "noopener noreferrer" }, ["img", attrs]]
+      ? ["a", { href, ...(node.attrs.linkTitle ? { title: node.attrs.linkTitle } : {}), target: "_blank", rel: "noopener noreferrer" }, ["img", attrs]]
       : ["img", attrs];
   },
 }).configure({ inline: true, allowBase64: false });

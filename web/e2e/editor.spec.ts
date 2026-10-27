@@ -847,7 +847,8 @@ test.describe("writing", () => {
   });
 
   test("[[ links to another doc by its title, the link opens it, and that doc lists the link", async ({ browser }) => {
-    const { page, context } = await signedIn(browser, "carbon");
+    const { page: sourcePage, context } = await signedIn(browser, "carbon");
+    let page = sourcePage;
     const t = tag();
     const target = await newDoc(page, `Target ${t}`, "The target body.");
     const source = await newDoc(page, `Source ${t}`, "Start.");
@@ -871,8 +872,13 @@ test.describe("writing", () => {
     await expect(editor.locator("[data-doc-link]")).toHaveCount(2);
     await expectMarkdown(page, source.id, `Start. See [[${target.title}]] for details. Also [[${target.title}]]\n`);
 
-    // Following it opens the doc.
-    await editor.locator("[data-doc-link] a").first().click();
+    // Following it opens the doc in a new tab, leaving the source open.
+    const [targetPage] = await Promise.all([
+      context.waitForEvent("page"),
+      editor.locator("[data-doc-link] a").first().click(),
+    ]);
+    await expect(sourcePage).toHaveURL(new RegExp(`/d/${source.id}$`));
+    page = targetPage;
     await page.waitForURL(`**/d/${target.id}`);
     await expect(editorOf(page)).toContainText("The target body.");
     // Every doc shows which docs link to it. Opened right away, before the service has indexed the typing…
@@ -1319,6 +1325,61 @@ test.describe("comments", () => {
       ["text", "second sentence", "Shorter, please."],
     ]);
     await expectMarkdown(page, doc.id, "The quick brown fox jumps over the lazy dog.\n\nA second sentence to comment on.\n");
+    await context.close();
+  });
+
+  test("the Comment button follows the visible end of a multi-block selection", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const paragraphs = Array.from({ length: 18 }, (_, i) => `Selected passage ${i + 1}. This passage has enough text to wrap across the page while keeping its selected text visible.`);
+    const doc = await newDoc(page, `Multi-block selection ${tag()}`, `# Services\n\n${paragraphs.join("\n\n")}\n\n## Next section\n\nNot selected.`);
+    await openDoc(page, doc.id);
+    const editor = editorOf(page);
+    const pill = page.locator('[class*="commentPill"]').getByRole("button", { name: "Comment", exact: true });
+    await editor.focus();
+    // End after the paragraph node, exactly where an editor coordinate can point
+    // to the following heading rather than the last selected line.
+    await page.evaluate(() => {
+      const root = document.querySelector(".ProseMirror")!;
+      const heading = root.querySelector("h1")!;
+      const last = root.querySelectorAll("p")[17]!;
+      const range = document.createRange();
+      range.setStart(heading.firstChild!, 0);
+      range.setEndAfter(last);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    const expectNearVisibleText = async () => {
+      await expect(pill).toBeVisible();
+      await expect.poll(async () => page.evaluate(() => {
+        const selection = window.getSelection()!;
+        const range = selection.getRangeAt(0);
+        const walker = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT);
+        let last: DOMRect | null = null;
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!range.intersectsNode(node)) continue;
+          const part = document.createRange();
+          part.selectNodeContents(node);
+          if (node === range.startContainer) part.setStart(node, range.startOffset);
+          if (node === range.endContainer) part.setEnd(node, range.endOffset);
+          for (const rect of part.getClientRects()) {
+            if (rect.width && rect.bottom > 0 && rect.top < innerHeight) last = rect;
+          }
+        }
+        const button = document.querySelector<HTMLElement>('[class*="commentPill"] button')?.getBoundingClientRect();
+        if (!last || !button) return false;
+        const expectedTop = Math.max(16, Math.min(last.bottom + 6, innerHeight - 48));
+        const expectedLeft = Math.max(16, Math.min(last.right - 24, innerWidth - 136));
+        return Math.abs(button.top - expectedTop) < 3 && Math.abs(button.left - expectedLeft) < 3;
+      })).toBe(true);
+    };
+    await expectNearVisibleText();
+    await page.evaluate(() => window.scrollBy(0, 500));
+    await expectNearVisibleText();
+    await editor.locator("p").nth(17).evaluate(node => node.scrollIntoView({ block: "center" }));
+    await expectNearVisibleText();
+    await pill.click();
+    await expect(newCommentBox(page)).toContainText("Services");
     await context.close();
   });
 

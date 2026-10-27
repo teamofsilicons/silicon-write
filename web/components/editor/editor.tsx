@@ -24,6 +24,7 @@ import { DocLinkMenu, SlashMenu } from "./menus";
 import { FindReplace } from "./nodes";
 import { contentExtensions } from "./schema";
 import { SuggestMode } from "./suggestions";
+import { LinkChip } from "./link-chip";
 import styles from "./editor.module.css";
 
 export type EditMode = "editing" | "suggesting" | "viewing";
@@ -114,6 +115,26 @@ export function DocEditor(props: DocEditorProps) {
       immediatelyRender: false,
       editorProps: {
         attributes: { class: styles.prose, "aria-label": "Doc", spellcheck: "true" },
+        handleDOMEvents: {
+          click: (view, event) => {
+            const anchor = (event.target as Element).closest("a[href]");
+            if (!anchor || !view.dom.contains(anchor) || anchor.closest("[data-doc-link]") || anchor.querySelector("img")) return false;
+            const href = anchor.getAttribute("href");
+            if (!href) return false;
+            event.preventDefault();
+            if (event.metaKey || event.ctrlKey) {
+              window.open(href, "_blank", "noopener,noreferrer");
+              return true;
+            }
+            if (!view.editable) {
+              // A read-only editor has no native caret. Place the selection inside the
+              // clicked link so its contextual controls can still identify the mark.
+              const start = view.posAtDOM(anchor, 0);
+              editor?.commands.setTextSelection(Math.min(start + 1, view.state.doc.content.size));
+            }
+            return false;
+          },
+        },
         handlePaste: (view, event) => {
           const files = [...(event.clipboardData?.files ?? [])].filter(f => f.type.startsWith("image/"));
           if (!files.length || !view.editable) return false;
@@ -207,5 +228,5 @@ export function DocEditor(props: DocEditorProps) {
     };
   }, [editor, live, threads, activeThread]);
 
-  return <EditorContent editor={editor} className={styles.editor} data-mode={mode} />;
+  return <><EditorContent editor={editor} className={styles.editor} data-mode={mode} />{editor ? <LinkChip editor={editor} writable={writable} /> : null}</>;
 }

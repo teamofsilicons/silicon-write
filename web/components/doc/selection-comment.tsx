@@ -45,6 +45,40 @@ export function selectedRange(editor: Editor): { from: number; to: number } | nu
   return null;
 }
 
+/** The last visible line of selected text, excluding the boxes of containing blocks. */
+function selectedTextLine(editor: Editor): DOMRect | null {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  if (!editor.view.dom.contains(range.commonAncestorContainer)) return null;
+  const viewport = window.visualViewport;
+  const top = viewport?.offsetTop ?? 0;
+  const bottom = top + (viewport?.height ?? window.innerHeight);
+  const left = viewport?.offsetLeft ?? 0;
+  const right = left + (viewport?.width ?? window.innerWidth);
+  const root = range.commonAncestorContainer;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node: Node | null = root.nodeType === Node.TEXT_NODE ? root : walker.nextNode();
+  let last: DOMRect | null = null;
+  while (node) {
+    if (range.intersectsNode(node)) {
+      const text = node as Text;
+      const start = node === range.startContainer ? range.startOffset : 0;
+      const end = node === range.endContainer ? range.endOffset : text.length;
+      if (end > start) {
+        const part = document.createRange();
+        part.setStart(text, start);
+        part.setEnd(text, end);
+        for (const rect of part.getClientRects()) {
+          if (rect.width > 0 && rect.height > 0 && rect.bottom > top && rect.top < bottom && rect.right > left && rect.left < right) last = rect;
+        }
+      }
+    }
+    node = walker.nextNode();
+  }
+  return last;
+}
+
 export function useMentionPeople(docId: string, enabled: boolean) {
   const sharing = useSharing("docs", docId, enabled);
   return useMemo(() => {
@@ -88,28 +122,46 @@ export function SelectionComment({
   useEffect(() => {
     if (!editor) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let frame = 0;
+    const position = () => {
+      const range = selectedRange(editor);
+      if (!range) {
+        setPill(null);
+        return;
+      }
+      const origin = layer.current?.getBoundingClientRect();
+      if (!origin) return;
+      const line = selectedTextLine(editor);
+      // Keep an off-screen selection at its document position until it comes back
+      // into view. A selected image has no text line, so use its editor position.
+      if (!line && editor.state.doc.nodeAt(range.from)?.type.name !== "image") return;
+      const end = line ?? editor.view.coordsAtPos(range.to);
+      const left = line ? line.right - 24 : end.left - 24;
+      setPill({ ...fitInLayer(end.bottom + 6, left, 120, 32, origin), range });
+    };
     const check = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        const range = selectedRange(editor);
-        if (!range) {
-          setPill(null);
-          return;
-        }
-        const end = editor.view.coordsAtPos(range.to);
-        const origin = layer.current?.getBoundingClientRect();
-        if (!origin) return;
-        // Store a position in the document. Scrolling then moves the button with
-        // its passage, including out of view, without a scroll listener.
-        setPill({ ...fitInLayer(end.bottom + 6, end.left - 24, 120, 32, origin), range });
-      }, 120);
+      timer = setTimeout(position, 120);
+    };
+    const onMove = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(position);
     };
     document.addEventListener("selectionchange", check);
     editor.on("selectionUpdate", check);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    window.visualViewport?.addEventListener("resize", onMove);
+    window.visualViewport?.addEventListener("scroll", onMove);
     return () => {
       document.removeEventListener("selectionchange", check);
       editor.off("selectionUpdate", check);
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+      window.visualViewport?.removeEventListener("resize", onMove);
+      window.visualViewport?.removeEventListener("scroll", onMove);
       if (timer) clearTimeout(timer);
+      cancelAnimationFrame(frame);
     };
   }, [editor]);
 

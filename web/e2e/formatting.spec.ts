@@ -29,6 +29,7 @@ test("imported inline formatting survives opening and editing in the browser", a
     await expect(picture).toHaveAttribute("title", "Image caption");
     await expect(picture).toHaveCSS("display", "inline-block");
     await expect(editor.locator('a[href="https://example.com/image"]')).toHaveAttribute("title", "Image link");
+    await expect(editor.locator('a[href="https://example.com/image"]')).toHaveAttribute("target", "_blank");
     await expect(editor.locator('a[href="https://example.com/reference"]')).toHaveAttribute("title", "Reference title");
     await expect(editor.locator("sub")).toHaveText("2");
     await expect(editor.locator("sup")).toHaveText("2");

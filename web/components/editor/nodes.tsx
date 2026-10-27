@@ -14,7 +14,6 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { api } from "@/lib/client/api";
 import { notify, notifyError } from "@/lib/notify";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/silicon-ui/popover/popover";
@@ -110,15 +109,26 @@ export const Footnote = Node.create({
 // ------------------------------------------------------------------------------------------
 
 function DocLinkView({ node }: NodeViewProps) {
-  const router = useRouter();
   const title = String(node.attrs.title ?? "");
   const open = async (event: React.MouseEvent) => {
     event.preventDefault();
+    // Reserve the tab during the click, before the asynchronous title lookup. Opening it
+    // after the lookup would be blocked by browsers that require a user gesture.
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) {
+      notify.warning("The link couldn't be opened", "Allow pop-ups for Write and try again.");
+      return;
+    }
+    tab.opener = null;
     try {
       const found = await api.get<{ doc: { id: string } | null }>("/v1/links", { query: { title } });
-      if (found.doc) router.push(`/d/${found.doc.id}`);
-      else notify.info("Doc not found", `There's no doc called “${title}” that you can open.`);
+      if (found.doc) tab.location.href = `/d/${encodeURIComponent(found.doc.id)}`;
+      else {
+        tab.close();
+        notify.info("Doc not found", `There's no doc called “${title}” that you can open.`);
+      }
     } catch (error) {
+      tab.close();
       notifyError(error, "The link couldn't be opened");
     }
   };

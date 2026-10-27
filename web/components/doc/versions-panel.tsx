@@ -77,7 +77,18 @@ function ChangeList({ blocks, onRestorePart }: { blocks: CompareBlock[]; onResto
 
 function Preview({ docId, seq }: { docId: string; seq: number }) {
   const { data } = useQuery({ queryKey: ["prosemirror", docId, seq], queryFn: () => api.get<{ doc: unknown }>(`/v1/docs/${seg(docId)}/prosemirror`, { query: { seq } }) });
-  const editor = useEditor({ extensions: contentExtensions({ collaborative: false }), editable: false, immediatelyRender: false, editorProps: { attributes: { class: editorStyles.prose } } }, []);
+  const editor = useEditor({ extensions: contentExtensions({ collaborative: false }), editable: false, immediatelyRender: false, editorProps: {
+    attributes: { class: editorStyles.prose },
+    handleDOMEvents: { click: (view, event) => {
+      const anchor = (event.target as Element).closest("a[href]");
+      if (!anchor || !view.dom.contains(anchor) || anchor.closest("[data-doc-link]")) return false;
+      const href = anchor.getAttribute("href");
+      if (!href) return false;
+      event.preventDefault();
+      window.open(href, "_blank", "noopener,noreferrer");
+      return true;
+    } },
+  } }, []);
   useEffect(() => {
     if (editor && data?.doc) editor.commands.setContent(data.doc as never);
   }, [editor, data]);
