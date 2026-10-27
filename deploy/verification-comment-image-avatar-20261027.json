@@ -1,0 +1,48 @@
+{
+  "checked_at": "2026-10-27T00:04:59.550477+00:00",
+  "source_revision": "928fdf9365209cdfa28613a38c2cee974c86b25a",
+  "deployment": "dpl_E3Cs6jde6rPYrc97a6ZCyToUutio",
+  "previous_deployment": "dpl_EQSyq9EnbojBbXit5hJT3uegz8bm",
+  "url": "https://write.teamofsilicons.com",
+  "cause": "Avatar activation used the image-area anchor, which could be below the viewport. The marker became active but Radix hideWhenDetached hid the conversation.",
+  "behavior": "Avatar-opened conversations follow their marker, including grouped choices. Area-opened conversations still follow their highlighted area. Opening keeps the page still and focuses the reply.",
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "regression_before": "The new tall-image avatar case failed because no visible Comment thread was found. Live reproduction confirmed aria-pressed=true on the marker and visibility=hidden on the dialog.",
+    "targeted_browser_cases_including_setup": 5,
+    "targeted_log": ".dev/comment-image-avatar-browser.log",
+    "extended_browser_cases_including_setup": 2,
+    "extended_log": ".dev/comment-image-avatar-grouped.log",
+    "extended_coverage": "Single and grouped image avatars; image-area and whole-image threads; desktop and 390px width; reply focus; unchanged scroll on opening; Escape restoration; direct area activation.",
+    "live": {
+      "before": {
+        "areaTop": 1751.8125,
+        "scrollY": 0,
+        "viewportHeight": 996
+      },
+      "after": {
+        "areaTop": 1751.8125,
+        "bottom": 783.4447021484375,
+        "replyFocused": true,
+        "scrollY": 0,
+        "top": 402,
+        "viewportHeight": 996,
+        "visibility": "visible"
+      }
+    },
+    "screenshot": ".dev/production/comment-image-avatar-live.jpg",
+    "browser_fallback": "Two T3 preview snapshots failed with Preview automation snapshot timed out after 15000ms; live verification used Chrome."
+  },
+  "cleanup": {
+    "id": "d_uzwJRYT96fkBeM3S9wnk",
+    "seq": 2,
+    "public_access": "none",
+    "deleted_at": "2026-10-27T00:04:30.817339Z",
+    "test_browser_tabs_closed": true,
+    "local_test_services_stopped": true,
+    "user_appearance_unchanged": true,
+    "live_replies_posted": 0
+  }
+}
