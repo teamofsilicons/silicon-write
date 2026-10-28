@@ -353,10 +353,11 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
   }
 
   const writable = canEdit || (canComment && mode === "suggesting");
+  const hasFormatting = writable && editor && doc.kind === "doc" && mode !== "viewing";
   const contentReady = doc.kind === "pdf" || Boolean(doc.deleted_at) || Boolean(liveReady && editor);
 
   return (
-    <div className={styles.page} data-panel={panel ?? "none"} data-comments={threads.length ? "present" : undefined} data-formatting={formatOpen && writable && mode !== "viewing" ? "open" : "closed"}>
+    <div className={styles.page} data-panel={panel ?? "none"} data-comments={threads.length ? "present" : undefined} data-formatting={formatOpen && hasFormatting ? "open" : "closed"}>
       <a href="#main" className={styles.skipLink}>Skip to content</a>
       <TopBar
         doc={doc}
@@ -375,7 +376,7 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
         onFormat={toggleFormat}
         liveError={liveError}
       />
-      {writable && editor && doc.kind === "doc" && mode !== "viewing" ? (
+      {hasFormatting ? (
         <div id="doc-formatting" className={styles.formattingWrap} hidden={!formatOpen}>
           <Toolbar editor={editor} canEdit={canEdit} suggesting={mode === "suggesting" || !canEdit} onComment={canComment ? () => startComment() : undefined} onImage={pickImage} />
         </div>

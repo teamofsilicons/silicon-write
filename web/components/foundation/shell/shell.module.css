@@ -40,10 +40,12 @@
 .external { margin-left: auto; color: var(--text-muted); opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
 .navLink:hover .external, .navLink:focus-visible .external { opacity: 1; }
 /* Top bar ---------------------------------------------------------------------------------------------------------- */
-.column { display: flex; min-width: 0; min-height: 100vh; min-height: 100dvh; flex-direction: column; }
+.column { display: flex; min-width: 0; min-height: 100vh; min-height: 100dvh; padding-top: var(--topbar-height); flex-direction: column; }
 .top {
-  position: sticky;
+  position: fixed;
   top: var(--workspace-tabs-height, 0px);
+  left: 0;
+  right: 0;
   z-index: 30;
   display: flex;
   height: var(--topbar-height);

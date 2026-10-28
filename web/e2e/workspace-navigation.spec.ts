@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { Doc } from "../lib/write/types";
 import { accountsSession, runAccounts, sameOrigin, signIn } from "./support";
-import { docSyncState } from "./doc-support";
+import { docSyncState, openFormatting, chooseDocMode } from "./doc-support";
 
 async function expectMobileTabControls(page: Page, doc: Doc, width: number) {
   const active = page.getByRole("tab", { selected: true });
@@ -70,18 +70,45 @@ test("previous and next tabs work with shortcuts while writing, without changing
 
     // Overscrolling the content must not carry the tab strip off the window.
     // Leave native bounce enabled; headless wheel input checks the end positions.
-    const top = (await selected().boundingBox())!.y;
+    await openFormatting(page);
+    const chrome = [selected(), page.getByRole("banner"), page.getByRole("toolbar", { name: "Formatting" })];
+    const tops = await Promise.all(chrome.map(async part => (await part.boundingBox())!.y));
+    const expectFixedChrome = async () => {
+      for (const [i, part] of chrome.entries()) {
+        await expect.poll(async () => (await part.boundingBox())!.y).toBe(tops[i]);
+        await expect(part).toBeInViewport({ ratio: 1 });
+      }
+    };
     await page.mouse.move(700, 700);
     await page.mouse.wheel(0, 100_000);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
-    await expect.poll(async () => (await selected().boundingBox())!.y).toBe(top);
+    await expectFixedChrome();
     await page.mouse.wheel(0, 100_000);
-    await expect(selected()).toBeInViewport({ ratio: 1 });
+    await expectFixedChrome();
     await page.mouse.wheel(0, -100_000);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-    await expect.poll(async () => (await selected().boundingBox())!.y).toBe(top);
-    await expect(page.getByRole("banner")).toBeInViewport({ ratio: 1 });
-    await page.screenshot({ path: "test-results/stable-workspace-tabs.png" });
+    await expectFixedChrome();
+    const toolbarBounds = (await chrome[2].boundingBox())!;
+    expect((await page.locator("#main").boundingBox())!.y).toBeGreaterThanOrEqual(toolbarBounds.y + toolbarBounds.height);
+    await page.screenshot({ path: "test-results/stable-document-chrome.png" });
+    await chooseDocMode(page, "Reading");
+    await expect(chrome[2]).toBeHidden();
+    await chooseDocMode(page, "Editing");
+    await expectFixedChrome();
+
+    await page.getByRole("tab", { name: "My docs", exact: true }).click();
+    await expect(page.getByRole("link", { name: "Shared with me", exact: true })).toBeVisible();
+    const navigation = page.getByRole("banner");
+    const navTop = (await navigation.boundingBox())!.y;
+    await page.mouse.move(700, 700);
+    await page.mouse.wheel(0, 100_000);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect.poll(async () => (await navigation.boundingBox())!.y).toBe(navTop);
+    await expect(navigation).toBeInViewport({ ratio: 1 });
+    await page.mouse.wheel(0, -100_000);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await expect.poll(async () => (await navigation.boundingBox())!.y).toBe(navTop);
+    await page.screenshot({ path: "test-results/stable-library-chrome.png" });
   } finally {
     await context.close();
   }
