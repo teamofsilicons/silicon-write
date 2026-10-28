@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-10-28T21:57:54.912096+00:00",
+  "source_revision": "1d94380",
+  "url": "https://write.teamofsilicons.com",
+  "deployment_id": "dpl_UH6NU4dskjJ2ZeeUJg4qimmnKauW",
+  "supplied_svg_sha256": "41b3ebcbf28eff52f43df1cef3f4cc75322c7886498c7e739bba769f82ce88d9",
+  "original_matches_live": true,
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "unit_tests": 117,
+    "build": "passed",
+    "public_browser_tests": 3,
+    "live_navigation": "feather visible in dark mode",
+    "icon_apple_icon_og": "200; visually checked"
+  },
+  "evidence_directory": ".dev/logo-20261029",
+  "scope": "Branding only: navigation and sign-in mark, favicon, home screen icon, link preview; original SVG preserved."
+}
