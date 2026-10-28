@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-29",
+  "source_commit": "0db04ba",
+  "deployment": "dpl_DMfnHGyCziDQ8zpGKE83AmvRYKUu",
+  "url": "https://write.teamofsilicons.com",
+  "changes": [
+    "Fixed document action bar and formatting row below fixed workspace tabs.",
+    "Fixed library navigation below workspace tabs.",
+    "Reserved header space and removed formatting space in reading and PDF views; retained native document bounce."
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "browser_tests": "2 passed: desktop full header geometry at scroll ends, formatting/read-mode toggles, library navigation, tab shortcuts, phone tab controls at 390 and 320 pixels"
+  },
+  "live": {
+    "deployment_ready": true,
+    "custom_domain_promoted": true,
+    "public_doc_synced": true,
+    "header_position": "fixed",
+    "header_top_before": 0,
+    "header_top_at_bottom": 0,
+    "scroll_y_at_bottom": 5636.5,
+    "document_height": 6356,
+    "viewport_height": 720
+  },
+  "limitations": [
+    "Signed-in full document and library headers tested locally; live anonymous document header verified.",
+    "Wheel overscroll tested, physical trackpad gesture not directly measured."
+  ],
+  "evidence_dir": ".dev/fixed-chrome-20261029"
+}
