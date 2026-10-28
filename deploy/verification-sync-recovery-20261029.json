@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-29",
+  "source_commit": "cae61d8",
+  "deployment": "dpl_9Uo2d6o4uSxv2EqeW2jXc69ngzke",
+  "url": "https://write.teamofsilicons.com",
+  "changes": [
+    "Hold local keystrokes until both sync handshake halves arrive; send catch-up before save checkpoint.",
+    "Retry missing-change rejection once on a fresh socket with the same local document; preserve genuine refusal and local-copy warning.",
+    "Fix workspace tab strip to viewport while keeping native document bounce."
+  ],
+  "reproduction": {
+    "missing_update": "Failed before fix with same missing-change rejection as video; passed after.",
+    "slow_reconnect": "Failed before fix even though server eventually saved content; permanently latched rejection. Passed after."
+  },
+  "validation": {
+    "unit_tests": 117,
+    "typecheck": "passed",
+    "lint": "passed",
+    "production_build": "passed",
+    "focused_browser_scenarios": [
+      "Missing edit recovery, Reading to Editing, subsequent typing and reload persistence",
+      "Delayed whole handshake with offline and concurrent remote edits",
+      "Delayed sync reply with typing between handshake messages",
+      "Repeated missing-change refusal bounded to one retry",
+      "Permission refusal not retried; local text remains copyable",
+      "Offline connection recovery",
+      "Two collaborators and undo isolation",
+      "Tab shortcuts and repeated top/bottom wheel scrolling",
+      "Phone tab controls at 390px and 320px"
+    ]
+  },
+  "production_verification": {
+    "deployment_ready": true,
+    "custom_domain_promoted": true,
+    "api_health": "ok",
+    "anonymous_document_load": "Connected and synced",
+    "silicon_edit_received_without_reload": true,
+    "identity": "si:saket-agents",
+    "fixture": "d_qqfkCyL6S3j9asZf6WXK",
+    "fixture_cleanup": "Made private and moved to trash"
+  },
+  "limitations": [
+    "No client document or server trace was supplied; original trigger in the recording cannot be proven.",
+    "Physical trackpad overscroll was not directly measured; headless browser checks fixed tab coordinates at both document ends.",
+    "Reconnect fault injection was validated locally, not on the client document."
+  ],
+  "evidence_dir": ".dev/sync-gap-20261029",
+  "preexisting_change_preserved": "deploy/stack.json"
+}

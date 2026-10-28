@@ -27,7 +27,7 @@ test("previous and next tabs work with shortcuts while writing, without changing
     for (const name of ["First", "Second", "Third"]) {
       const response = await page.request.post("/api/v1/docs", {
         headers: sameOrigin(),
-        data: { title: `${name} tab ${Date.now()}`, markdown: `Keep the ${name.toLowerCase()} document unchanged.\n` },
+        data: { title: `${name} tab ${Date.now()}`, markdown: Array.from({ length: 30 }, (_, i) => `Paragraph ${i + 1} of the ${name.toLowerCase()} document.`).join("\n\n") },
       });
       expect(response.status(), await response.text()).toBe(201);
       docs.push(await response.json() as Doc);
@@ -67,6 +67,21 @@ test("previous and next tabs work with shortcuts while writing, without changing
     await expect(page).toHaveURL(new RegExp(`/d/${docs[0].id}$`));
     await page.keyboard.press("Escape");
     await expect(selected()).toContainText(docs[0].title);
+
+    // Overscrolling the content must not carry the tab strip off the window.
+    // Leave native bounce enabled; headless wheel input checks the end positions.
+    const top = (await selected().boundingBox())!.y;
+    await page.mouse.move(700, 700);
+    await page.mouse.wheel(0, 100_000);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    await expect.poll(async () => (await selected().boundingBox())!.y).toBe(top);
+    await page.mouse.wheel(0, 100_000);
+    await expect(selected()).toBeInViewport({ ratio: 1 });
+    await page.mouse.wheel(0, -100_000);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await expect.poll(async () => (await selected().boundingBox())!.y).toBe(top);
+    await expect(page.getByRole("banner")).toBeInViewport({ ratio: 1 });
+    await page.screenshot({ path: "test-results/stable-workspace-tabs.png" });
   } finally {
     await context.close();
   }
