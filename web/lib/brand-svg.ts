@@ -1,22 +1,20 @@
 /**
  * The app's mark as an SVG document, for the places that need a file rather than a component: the browser icon
  * (app/icon.tsx), the home-screen icon (app/apple-icon.tsx) and the Open Graph image (app/og.png). The glyph is
- * lib/app.config.ts `mark` (lucide-style strokes on a 24 by 24 grid) in #181818 on a white square, the way the family's
- * icons are drawn (Silicon Apps, Silicon Accounts, Silicon Developer). The system rounds a home-screen icon itself.
+ * the supplied write-logo.svg, retaining its original 200 px framing and colours.
+ * The system rounds a home-screen icon itself.
  */
 import { appConfig } from "./app.config";
 
-export const ICON_PAPER = "#FFFFFF";
-export const ICON_INK = "#181818";
+export const ICON_PAPER = "#181818";
+export const ICON_INK = "#EDE8E0";
 
 const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-/** The mark on its white square. `glyph` is the share of the side the glyph spans. `shape` is kept for callers. */
-export function markSvg({ glyph = 0.56 }: { shape?: "squircle" | "square"; glyph?: number } = {}): string {
-  const scale = (64 * glyph) / 24;
-  const offset = (64 - 24 * scale) / 2;
+/** Preserve the supplied artwork's scale, spacing, and colours for every icon size. */
+export function markSvg(): string {
   const paths = appConfig.mark.paths.map(d => `<path d="${escape(d)}"/>`).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${ICON_PAPER}"/><g transform="translate(${offset.toFixed(2)} ${offset.toFixed(2)}) scale(${scale.toFixed(4)})" fill="none" stroke="${ICON_INK}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="${ICON_PAPER}"/><g fill="none" stroke="${ICON_INK}" stroke-width="${appConfig.mark.strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
 }
 
 export const svgDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;

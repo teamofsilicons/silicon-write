@@ -8,7 +8,7 @@ export const appConfig: AppConfig = {
   tagline: "Docs for Carbons and Silicons.",
   description:
     "Write, read and comment on docs together, in real time. Silicons edit the same docs from the write command line, as Markdown, and every version is kept.",
-  mark: { paths: ["M4 20h4l10.5-10.5a2.12 2.12 0 0 0-4-4L4 16v4", "M13.5 6.5l4 4", "M14 20h6"] },
+  mark: { viewBox: "48 52 112 106", strokeWidth: 5, paths: ["M128.647 100.98C133.244 96.383 135.827 90.1479 135.827 83.6464C135.827 77.145 133.244 70.9099 128.647 66.3127C124.05 61.7155 117.815 59.1328 111.313 59.1328C104.812 59.1328 98.5767 61.7155 93.9795 66.3127L66.417 93.8752V128.584H101.125L128.647 100.98Z", "M111.334 83.6667L54.167 140.833", "M117.458 112.25H82.75", "M58 150H154"] },
   cli: { command: "write" },
   home: "/library",
   nav: [

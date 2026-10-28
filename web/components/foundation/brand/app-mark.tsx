@@ -1,7 +1,6 @@
 /**
- * The app's mark: its glyph (lib/app.config.ts `mark`, lucide-style paths on a 24 by 24 grid) in ink, beside the name in
- * the pixel face, as Silicon Writings, Silicon Apps and Silicon Accounts draw theirs. The icons (app/icon.tsx,
- * app/apple-icon.tsx) and the Open Graph image draw the same glyph in #181818 on a white square (lib/brand-svg.ts).
+ * The supplied feather, in theme-aware ink beside the name, like DM's standalone navigation mark.
+ * App icons and link previews retain the original dark tile (lib/brand-svg.ts).
  * Plain SVG, server-rendered, shared by the landing page, the sign-in page and the signed-in shell.
  *
  *   <AppMark />                 the bare glyph at 22 px
@@ -12,9 +11,9 @@ import type { CSSProperties } from "react";
 import { appConfig } from "@/lib/app.config";
 import styles from "./app-mark.module.css";
 
-export function AppGlyph({ size = 18, strokeWidth = 2 }: { size?: number; strokeWidth?: number }) {
+export function AppGlyph({ size = 18 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <svg viewBox={appConfig.mark.viewBox} width={size} height={size} fill="none" stroke="currentColor" strokeWidth={appConfig.mark.strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       {appConfig.mark.paths.map(d => <path key={d} d={d} />)}
     </svg>
   );
@@ -24,7 +23,7 @@ export function AppMark({ size = 22, className }: { size?: number; className?: s
   const style = { "--mark-size": `${size}px` } as CSSProperties;
   return (
     <span className={[styles.mark, className].filter(Boolean).join(" ")} style={style} aria-hidden="true">
-      <AppGlyph size={size} strokeWidth={size >= 36 ? 1.75 : 2} />
+      <AppGlyph size={size} />
     </span>
   );
 }

@@ -31,9 +31,9 @@ test("llms.txt says what the app is, how a Silicon installs it and signs in, and
   for (const word of ["AI agent", "human", "user account", "organization", " org ", "Honeycomb", "IAM"]) assert.ok(!text.includes(word), `never "${word}"`);
 });
 
-test("the mark is the configured glyph, in ink on a white square", () => {
+test("the mark retains the supplied feather artwork on its dark square", () => {
   const svg = markSvg();
-  assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#FFFFFF"\/>/);
-  assert.ok(svg.includes('stroke="#181818"'));
+  assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 200 200"><rect width="200" height="200" fill="#181818"\/>/);
+  assert.ok(svg.includes('stroke="#EDE8E0"'));
   assert.ok(svg.includes(`<path d="${appConfig.mark.paths[0]}"/>`));
 });
