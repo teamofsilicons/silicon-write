@@ -49,6 +49,7 @@ export interface LiveDoc {
 }
 
 const TICKET_REFRESH_MS = 5 * 60_000;
+const MISSING_CHANGE = "An earlier change is missing. Reconnect to sync your changes first.";
 
 async function fetchTicket(docId: string): Promise<LiveTicket> {
   return api.post<LiveTicket>(`/v1/docs/${seg(docId)}/live`);
@@ -66,14 +67,18 @@ export async function connectLive(docId: string, initialTicket?: LiveTicket | nu
     params: { ticket: ticket.ticket },
     disableBc: true,
     maxBackoffTime: 5000,
+    connect: false,
   });
   const listeners = new Set<(event: LiveEvent) => void>();
   const authors = new Map<number, Account>();
   let checkpointTimer: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
   let hasLoaded = false;
+  let handshakeComplete = false;
+  let serverState: Uint8Array | null = null;
+  let recoveryAttempted = false;
   const checkpoint = new SyncCheckpoint({
-    ready: () => !destroyed && Boolean(provider.ws && provider.wsconnected && provider.synced),
+    ready: () => !destroyed && handshakeComplete && Boolean(provider.ws && provider.wsconnected && provider.synced),
     send: () => {
       // The server awaits each update before processing the next message on this socket.
       // Its SyncStep2 reply is a barrier for earlier edits, unlike `provider.synced`.
@@ -82,7 +87,10 @@ export async function connectLive(docId: string, initialTicket?: LiveTicket | nu
       syncProtocol.writeSyncStep1(encoder, ydoc);
       provider.ws!.send(encoding.toUint8Array(encoder));
     },
-    onSaved: () => { for (const listener of listeners) listener({ type: "saved" }); },
+    onSaved: () => {
+      recoveryAttempted = false;
+      for (const listener of listeners) listener({ type: "saved" });
+    },
   });
   const scheduleCheckpoint = () => {
     if (checkpointTimer) clearTimeout(checkpointTimer);
@@ -113,11 +121,40 @@ export async function connectLive(docId: string, initialTicket?: LiveTicket | nu
     },
   };
 
+  // y-websocket normally sends keystrokes as soon as the socket opens. On reconnect,
+  // those can overtake the handshake that supplies their missing offline predecessors.
+  // Keep them in the same Y.Doc until both halves of the handshake have arrived.
+  const sendUpdate = provider._updateHandler;
+  ydoc.off("update", sendUpdate);
+  provider._updateHandler = (update, origin) => {
+    if (handshakeComplete && !checkpoint.rejectionReason) sendUpdate(update, origin);
+  };
+  ydoc.on("update", provider._updateHandler);
+
+  const finishHandshake = () => {
+    if (destroyed || handshakeComplete || !serverState || !provider.synced || !provider.wsconnected || checkpoint.rejectionReason) return;
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, 0);
+    // Include edits typed between the two handshake messages as well as offline edits.
+    // The subsequent checkpoint must follow this catch-up on the same socket.
+    syncProtocol.writeSyncStep2(encoder, ydoc, serverState);
+    provider.ws!.send(encoding.toUint8Array(encoder));
+    handshakeComplete = true;
+    if (checkpoint.hasChanges) scheduleCheckpoint();
+  };
   const handleSync = provider.messageHandlers[0];
   provider.messageHandlers[0] = (encoder, decoder, source, emitSynced, messageType) => {
-    const isReply = decoding.peekVarUint(decoder) === syncProtocol.messageYjsSyncStep2;
+    const subtype = decoding.peekVarUint(decoder);
+    const isReply = subtype === syncProtocol.messageYjsSyncStep2;
+    if (subtype === syncProtocol.messageYjsSyncStep1) {
+      const copy = decoding.clone(decoder);
+      decoding.readVarUint(copy);
+      serverState = decoding.readVarUint8Array(copy);
+    }
     const respondingTo = checkpoint.responseToken;
     handleSync(encoder, decoder, source, emitSynced, messageType);
+    // Wait until y-websocket has sent the response built by handleSync.
+    if (!handshakeComplete) queueMicrotask(finishHandshake);
     // Handling the initial reply emits sync, which can itself request a checkpoint.
     // That new request must wait for its own reply, never consume this one.
     if (isReply && checkpoint.reply(respondingTo) && checkpoint.hasChanges && !destroyed) scheduleCheckpoint();
@@ -144,7 +181,18 @@ export async function connectLive(docId: string, initialTicket?: LiveTicket | nu
       for (const [client, account] of Object.entries(event.clients)) authors.set(Number(client), account);
     }
     if (event.type === "role" && event.role) live.role = event.role;
-    if (event.type === "rejected") checkpoint.reject(event.reason);
+    if (event.type === "rejected") {
+      if (event.reason === MISSING_CHANGE && !recoveryAttempted && !checkpoint.rejectionReason) {
+        recoveryAttempted = true;
+        checkpoint.changed();
+        // Reconcile the existing Y.Doc; never reload away the local text or selection.
+        // A second refusal before a confirmed save remains a visible, lasting error.
+        provider.disconnect();
+        void refresh().then(() => { if (!destroyed) provider.connect(); });
+        return;
+      }
+      checkpoint.reject(event.reason);
+    }
     if (event.type === "hello") {
       live.role = event.role;
       live.account = event.account;
@@ -165,9 +213,12 @@ export async function connectLive(docId: string, initialTicket?: LiveTicket | nu
   };
   const refresher = setInterval(refresh, TICKET_REFRESH_MS);
   provider.on("connection-close", () => {
+    handshakeComplete = false;
+    serverState = null;
     checkpoint.disconnect();
     void refresh();
   });
 
+  provider.connect();
   return live;
 }

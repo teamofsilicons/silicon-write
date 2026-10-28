@@ -194,7 +194,7 @@ export function WorkspaceTabsProvider({ account, children }: { account: string |
   };
   return (
     <WorkspaceContext.Provider value={actions}>
-      <div ref={workspaceRoot} style={{ "--workspace-tabs-height": show ? "44px" : "0px" } as CSSProperties}>
+      <div ref={workspaceRoot} className={styles.workspace} style={{ "--workspace-tabs-height": show ? "44px" : "0px" } as CSSProperties}>
       {show ? (
         <div className={styles.workspaceBar}>
           <div ref={bar} className={styles.tabs} role="tablist" aria-label="Open documents" aria-orientation="horizontal" onKeyDown={onKey}>

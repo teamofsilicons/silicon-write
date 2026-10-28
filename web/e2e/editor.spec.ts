@@ -19,6 +19,7 @@ import { crc32, deflateSync } from "node:zlib";
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
+import * as encoding from "lib0/encoding";
 import { accountsSession, runAccounts, sameOrigin, sessionOf, signIn, type Who } from "./support";
 import { chooseDocMode, docSyncState, openComments, openFormatting } from "./doc-support";
 
@@ -1089,6 +1090,123 @@ test.describe("together", () => {
     await shot(owner.page, "shared-undo");
     await friend.context.close();
     await owner.context.close();
+  });
+
+  test("a missing edit resyncs without forcing Reading or losing the text typed after it", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Missing edit ${tag()}`, "Draft.");
+    let dropNextUpdate = false;
+    let dropped = false;
+    let refusals = 0;
+    await page.routeWebSocket(/\/v1\/live\//, ws => {
+      const server = ws.connectToServer();
+      ws.onMessage(message => {
+        const bytes = Buffer.from(message);
+        if (dropNextUpdate && bytes[0] === 0 && bytes[1] === 2) {
+          dropNextUpdate = false;
+          dropped = true;
+          return;
+        }
+        server.send(message);
+      });
+      server.onMessage(message => {
+        if (Buffer.from(message).includes(Buffer.from("An earlier change is missing"))) refusals++;
+        ws.send(message);
+      });
+    });
+    try {
+      await openDoc(page, doc.id);
+      await chooseDocMode(page, "Reading");
+      await chooseDocMode(page, "Editing");
+      await caretAfter(page, "Draft.");
+      dropNextUpdate = true;
+      await page.keyboard.type(" AB");
+      expect(dropped).toBe(true);
+      await expect.poll(() => refusals).toBeGreaterThan(0);
+      await expectMarkdown(page, doc.id, "Draft. AB\n");
+      await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced");
+      await expect(page.getByRole("button", { name: "Mode: Editing", exact: true })).toBeVisible();
+      await page.keyboard.type(" C");
+      await expectMarkdown(page, doc.id, "Draft. AB C\n");
+      await page.reload();
+      await expect(editorOf(page)).toHaveText("Draft. AB C");
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const delay of ["whole handshake", "sync reply"] as const) test(`typing during a delayed reconnect (${delay}) waits for the missing offline edits`, async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Reconnect handshake ${tag()}`, "Draft.");
+    let socket: WebSocketRoute | undefined;
+    let hold = false;
+    let refusals = 0;
+    const held: (() => void)[] = [];
+    await page.routeWebSocket(/\/v1\/live\//, ws => {
+      socket = ws;
+      const server = ws.connectToServer();
+      server.onMessage(message => {
+        if (Buffer.from(message).includes(Buffer.from("An earlier change is missing"))) refusals++;
+        const bytes = Buffer.from(message);
+        if (hold && (delay === "whole handshake" || (bytes[0] === 0 && bytes[1] === 1))) held.push(() => ws.send(message));
+        else ws.send(message);
+      });
+    });
+    try {
+      await openDoc(page, doc.id);
+      await caretAfter(page, "Draft.");
+      hold = true;
+      await socket!.close({ code: 4000, reason: "reconnect test" });
+      await page.keyboard.type(" Offline.");
+      await expect.poll(() => held.length).toBeGreaterThan(0);
+      await page.keyboard.type(" During handshake.");
+      await ok(page, "POST", `/v1/docs/${doc.id}/edits`, { edits: [{ old: "Draft.", new: "Updated draft." }] });
+      hold = false;
+      for (const send of held.splice(0)) send();
+      await expectMarkdown(page, doc.id, "Updated draft. Offline. During handshake.\n");
+      await expect(docSyncState(page)).toHaveAccessibleName("Connected and synced");
+      expect(refusals).toBe(0);
+      await expect(page.getByRole("button", { name: "Mode: Editing", exact: true })).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const refusal of [
+    { reason: "An earlier change is missing. Reconnect to sync your changes first.", connections: 2 },
+    { reason: "You do not have permission to edit this document.", connections: 1 },
+  ]) test(`a lasting refusal preserves local text without retrying forever (${refusal.connections} connections)`, async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Refused edit ${tag()}`, "Draft.");
+    let armed = false;
+    let connections = 0;
+    await page.routeWebSocket(/\/v1\/live\//, ws => {
+      connections++;
+      const server = ws.connectToServer();
+      ws.onMessage(message => {
+        const bytes = Buffer.from(message);
+        if (armed && bytes[0] === 0 && (bytes[1] === 1 || bytes[1] === 2)) {
+          const encoder = encoding.createEncoder();
+          encoding.writeVarUint(encoder, 100);
+          encoding.writeVarUint8Array(encoder, new TextEncoder().encode(JSON.stringify({ type: "rejected", reason: refusal.reason })));
+          ws.send(Buffer.from(encoding.toUint8Array(encoder)));
+        } else server.send(message);
+      });
+    });
+    try {
+      await openDoc(page, doc.id);
+      await caretAfter(page, "Draft.");
+      armed = true;
+      await page.keyboard.insertText(" Keep this draft.");
+      await expect(docSyncState(page)).toHaveAccessibleName(refusal.reason);
+      await expect(page.getByRole("button", { name: "Mode: Reading", exact: true })).toBeVisible();
+      await expect(editorOf(page)).toHaveText("Draft. Keep this draft.");
+      await expect(page.getByRole("button", { name: "Copy local text", exact: true })).toBeVisible();
+      await expectMarkdown(page, doc.id, "Draft.\n");
+      expect(connections).toBe(refusal.connections);
+    } finally {
+      await context.close();
+    }
   });
 
   test("a dropped connection loses nothing: what's typed meanwhile merges back in when it returns", async ({ browser }) => {
