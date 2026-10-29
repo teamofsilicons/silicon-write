@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-10-29T07:06:16.345378+00:00",
+  "source_revision": "07ccc3d",
+  "url": "https://write.teamofsilicons.com",
+  "deployment": "https://silicon-write-5z00o1rdr-saketdev12-5675s-projects.vercel.app",
+  "favicon_href": "/icon.svg?icon.1h4ndjt96qjgi.svg",
+  "favicon_sha256": "f5632e29f5e6c90e575d5e7186237ddbe3a579a2bfcbd4b35cc03b6fe3ef8ef7",
+  "favicon": "Transparent, tightly cropped mark; #1E1E1C in light browser theme, #EDE8E0 in dark theme, matching Developers.",
+  "install_and_share_icons": "Existing tiled artwork preserved.",
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "public_browser_tests": 2,
+    "live_favicon_svg_matches_source": true,
+    "light_and_dark_rendering": "passed; transparent corners and readable ink verified"
+  },
+  "evidence": ".dev/favicon-20261029"
+}
