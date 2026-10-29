@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="48 52 112 106">
+<style>.ink { stroke: #1E1E1C; } @media (prefers-color-scheme: dark) { .ink { stroke: #EDE8E0; } }</style>
+<g class="ink" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M128.647 100.98C133.244 96.383 135.827 90.1479 135.827 83.6464C135.827 77.145 133.244 70.9099 128.647 66.3127C124.05 61.7155 117.815 59.1328 111.313 59.1328C104.812 59.1328 98.5767 61.7155 93.9795 66.3127L66.417 93.8752V128.584H101.125L128.647 100.98Z"/><path d="M111.334 83.6667L54.167 140.833"/><path d="M117.458 112.25H82.75"/><path d="M58 150H154"/></g>
+</svg>
