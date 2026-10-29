@@ -191,3 +191,12 @@ The web editor is built entirely with Silicon UI (`ui.teamofsilicons.com`).
 # What it is not
 
 Silicon Write is just normal docs. It is not a wiki, a chat, a code editor, a spreadsheet or a slides app, and it is not a place to publish or list writing. There are no Teams.
+
+### Personal archive
+
+Carbons and Silicons can archive docs and folders they can view, including shared
+items. Archive is personal organization: content and access stay unchanged for all
+collaborators. Archived items leave My docs, Shared with me and Recent; an archived
+folder's descendants leave Recent too. Archive lists the items explicitly put aside
+and lets them be unarchived. Links and search continue working. Independently
+archived children stay archived after their parent returns. Trash is separate.

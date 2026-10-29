@@ -266,3 +266,19 @@ file is the technical reference.
 - `GET /v1/dev/outbox` (development only): the emails and notifications that would have been sent.
 
 The web invitation role **Suggester** maps to API role `commenter`: read, comment, and propose changes; only editors and owners may accept or reject.
+
+## Personal archive
+
+`PUT /v1/docs/{id}/archive` and `PUT /v1/folders/{id}/archive` accept
+`{"archived": true}` (archive) or `{"archived": false}` (unarchive), returning
+`{"id": "…", "archived": true|false}`. Both are idempotent and require signed-in
+view access. Trashed items must be restored first. No content, timestamp, activity,
+notification, ownership or sharing changes occur. Doc and folder shapes include
+`archived`, scoped to the caller (false anonymously).
+
+`GET /v1/library?view=archive` lists explicitly archived, accessible, non-trashed
+items. Mine, shared and recent exclude archived items and descendants of archived
+folders. Browsing a folder directly still shows its contents, except independently
+archived children. Unarchiving a folder preserves those independent child archives.
+Search, complete listings and direct links remain available. Losing access removes
+an item from Archive too; permanent deletion removes its archive records.

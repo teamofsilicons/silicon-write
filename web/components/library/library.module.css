@@ -15,8 +15,11 @@
 .list:empty { display: none; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; min-width: 0; padding: 24px 0; border-bottom: 1px solid var(--border-subtle); }
 .rowText { display: grid; min-width: 0; gap: 8px; }
-.selectionBar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 40px; margin-top: 24px; color: var(--text-muted); font-size: .8125rem; }
-.selectAll { display: inline-flex; align-items: center; gap: 10px; min-height: 36px; cursor: pointer; }
+.selectionBar { display: grid; align-items: center; min-height: 40px; margin-top: 24px; color: var(--text-muted); font-size: .8125rem; }
+.selectionControls { grid-area: 1 / 1; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.selectionIdle { grid-area: 1 / 1; justify-self: end; }
+.selectAll { min-width: 140px; display: inline-flex; align-items: center; gap: 10px; min-height: 36px; cursor: pointer; }
+.selectAll span { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .selectAll input, .docCheck input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 .selectAll input:focus-visible, .docCheck input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .selectableList { margin-top: 8px; }

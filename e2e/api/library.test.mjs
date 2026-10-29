@@ -2488,3 +2488,62 @@ describe("errors", () => {
     expectError(r, r.status, null, "undoing event ev_123");
   });
 });
+
+describe("personal archive", () => {
+  test("archive is idempotent, private to each collaborator, and separate from trash and access", async () => {
+    const owner = await carbon("archive-owner");
+    const viewer = await carbon("archive-viewer");
+    const outsider = await carbon("archive-outsider");
+    const doc = await newDoc(owner, { title: "An archived draft", markdown: "Keep this content." });
+    await share(owner, "docs", doc.id, viewer, "viewer");
+    const archive = (who, archived) => who.api.put(`/v1/docs/${doc.id}/archive`, { archived });
+    expectError(await archive(outsider, true), 404, "not_found", "no archive without access");
+    expectError(await anonymous.put(`/v1/docs/${doc.id}/archive`, { archived: true }), 401, null, "archive requires a session");
+    expectStatus(await archive(viewer, true), 200, "viewer archives personally");
+    expectStatus(await archive(viewer, true), 200, "repeated archive is safe");
+    assert.equal((await getDoc(viewer, doc.id)).archived, true);
+    assert.equal((await getDoc(owner, doc.id)).archived, false);
+    assert.equal((await getDoc(owner, doc.id)).updated_at, doc.updated_at);
+    assert.deepEqual(ids((await library(viewer, { view: "archive" })).docs), [doc.id]);
+    assert.ok(!ids((await library(viewer, { view: "shared" })).docs).includes(doc.id));
+    assert.ok(!ids((await library(viewer, { view: "recent" })).docs).includes(doc.id));
+    assert.ok(ids((await library(owner)).docs).includes(doc.id));
+    assert.match(await readMarkdown(viewer, doc.id), /Keep this content/);
+    expectStatus(await archive(viewer, false), 200, "unarchive");
+    expectStatus(await archive(viewer, false), 200, "repeated unarchive is safe");
+    assert.ok(ids((await library(viewer, { view: "shared" })).docs).includes(doc.id));
+    expectStatus(await archive(owner, true), 200, "owner archive");
+    await trashDoc(owner, doc.id);
+    assert.deepEqual(ids((await library(owner, { view: "archive" })).docs), []);
+    expectError(await archive(owner, true), 409, "conflict", "trash cannot be archived");
+    await restoreDoc(owner, doc.id);
+    assert.deepEqual(ids((await library(owner, { view: "archive" })).docs), [doc.id]);
+    expectStatus(await archive(viewer, true), 200, "archive before losing access");
+    const sharing = expectStatus(await owner.api.get(`/v1/docs/${doc.id}/sharing`), 200, "members");
+    const member = sharing.members.find(m => m.account?.uuid === viewer.uuid);
+    assert.ok(member, "shared member exists");
+    expectStatus(await owner.api.del(`/v1/docs/${doc.id}/sharing/${member.id}`), 204, "revoke viewer");
+    assert.deepEqual(ids((await library(viewer, { view: "archive" })).docs), []);
+  });
+
+  test("folders hide their subtree in Recent and preserve independent child archives", async () => {
+    const owner = await carbon("archive-folder");
+    const root = await newFolder(owner, "Filed away");
+    const nested = await newFolder(owner, "Nested", root.id);
+    const child = await newDoc(owner, { title: "Child", folder_id: nested.id });
+    const independent = await newDoc(owner, { title: "Independently archived", folder_id: root.id });
+    expectStatus(await owner.api.put(`/v1/docs/${independent.id}/archive`, { archived: true }), 200, "child archive");
+    expectStatus(await owner.api.put(`/v1/folders/${root.id}/archive`, { archived: true }), 200, "folder archive");
+    assert.ok(!ids((await library(owner)).folders).includes(root.id));
+    assert.deepEqual(ids((await library(owner, { view: "recent" })).docs), []);
+    assert.deepEqual(ids((await library(owner, { view: "archive" })).folders), [root.id]);
+    assert.deepEqual(ids((await library(owner, { folder: root.id })).folders), [nested.id]);
+    assert.deepEqual(ids((await library(owner, { folder: nested.id })).docs), [child.id]);
+    assert.deepEqual(ids((await library(owner, { folder: root.id })).docs), []);
+    const later = await newDoc(owner, { title: "New inside archive", folder_id: nested.id });
+    assert.deepEqual(ids((await library(owner, { view: "recent" })).docs), []);
+    expectStatus(await owner.api.put(`/v1/folders/${root.id}/archive`, { archived: false }), 200, "folder unarchive");
+    assert.deepEqual(sorted(ids((await library(owner, { view: "recent" })).docs)), sorted([child.id, later.id]));
+    assert.deepEqual(ids((await library(owner, { view: "archive" })).docs), [independent.id]);
+  });
+});

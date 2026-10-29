@@ -113,6 +113,8 @@ pub struct Doc {
     pub updated_at: String,
     /// RFC 3339 when it is in the trash.
     pub deleted_at: Option<String>,
+    /// Archived in the caller's library (does not change access).
+    pub archived: bool,
     /// Link to the doc in the web editor.
     pub url: String,
 }
@@ -148,6 +150,8 @@ pub struct Folder {
     pub created_at: String,
     /// RFC 3339 when it is in the trash.
     pub deleted_at: Option<String>,
+    /// Archived in the caller's library (does not change access).
+    pub archived: bool,
 }
 
 /// `GET /v1/library`.
@@ -174,6 +178,8 @@ pub enum LibraryView {
     Recent,
     /// The caller's deleted docs and folders.
     Trash,
+    /// Docs and folders archived by the caller.
+    Archive,
 }
 
 impl LibraryView {
@@ -184,6 +190,7 @@ impl LibraryView {
             Self::Shared => "shared",
             Self::Recent => "recent",
             Self::Trash => "trash",
+            Self::Archive => "archive",
         }
     }
 }

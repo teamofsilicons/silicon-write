@@ -117,7 +117,7 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
     let view = q.view.as_deref().unwrap_or("mine");
     if let Some(folder_id) = q.folder.as_deref().filter(|f| !f.is_empty() && *f != "root") {
         let (folder, role) = access::require_folder(&state, &caller, folder_id, Role::Viewer).await?;
-        let (folders, docs): (Vec<FolderRow>, Vec<DocRow>) = if folder.deleted_at.is_some() {
+        let (mut folders, mut docs): (Vec<FolderRow>, Vec<DocRow>) = if folder.deleted_at.is_some() {
             // A folder in the trash (only its owner opens it) shows what went there with it:
             // what deleting it for good removes.
             let with = trashing(&state, folder_id).await?;
@@ -153,13 +153,16 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
                 .await?,
             )
         };
+        if folder.deleted_at.is_none() {
+            crate::archive::filter(&state, &caller, &mut folders, &mut docs, true).await?;
+        }
         return Ok(Json(json!({
             "folder": views::folder_view(&state, &folder, role, Some(&caller.uuid)).await?,
             "folders": views::folder_views(&state, folders, &caller).await?,
             "docs": views::doc_views(&state, docs, &caller).await?,
         })));
     }
-    let (folders, docs): (Vec<FolderRow>, Vec<DocRow>) = match view {
+    let (mut folders, mut docs): (Vec<FolderRow>, Vec<DocRow>) = match view {
         "shared" => (
             sqlx::query_as(sqlx::AssertSqlSafe(format!(
                 "select {FOLDER_COLUMNS} from folders where deleted_at is null and owner_uuid <> $1
@@ -171,6 +174,20 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
             sqlx::query_as(sqlx::AssertSqlSafe(format!(
                 "select {DOC_COLUMNS} from docs where deleted_at is null and owner_uuid <> $1
                  and id in (select doc_id from shares where account_uuid = $1) order by updated_at desc"
+            )))
+            .bind(&caller.uuid)
+            .fetch_all(&state.db)
+            .await?,
+        ),
+        "archive" => (
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "select {FOLDER_COLUMNS} from folders where deleted_at is null and id in (select folder_id from archived_folders where account_uuid = $1) order by lower(name)"
+            )))
+            .bind(&caller.uuid)
+            .fetch_all(&state.db)
+            .await?,
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "select {DOC_COLUMNS} from docs where deleted_at is null and id in (select doc_id from archived_docs where account_uuid = $1) order by updated_at desc"
             )))
             .bind(&caller.uuid)
             .fetch_all(&state.db)
@@ -194,7 +211,7 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
             vec![],
             {
                 let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
-                sqlx::query_as(sqlx::AssertSqlSafe(format!("select {DOC_COLUMNS} from docs where id = any($1) order by updated_at desc limit 30")))
+                sqlx::query_as(sqlx::AssertSqlSafe(format!("select {DOC_COLUMNS} from docs where id = any($1) order by updated_at desc")))
                     .bind(&ids)
                     .fetch_all(&state.db)
                     .await?
@@ -214,8 +231,12 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
             .fetch_all(&state.db)
             .await?,
         ),
-        other => return Err(ApiError::invalid(format!("Unknown view `{other}`.")).hint("Use mine, shared, recent or trash.")),
+        other => return Err(ApiError::invalid(format!("Unknown view `{other}`.")).hint("Use mine, shared, recent, archive or trash.")),
     };
+    if view != "archive" && view != "trash" {
+        crate::archive::filter(&state, &caller, &mut folders, &mut docs, false).await?;
+    }
+    if view == "recent" { docs.truncate(30); }
     Ok(Json(json!({
         "folder": Value::Null,
         "folders": views::folder_views(&state, folders, &caller).await?,

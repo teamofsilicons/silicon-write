@@ -627,6 +627,26 @@ impl Client {
             .await
     }
 
+    /// Archive or unarchive a doc in the caller's library.
+    pub async fn archive_doc(&self, doc: &str, archived: bool) -> Result<serde_json::Value> {
+        self.send_json(
+            Method::PUT,
+            &["v1", "docs", doc, "archive"],
+            Some(serde_json::json!({ "archived": archived })),
+        )
+        .await
+    }
+
+    /// Archive or unarchive a folder in the caller's library.
+    pub async fn archive_folder(&self, folder: &str, archived: bool) -> Result<serde_json::Value> {
+        self.send_json(
+            Method::PUT,
+            &["v1", "folders", folder, "archive"],
+            Some(serde_json::json!({ "archived": archived })),
+        )
+        .await
+    }
+
     /// `POST /v1/docs/{id}/restore` (no body): back from the trash.
     pub async fn restore_doc(&self, doc: &str) -> Result<Doc> {
         self.send_json(Method::POST, &["v1", "docs", doc, "restore"], None)

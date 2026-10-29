@@ -126,9 +126,12 @@ pub async fn ls(
     shared: bool,
     trash: bool,
     recent: bool,
+    archived: bool,
 ) -> CliResult<()> {
     ctx.require_session()?;
-    let view = if trash {
+    let view = if archived {
+        LibraryView::Archive
+    } else if trash {
         LibraryView::Trash
     } else if shared {
         LibraryView::Shared
@@ -147,6 +150,7 @@ pub async fn ls(
         rows.extend(library.docs.iter().map(doc_row));
         let place = match (&library.folder, view) {
             (Some(f), _) => format!("“{}”", f.name),
+            (None, LibraryView::Archive) => "your archive".into(),
             (None, LibraryView::Trash) => "your trash".into(),
             (None, LibraryView::Shared) => "what is shared with you".into(),
             (None, LibraryView::Recent) => "your recent docs".into(),
@@ -507,6 +511,22 @@ pub async fn rename(ctx: &Ctx, item: &str, name: &str) -> CliResult<()> {
             ctx.emit(&f, || format!("Renamed folder to {} ({}).", f.name, f.id));
         }
     }
+    Ok(())
+}
+
+pub async fn archive(ctx: &Ctx, item: &str, archived: bool) -> CliResult<()> {
+    let item = resolve::item_id(ctx, item, false).await?;
+    let result = match &item {
+        ItemId::Doc(id) => ctx.client.archive_doc(id, archived).await?,
+        ItemId::Folder(id) => ctx.client.archive_folder(id, archived).await?,
+    };
+    ctx.emit(&result, || {
+        format!(
+            "{} {} in your library.",
+            if archived { "Archived" } else { "Unarchived" },
+            item.id()
+        )
+    });
     Ok(())
 }
 

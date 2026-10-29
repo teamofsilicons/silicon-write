@@ -185,6 +185,9 @@ Examples:
         /// Your trash
         #[arg(long)]
         trash: bool,
+        /// Your archived docs and folders
+        #[arg(long, conflicts_with_all = ["shared", "recent", "trash", "folder"])]
+        archived: bool,
     },
     /// Show every doc and folder you can open as a tree
     #[command(after_help = "Example:\n  write tree")]
@@ -286,6 +289,10 @@ Examples:
         /// New title or name
         name: String,
     },
+    /// Put a doc or folder aside in your library without changing access
+    Archive { item: String },
+    /// Bring a doc or folder back from your archive
+    Unarchive { item: String },
     /// Move a doc or folder to the trash (restore it any time)
     #[command(after_help = "Example:\n  write rm \"Old draft\"")]
     Rm {
@@ -951,7 +958,8 @@ async fn run(ctx: &Ctx, command: Command) -> CliResult<()> {
             shared,
             trash,
             recent,
-        } => c::ls(ctx, folder, shared, trash, recent).await,
+            archived,
+        } => c::ls(ctx, folder, shared, trash, recent, archived).await,
         Command::Tree => c::tree(ctx).await,
         Command::Info { doc } => c::info(ctx, &doc).await,
         Command::New {
@@ -976,6 +984,8 @@ async fn run(ctx: &Ctx, command: Command) -> CliResult<()> {
         Command::Mv { item, to } => c::mv(ctx, &item, &to).await,
         Command::Rename { item, name } => c::rename(ctx, &item, &name).await,
         Command::Rm { item } => c::rm(ctx, &item).await,
+        Command::Archive { item } => c::archive(ctx, &item, true).await,
+        Command::Unarchive { item } => c::archive(ctx, &item, false).await,
         Command::Restore { item } => c::restore(ctx, &item).await,
         Command::Purge { item, confirm } => c::purge(ctx, &item, confirm).await,
         Command::Copy {

@@ -257,3 +257,15 @@ write --dangerously-use-em-dash reply THREAD --body "Keep this — intentionally
 
 The override also lasts for the duration of a long-running command. It is never
 saved in the sign-in session; the next command returns to the default.
+
+## Archive
+
+    write archive "Old draft"
+    write ls --archived
+    write unarchive "Old draft"
+
+Archiving is personal: it hides a doc or folder from your normal library and Recent,
+without changing its contents, sharing, or anyone else's library. Archived folders
+hide their descendants from Recent too. Opening a folder directly still works.
+Independently archived children stay archived when the folder is unarchived.
+Search and direct links still find archived docs. Trash is separate.

@@ -33,6 +33,7 @@ pub struct DocView {
     pub updated_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub deleted_at: Option<OffsetDateTime>,
+    pub archived: bool,
     pub url: String,
 }
 
@@ -48,6 +49,7 @@ pub struct FolderView {
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub deleted_at: Option<OffsetDateTime>,
+    pub archived: bool,
 }
 
 /// The folders above, top first, limited to the ones the viewer can see: walking up from the
@@ -106,6 +108,7 @@ pub async fn doc_view(state: &AppState, doc: &DocRow, role: Role, viewer: Option
         created_at: doc.created_at,
         updated_at: doc.updated_at,
         deleted_at: doc.deleted_at,
+        archived: crate::archive::is_archived(state, viewer, &doc.id, false).await?,
         url: state.config.doc_url(&doc.id),
     })
 }
@@ -120,6 +123,7 @@ pub async fn folder_view(state: &AppState, folder: &FolderRow, role: Role, viewe
         role,
         created_at: folder.created_at,
         deleted_at: folder.deleted_at,
+        archived: crate::archive::is_archived(state, viewer, &folder.id, true).await?,
     })
 }
 

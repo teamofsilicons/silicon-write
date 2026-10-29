@@ -1879,3 +1879,70 @@ for (const [label, viewport] of [["desktop", DESKTOP], ["phone", PHONE]] as cons
     await friend.context.close();
   });
 }
+
+test("personal archive: doc, folder and selected docs can be put aside and brought back", async ({ browser }) => {
+  const { page, context } = await signedIn(browser, "carbon");
+  try {
+    const doc = await newDoc(page, named("Archive draft"));
+    const folder = await newFolder(page, named("Archive folder"));
+    await newDoc(page, named("Inside archive"), { folder_id: folder.id });
+    await page.goto("/library");
+    await page.getByRole("button", { name: `More for ${doc.title}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
+    await expect(page.getByRole("link", { name: doc.title, exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: `More for ${folder.name}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
+    await expect(page.getByRole("link", { name: folder.name, exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: "Archive", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Archive", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: doc.title, exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: folder.name, exact: true })).toBeVisible();
+    await page.getByRole("button", { name: `More for ${doc.title}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Unarchive", exact: true }).click();
+    await expect(page.getByRole("link", { name: doc.title, exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: `More for ${folder.name}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Unarchive", exact: true }).click();
+    await page.goto("/library");
+    await expect(page.getByRole("link", { name: folder.name, exact: true })).toBeVisible();
+    await page.getByRole("button", { name: `More for ${doc.title}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Select", exact: true }).click();
+    await page.getByRole("button", { name: "Archive selected", exact: true }).click();
+    await expect(page.getByRole("link", { name: doc.title, exact: true })).toHaveCount(0);
+    await page.goto(`/d/${doc.id}`);
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Unarchive", exact: true }).click();
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Archive", exact: true })).toBeVisible();
+  } finally { await context.close(); }
+});
+
+for (const viewport of [DESKTOP, PHONE]) {
+  test(`selection stays still and title clicks toggle selection at ${viewport.width}px`, async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon", viewport);
+    try {
+      const first = await newDoc(page, named("Selection first"));
+      const second = await newDoc(page, named("Selection second"));
+      await page.goto("/library");
+      const title = page.getByRole("link", { name: first.title, exact: true });
+      await expect(title).toBeVisible();
+      const before = await title.boundingBox();
+      await page.getByRole("button", { name: `More for ${first.title}`, exact: true }).click();
+      await page.getByRole("menuitem", { name: "Select", exact: true }).click();
+      await expect(page.getByRole("checkbox", { name: `Select ${first.title}`, exact: true })).toBeChecked();
+      const active = await title.boundingBox();
+      expect(active?.y).toBe(before?.y);
+      expect(active?.x).toBe(before?.x);
+      await page.getByRole("link", { name: second.title, exact: true }).click();
+      await expect(page).toHaveURL(/\/library$/);
+      await expect(page.getByRole("checkbox", { name: `Select ${second.title}`, exact: true })).toBeChecked();
+      await expect(page.getByRole("checkbox", { name: `Select ${first.title}`, exact: true })).toBeChecked();
+      expect((await title.boundingBox())?.y).toBe(before?.y);
+      await title.click();
+      await expect(page.getByRole("checkbox", { name: `Select ${first.title}`, exact: true })).not.toBeChecked();
+      await page.getByRole("button", { name: "Clear", exact: true }).click();
+      expect((await title.boundingBox())?.y).toBe(before?.y);
+      await title.click();
+      await expect(page).toHaveURL(new RegExp(`/d/${first.id}$`));
+    } finally { await context.close(); }
+  });
+}

@@ -1,6 +1,7 @@
 //! Silicon Write's service: the API behind the web editor and the `write` CLI (docs/api.md).
 
 mod access;
+mod archive;
 mod accounts;
 mod activity;
 mod auth;
@@ -46,6 +47,7 @@ fn router(state: AppState) -> Router {
         .route("/v1/docs", get(library::all_docs).post(library::new_doc))
         .route("/v1/docs/import", post(content::import_new))
         .route("/v1/docs/{id}", get(library::get_doc).patch(library::patch_doc).delete(library::trash_doc))
+        .route("/v1/docs/{id}/archive", put(archive::doc))
         .route("/v1/docs/{id}/restore", post(library::restore_doc))
         .route("/v1/docs/{id}/permanently", delete(library::purge_doc))
         .route("/v1/docs/{id}/copy", post(library::copy_doc))
@@ -89,6 +91,7 @@ fn router(state: AppState) -> Router {
         .route("/v1/links", get(content::resolve_link))
         .route("/v1/folders", get(library::all_folders).post(library::new_folder))
         .route("/v1/folders/{id}", get(library::get_folder).patch(library::patch_folder).delete(library::trash_folder))
+        .route("/v1/folders/{id}/archive", put(archive::folder))
         .route("/v1/folders/{id}/restore", post(library::restore_folder))
         .route("/v1/folders/{id}/permanently", delete(library::purge_folder))
         .route("/v1/folders/{id}/sharing", get(sharing::folder_members).post(sharing::share_folder))

@@ -6,7 +6,7 @@
  */
 import { useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, CheckSquare2, FilePlus2, FileText, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeftRight, CheckSquare2, FilePlus2, FileText, Folder as FolderIcon, FolderInput, FolderPlus, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2, Users } from "lucide-react";
 import { Page } from "@/components/foundation/layout/layout";
 import { Button } from "@/components/silicon-ui/button/button";
 import { Breadcrumb } from "@/components/silicon-ui/breadcrumb/breadcrumb";
@@ -27,12 +27,13 @@ import { ImportFiles } from "./import-files";
 import { useWorkspaceTabs } from "@/components/workspace/workspace-tabs";
 import styles from "./library.module.css";
 
-export type LibraryView = "mine" | "shared" | "recent" | "trash";
+export type LibraryView = "mine" | "shared" | "recent" | "archive" | "trash";
 
 const TITLES: Record<LibraryView, { title: string; description: string }> = {
   mine: { title: "My docs", description: "Your docs and the ones shared with you, together in one place." },
   shared: { title: "Shared with me", description: "Docs and folders other Carbons and Silicons shared with you." },
   recent: { title: "Recent", description: "Your latest docs, most recently changed first." },
+  archive: { title: "Archive", description: "Docs and folders you’ve put aside. Only your library changes; everyone keeps their access." },
   trash: { title: "Trash", description: "Deleted docs and folders stay here, with their full history, until you delete them for good." },
 };
 
@@ -122,7 +123,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const folder = data?.folder ?? null;
   const inTrash = Boolean(folder?.deleted_at);
   const canAdd = view === "mine" && !error && !inTrash && (!folderId || Boolean(folder && atLeast(folder.role, "editor")));
-  const heading = folder ? { title: folder.name, description: inTrash ? "This folder is in the trash. Restore it from Trash to add or change its contents." : folder.owner.uuid !== me ? `${folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : folderId ? { title: error ? "Folder unavailable" : "Folder", description: "" } : TITLES[view];
+  const heading = folder ? { title: folder.name, description: folder.archived ? "This folder is archived in your library. Its contents and sharing are unchanged." : inTrash ? "This folder is in the trash. Restore it from Trash to add or change its contents." : folder.owner.uuid !== me ? `${folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : folderId ? { title: error ? "Folder unavailable" : "Folder", description: "" } : TITLES[view];
 
   const newDoc = async () => {
     try {
@@ -180,10 +181,10 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
     // Menus and checkboxes have their own actions; an ordinary title click still opens the doc.
     if (target.closest("button, input, label, [role='menu']")) return;
     const modified = event.metaKey || event.ctrlKey || event.shiftKey;
-    if (target.closest("a") && !modified) return;
+    if (target.closest("a") && !modified && !selected.length) return;
     event.preventDefault();
     if (event.shiftKey && selectRange(id, event.metaKey || event.ctrlKey)) return;
-    if (event.metaKey || event.ctrlKey) {
+    if (event.metaKey || event.ctrlKey || selected.length > 0) {
       toggleSelected(id, !selected.some(doc => doc.id === id));
     } else {
       selectionAnchor.current = { scope: selectionScope, id };
@@ -228,25 +229,34 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
       {isLoading ? <p className={styles.loading}>Loading…</p> : null}
       {empty ? (
         <EmptyState
-          title={view === "trash" ? "The trash is empty" : view === "shared" ? "Nothing shared with you yet" : folder ? "This folder is empty" : "No docs yet"}
-          description={inTrash ? "Restore this folder from Trash before adding anything to it." : view === "trash" ? "Deleted docs and folders come here first." : view === "shared" ? "When someone shares a doc or folder with you, it shows here." : "Make a doc, or open a Word, Markdown, text or PDF file."}
+          title={view === "archive" ? "Nothing archived yet" : view === "trash" ? "The trash is empty" : view === "shared" ? "Nothing shared with you yet" : folder ? "This folder is empty" : "No docs yet"}
+          description={view === "archive" ? "Use Archive in a doc or folder’s menu to put it here. Bring it back whenever you need it." : inTrash ? "Restore this folder from Trash before adding anything to it." : view === "trash" ? "Deleted docs and folders come here first." : view === "shared" ? "When someone shares a doc or folder with you, it shows here." : "Make a doc, or open a Word, Markdown, text or PDF file."}
           action={canAdd ? <Button className={styles.newDoc} variant="primary" size="sm" onClick={newDoc}>New doc</Button> : undefined}
           icon={<FileText size={22} aria-hidden="true" />}
         />
       ) : null}
-      {selectable && docs.length && (selected.length > 0 || folder) ? (
+      {selectable && docs.length > 0 ? (
         <div className={styles.selectionBar} aria-label="Select documents">
-          {selected.length ? <>
+          <div className={styles.selectionControls} style={{ visibility: selected.length ? "visible" : "hidden" }} aria-hidden={!selected.length} inert={!selected.length}>
             <label className={styles.selectAll}>
               <input type="checkbox" aria-label="Select all documents" checked={selected.length === docs.length} ref={input => { if (input) input.indeterminate = selected.length > 0 && selected.length < docs.length; }} onChange={event => setSelection({ scope: selectionScope, ids: new Set(event.target.checked ? docs.map(doc => doc.id) : []) })} />
               <span>{selected.length} selected</span>
             </label>
             <Button variant="ghost" size="sm" onClick={() => setSelection({ scope: selectionScope, ids: new Set() })}>Clear</Button>
-            <Button className={styles.openSelected} variant="secondary" size="sm" onClick={() => openDocs(selected)}>Open selected <span aria-hidden="true">({selected.length})</span></Button>
-          </> : folder ? <Button className={styles.openSelected} variant="ghost" size="sm" onClick={() => openDocs(docs)}>Open all docs</Button> : null}
+            <Button variant="ghost" size="sm" onClick={() => void act("Some docs couldn't be updated. Try again for those still listed.", async () => {
+              const results = await Promise.allSettled(selected.map(doc => api.put(`/v1/docs/${seg(doc.id)}/archive`, { archived: view !== "archive" })));
+              refresh();
+              setSelection({ scope: selectionScope, ids: new Set() });
+              if (results.some(result => result.status === "rejected")) throw new Error("Some docs couldn't be updated. Try again for those still listed.");
+            }, view === "archive" ? "Moved out of Archive" : "Archived")}>
+              <Archive size={14} aria-hidden="true" /> {view === "archive" ? "Unarchive selected" : "Archive selected"}
+            </Button>
+            <Button className={styles.openSelected} variant="secondary" size="sm" onClick={() => openDocs(selected)}>Open selected</Button>
+          </div>
+          {!selected.length && folder ? <Button className={styles.selectionIdle} variant="ghost" size="sm" onClick={() => openDocs(docs)}>Open all docs</Button> : null}
         </div>
       ) : null}
-      <ul className={`${styles.list} ${selected.length || (folder && selectable && docs.length) ? styles.selectableList : ""}`} data-selecting={selected.length > 0 || undefined} aria-label={heading.title} onKeyDown={event => {
+      <ul className={`${styles.list} ${selectable && docs.length > 0 ? styles.selectableList : ""}`} data-selecting={selected.length > 0 || undefined} aria-label={heading.title} onKeyDown={event => {
         if (event.key === "Escape" && selected.length && !(event.target as HTMLElement).closest("[role='menu']")) {
           event.preventDefault();
           setSelection({ scope: selectionScope, ids: new Set() });
@@ -275,6 +285,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuItem icon={<Share2 size={16} />} onSelect={() => setDialog({ kind: "share", type: "folders", id: f.id, title: f.name })}>Share</DropdownMenuItem>
+                  <DropdownMenuItem icon={f.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />} onSelect={() => void act("The archive couldn't be updated", () => api.put(`/v1/folders/${seg(f.id)}/archive`, { archived: !f.archived }), f.archived ? "Moved out of Archive" : "Archived")}>{f.archived ? "Unarchive" : "Archive"}</DropdownMenuItem>
                   {atLeast(f.role, "editor") ? <DropdownMenuItem icon={<Pencil size={16} />} onSelect={() => setDialog({ kind: "rename", item: { type: "folder", folder: f } })}>Rename</DropdownMenuItem> : null}
                   {atLeast(f.role, "editor") ? <DropdownMenuItem icon={<FolderInput size={16} />} onSelect={() => setDialog({ kind: "move", item: { type: "folder", folder: f } })}>Move</DropdownMenuItem> : null}
                   {f.role === "owner" ? (
@@ -319,6 +330,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                 <DropdownMenuContent>
                   {selectable ? <DropdownMenuItem icon={<CheckSquare2 size={16} />} onSelect={() => toggleSelected(d.id, !selected.some(doc => doc.id === d.id))}>{selected.some(doc => doc.id === d.id) ? "Deselect" : "Select"}</DropdownMenuItem> : null}
                   <DropdownMenuItem icon={<Share2 size={16} />} onSelect={() => setDialog({ kind: "share", type: "docs", id: d.id, title: d.title })}>Share</DropdownMenuItem>
+                  <DropdownMenuItem icon={d.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />} onSelect={() => void act("The archive couldn't be updated", () => api.put(`/v1/docs/${seg(d.id)}/archive`, { archived: !d.archived }), d.archived ? "Moved out of Archive" : "Archived")}>{d.archived ? "Unarchive" : "Archive"}</DropdownMenuItem>
                   {atLeast(d.role, "editor") ? <DropdownMenuItem icon={<Pencil size={16} />} onSelect={() => setDialog({ kind: "rename", item: { type: "doc", doc: d } })}>Rename</DropdownMenuItem> : null}
                   {atLeast(d.role, "editor") ? <DropdownMenuItem icon={<FolderInput size={16} />} onSelect={() => setDialog({ kind: "move", item: { type: "doc", doc: d } })}>Move</DropdownMenuItem> : null}
                   <DropdownMenuItem icon={<FilePlus2 size={16} />} onSelect={() => void act("The copy wasn't made", () => api.post(`/v1/docs/${seg(d.id)}/copy`, { folder_id: copyFolder(d) }), "Copied")}>Make a copy</DropdownMenuItem>

@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditorState, type Editor } from "@tiptap/react";
-import { ArrowLeft, ChevronDown, Copy, Download, Eye, FileInput, FolderInput, History, Link2, MessageSquare, MoreHorizontal, PencilLine, Search, Trash2, RotateCcw, Type as TypeIcon, Users } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, ChevronDown, Copy, Download, Eye, FileInput, FolderInput, History, Link2, MessageSquare, MoreHorizontal, PencilLine, Search, Trash2, RotateCcw, Type as TypeIcon, Users } from "lucide-react";
 import { ThemeSubmenu } from "@/components/foundation/theme/theme-menu";
 import { AppGlyph } from "@/components/foundation/brand/app-mark";
 import { Button } from "@/components/silicon-ui/button/button";
@@ -280,6 +280,18 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
             {account ? (
               <DropdownMenuItem icon={<Copy size={16} />} onSelect={copy}>
                 Make a copy
+              </DropdownMenuItem>
+            ) : null}
+            {account ? (
+              <DropdownMenuItem icon={doc.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />} onSelect={() => void (async () => {
+                try {
+                  await api.put(`/v1/docs/${seg(doc.id)}/archive`, { archived: !doc.archived });
+                  client.setQueryData<Doc>(keys.doc(doc.id), current => current ? { ...current, archived: !doc.archived } : current);
+                  refreshLibrary();
+                  notify.success(doc.archived ? "Moved out of Archive" : "Archived in your library");
+                } catch (error) { notifyError(error, "The archive couldn't be updated"); }
+              })()}>
+                {doc.archived ? "Unarchive" : "Archive"}
               </DropdownMenuItem>
             ) : null}
             {canEdit ? (

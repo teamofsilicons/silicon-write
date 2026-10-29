@@ -1,4 +1,4 @@
-import { Clock, FileText, Inbox, MessageSquareText, PenLine, Search, Share2, TerminalSquare, Trash2, Users, History, FolderTree } from "lucide-react";
+import { Archive, Clock, FileText, Inbox, MessageSquareText, PenLine, Search, Share2, TerminalSquare, Trash2, Users, History, FolderTree } from "lucide-react";
 import type { AppConfig } from "./app-config.types";
 
 export const appConfig: AppConfig = {
@@ -16,6 +16,7 @@ export const appConfig: AppConfig = {
     { href: "/shared", label: "Shared with me", icon: Users, keywords: ["shared", "invited"] },
     { href: "/recent", label: "Recent", icon: Clock, keywords: ["recent", "opened"] },
     { href: "/search", label: "Search", icon: Search, keywords: ["find", "search"] },
+    { href: "/archive", label: "Archive", icon: Archive, keywords: ["archived", "restore"] },
     { href: "/trash", label: "Trash", icon: Trash2, keywords: ["trash", "deleted", "restore"] },
   ],
   links: {

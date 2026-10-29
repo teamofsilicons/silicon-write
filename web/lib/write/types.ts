@@ -33,6 +33,7 @@ export interface Doc {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  archived?: boolean;
   url: string;
 }
 
@@ -45,6 +46,7 @@ export interface Folder {
   role: Role;
   created_at: string;
   deleted_at: string | null;
+  archived?: boolean;
 }
 
 export interface Library {
