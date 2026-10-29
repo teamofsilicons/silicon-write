@@ -31,8 +31,8 @@
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
-    "archive_sha256": "c82193b9f793e891a3f188c6ec9b02ff3e8279e271a3a6e6ff590d2316a23326",
+    "revision": "ddb926140aa460d34927b380b73c890f9e1b40de",
+    "archive_sha256": "072e354e15f1b6562d706c23699e2d8b2d26779f4a8e696c281ea34e946dffcc",
     "install_ssm_command": "cc1b6311-9082-4925-a25d-fa386a20b7e8",
     "readiness": true,
     "private_document_journey": [
@@ -103,7 +103,7 @@
       "existing_docx_export_bytes": 10470,
       "fixture_moved_to_trash": true
     },
-    "predeploy_backup": "predeploy-20261024T160628Z"
+    "predeploy_backup": "predeploy-20261029T131919Z"
   },
   "infrastructure": {
     "aws_account": "234951665042",
@@ -221,5 +221,6 @@
   "voice_recorder_verification": "deploy/verification-voice-recorder-20261022.json",
   "voice_label_verification": "deploy/verification-voice-labels-20261022.json",
   "content_cache_verification": "deploy/verification-content-cache-20261023.json",
-  "public_email_verification": "deploy/verification-public-email-20261024.json"
+  "public_email_verification": "deploy/verification-public-email-20261024.json",
+  "archive_selection_verification": "deploy/verification-archive-selection-20261029.json"
 }

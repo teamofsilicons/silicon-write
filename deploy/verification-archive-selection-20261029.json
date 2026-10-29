@@ -1,0 +1,55 @@
+{
+  "recorded_at": "2026-10-29T13:23:06Z",
+  "source_revision": "ddb926140aa460d34927b380b73c890f9e1b40de",
+  "changes": [
+    "Personal archive for docs and folders; permissions and other libraries unchanged",
+    "Archive view, per-item and bulk actions, direct-document action",
+    "Stable selection layout; title clicks toggle selection while active"
+  ],
+  "api": {
+    "url": "https://api.write.teamofsilicons.com",
+    "revision": "ddb926140aa460d34927b380b73c890f9e1b40de",
+    "archive_sha256": "072e354e15f1b6562d706c23699e2d8b2d26779f4a8e696c281ea34e946dffcc",
+    "ssm_command": "44aed158-f2c9-4ee1-bd3c-d9bedefcb944",
+    "previous_revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
+    "predeploy_backup": "predeploy-20261029T131919Z",
+    "migration": 8,
+    "migration_success": true
+  },
+  "web": {
+    "url": "https://write.teamofsilicons.com",
+    "deployment": "https://silicon-write-4kp8ztsiw-saketdev12-5675s-projects.vercel.app",
+    "production_alias_confirmed": true
+  },
+  "local_validation": {
+    "rust_tests": 72,
+    "api_library_passed": 133,
+    "api_library_todo": 1,
+    "api_library_todo_reason": "Existing rename of title-based links does not update references",
+    "browser_tests": "Archive journey plus stable selection/title behavior at 1440 and 390 pixels, all passed",
+    "typecheck": true,
+    "lint": true,
+    "production_web_build": true,
+    "linux_arm64_api_build": true,
+    "deployment_tests": 12
+  },
+  "live_validation": {
+    "identity": "si:saket-agents",
+    "checks": [
+      "doc archived and still readable by direct id",
+      "archived folder hides subtree in Recent but remains browsable",
+      "unarchive restores library listing"
+    ],
+    "started_at": "2026-10-29T13:20:55Z",
+    "folder": "f_4KG756UKdQKqgzpYnp6o",
+    "doc": "d_ePwocNxuiqZpGEfu2j97",
+    "passed": true,
+    "fixture_moved_to_trash": true,
+    "completed_at": "2026-10-29T13:21:15Z"
+  },
+  "limitations": [
+    "Authenticated production browser was signed out; signed-in UI journeys verified locally, production operations verified with the authorized Silicon CLI session.",
+    "Archive CLI commands implemented and tested in source build; store CLI binaries were not republished in this web/API release."
+  ],
+  "secrets_included": false
+}
