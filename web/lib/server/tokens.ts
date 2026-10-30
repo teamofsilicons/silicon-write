@@ -76,7 +76,10 @@ export async function exchangeCode(code: string, verifier: string, headers: Reco
     await refreshStore();
     const result = await tokenCall({ grant_type: "authorization_code", code, redirect_uri: callbackUrl(), code_verifier: verifier }, headers);
     return result.ok ? { ok: true, session: await createSession(result.session) } : result;
-  } catch { return storageUnavailable(); }
+  } catch (error) {
+    console.error("Browser session storage failed", error instanceof Error ? error.name : "UnknownError");
+    return storageUnavailable();
+  }
 }
 
 function storageUnavailable(): TokenResult {
@@ -116,7 +119,10 @@ export async function refreshSession(session: StoredSession, headers: Record<str
       // Read again even after success: every caller gets the current generation, never its stale reply.
     }
     return pending();
-  } catch { return storageUnavailable(); }
+  } catch (error) {
+    console.error("Browser session storage failed", error instanceof Error ? error.name : "UnknownError");
+    return storageUnavailable();
+  }
 }
 
 /** Codes from the token endpoint that mean the sign-in is over (sign in again), as opposed to a passing failure. */
