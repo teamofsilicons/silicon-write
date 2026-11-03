@@ -14,7 +14,7 @@ import { DocLink, Footnote, TableOfContents } from "./nodes";
 import { SuggestionDelete, SuggestionInsert, SuggestionNodes } from "./suggestions";
 import { FileFormatting, InlineImage, Subscript, Superscript } from "./formatting";
 
-export function contentExtensions(options: { collaborative: boolean }): AnyExtension[] {
+export function contentExtensions(options: { collaborative: boolean; onMathClick?: (kind: "inlineMath" | "blockMath", latex: string, pos: number) => void }): AnyExtension[] {
   return [
     StarterKit.configure({
       // Collaboration brings its own undo, which only undoes your own changes.
@@ -33,8 +33,8 @@ export function contentExtensions(options: { collaborative: boolean }): AnyExten
     TextStyle,
     Color,
     Highlight.configure({ multicolor: true }),
-    InlineMath,
-    BlockMath,
+    InlineMath.configure({ onClick: options.onMathClick ? (node, pos) => options.onMathClick?.("inlineMath", node.attrs.latex, pos) : undefined }),
+    BlockMath.configure({ onClick: options.onMathClick ? (node, pos) => options.onMathClick?.("blockMath", node.attrs.latex, pos) : undefined }),
     SuggestionNodes,
     SuggestionInsert,
     SuggestionDelete,

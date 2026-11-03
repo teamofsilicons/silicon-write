@@ -293,3 +293,6 @@
 .prose :global(.suggestion-deletion-block)::after { left: 0; right: 0; top: 4px; bottom: auto; height: 2px; width: auto; }
 .editor[data-mode="viewing"] .prose :global(.suggestion-deletion-marker),
 .editor[data-mode="viewing"] .prose :global(ins.suggest-insert) { display: none; }
+
+.prose :global(.tiptap-mathematics-render--editable) { cursor: pointer; }
+.prose :global(.tiptap-mathematics-render--editable:hover) { background: var(--surface-muted); }

@@ -775,6 +775,23 @@ test.describe("writing", () => {
     await context.close();
   });
 
+  test("inline maths can be edited and saved", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Inline maths ${tag()}`, "Area $x^2$ here.\n");
+    await openDoc(page, doc.id);
+    const equation = editorOf(page).locator('[data-type="inline-math"]');
+    await equation.click();
+    const dialog = page.getByRole("dialog", { name: "Edit inline maths" });
+    await dialog.getByLabel("LaTeX").fill("\\frac{");
+    await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+    await dialog.getByLabel("LaTeX").fill("y^3");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expectMarkdown(page, doc.id, "Area $y^3$ here.\n");
+    await page.reload();
+    await expect(editorOf(page).locator('[data-type="inline-math"]')).toHaveAttribute("data-latex", "y^3");
+    await context.close();
+  });
+
   test("the / menu inserts a table, a divider, maths, a table of contents and a footnote", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Blocks ${tag()}`, "# Intro\n\nEnd");
@@ -820,6 +837,13 @@ test.describe("writing", () => {
     await slash(page, "maths", "Maths");
     await expect(editor.locator(".katex").first()).toBeVisible();
     blocks.splice(1, 0, "$$\nE = mc^2\n$$");
+    await expectBlocks();
+    await editor.locator('[data-type="block-math"]').click();
+    const mathDialog = page.getByRole("dialog", { name: "Edit maths block" });
+    await mathDialog.getByLabel("LaTeX").fill("\\frac{a}{b}");
+    await expect(mathDialog.getByLabel("Equation preview").locator(".katex")).toBeVisible();
+    await mathDialog.getByRole("button", { name: "Save" }).click();
+    blocks[1] = "$$\n\\frac{a}{b}\n$$";
     await expectBlocks();
 
     await lineAfterIntro();
