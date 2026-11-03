@@ -1,6 +1,0 @@
-.label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
-.input { display: block; box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid var(--border); background: var(--background); color: var(--foreground); font: 14px/1.5 monospace; resize: vertical; }
-.input:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
-.preview { overflow-x: auto; min-height: 48px; margin-top: 16px; padding: 12px; border: 1px solid var(--border); color: var(--foreground); }
-.error { color: var(--danger); font-size: 14px; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }

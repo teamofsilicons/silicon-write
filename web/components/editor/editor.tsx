@@ -11,8 +11,9 @@
  * Modes: `editing` (editors), `suggesting` (edits become suggestions; commenters can only suggest) and `viewing`
  * (reading or commenting without changing the document).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
+import { NodeSelection } from "@tiptap/pm/state";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import { CharacterCount, Placeholder } from "@tiptap/extensions";
@@ -26,7 +27,6 @@ import { contentExtensions } from "./schema";
 import { SuggestMode } from "./suggestions";
 import { LinkChip } from "./link-chip";
 import styles from "./editor.module.css";
-import { MathDialog, type MathTarget } from "./math-dialog";
 
 export type EditMode = "editing" | "suggesting" | "viewing";
 
@@ -57,8 +57,6 @@ export interface DocEditorProps {
 
 export function DocEditor(props: DocEditorProps) {
   const { live, account, canEdit, canSuggest, mode, threads, activeThread, onActivateThread, onRefused, onReady, onUploadImage, pickImage } = props;
-  const [math, setMath] = useState<MathTarget | null>(null);
-  const writableRef = useRef(false);
   const modeRef = useRef(mode);
   const lastAuthor = useRef<Account | null>(null);
   const callbacks = useRef({ onActivateThread, onRefused, onUploadImage, pickImage });
@@ -83,18 +81,10 @@ export function DocEditor(props: DocEditorProps) {
   }, [live]);
 
   const writable = (canEdit || canSuggest) && mode !== "viewing";
-  useEffect(() => {
-    writableRef.current = writable;
-    // Close an in-progress edit as soon as write access is lost.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!writable) setMath(null);
-  }, [writable]);
 
   const extensions = useMemo(
     () => [
-      ...contentExtensions({ collaborative: true, onMathClick: (kind, latex, pos) => {
-        if (writableRef.current) setMath({ kind, latex, pos });
-      } }),
+      ...contentExtensions({ collaborative: true }),
       Placeholder.configure({ placeholder: ({ editor }) => (editor.isEmpty ? "Start writing, or type / for blocks" : "") }),
       CharacterCount,
       Collaboration.configure({ document: live.ydoc, field: "default" }),
@@ -145,6 +135,14 @@ export function DocEditor(props: DocEditorProps) {
             }
             return false;
           },
+        },
+        handleKeyDown: (view, event) => {
+          const selection = view.state.selection;
+          if (view.editable && event.key === "Enter" && selection instanceof NodeSelection && ["inlineMath", "blockMath"].includes(selection.node.type.name)) {
+            const element = view.nodeDOM(selection.from);
+            if (element instanceof HTMLElement) { event.preventDefault(); element.click(); return true; }
+          }
+          return false;
         },
         handlePaste: (view, event) => {
           const files = [...(event.clipboardData?.files ?? [])].filter(f => f.type.startsWith("image/"));
@@ -239,5 +237,5 @@ export function DocEditor(props: DocEditorProps) {
     };
   }, [editor, live, threads, activeThread]);
 
-  return <><EditorContent editor={editor} className={styles.editor} data-mode={mode} />{editor ? <LinkChip editor={editor} writable={writable} /> : null}{editor && math && writable ? <MathDialog editor={editor} target={math} onClose={() => setMath(null)} /> : null}</>;
+  return <><EditorContent editor={editor} className={styles.editor} data-mode={mode} />{editor ? <LinkChip editor={editor} writable={writable} /> : null}</>;
 }

@@ -1,13 +1,17 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import type { Transaction } from "@tiptap/pm/state";
 import { useQueryClient } from "@tanstack/react-query";
 import { keys } from "@/lib/write/queries";
 import { useEditorState, type Editor } from "@tiptap/react";
-import { Bold, Italic, Underline, Copy, MessageSquarePlus, ListChecks, TextSelect } from "lucide-react";
+import { Bold, Italic, Underline, Copy, MessageSquarePlus, ListChecks, TextSelect, Trash2 } from "lucide-react";
 import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/silicon-ui/dropdown-menu/dropdown-menu";
 import { Popover, PopoverContent, PopoverAnchor } from "@/components/silicon-ui/popover/popover";
 import { proposedSlice, suggestionsIn } from "@/components/editor/suggestions";
+import { mathPosition } from "@/components/editor/math";
 import type { LiveDoc } from "@/lib/write/live";
 import { notifyError } from "@/lib/notify";
 import { SuggestionCards } from "./comments-panel";
@@ -20,27 +24,75 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
 }) {
   const client = useQueryClient();
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
+  const [hasBlock, setHasBlock] = useState(false);
   const [review, setReview] = useState<{ id: string; element: HTMLElement } | null>(null);
   const focusOnClose = useRef(false);
+  const block = useRef<{ pos: number; node: PMNode } | null>(null);
   const selection = useEditorState({ editor, selector: ({ editor: e }) => ({ empty: e.state.selection.empty, suggestions: suggestionsIn(e.state.doc) }) });
   const reviewExists = review && selection.suggestions.some(s => s.id === review.id);
   // Install before the newly ready document paints, so its first right-click works.
   useLayoutEffect(() => {
     const dom = editor.view.dom;
-    const open = (x: number, y: number) => { setReview(null); focusOnClose.current = false; setPoint({ x, y }); };
+    const targetAt = (pos: number, inside = -1) => {
+      const doc = editor.state.doc;
+      const direct = inside >= 0 ? doc.nodeAt(inside) : doc.nodeAt(pos);
+      if (direct?.isAtom && !direct.isText) return { pos: inside >= 0 ? inside : pos, node: direct };
+      const $pos = doc.resolve(Math.min(pos, doc.content.size));
+      for (let depth = $pos.depth; depth > 0; depth--) {
+        const node = $pos.node(depth);
+        if (node.isTextblock) return { pos: $pos.before(depth), node };
+      }
+      return null;
+    };
+    const open = (x: number, y: number, target: { pos: number; node: PMNode } | null) => {
+      block.current = target;
+      setHasBlock(Boolean(target));
+      setReview(null); focusOnClose.current = false; setPoint({ x, y });
+    };
+    const mapTarget = ({ transaction }: { transaction: Transaction }) => {
+      if (!block.current || !transaction.docChanged) return;
+      const result = transaction.mapping.mapResult(block.current.pos, 1);
+      block.current = result.deleted ? null : { ...block.current, pos: result.pos };
+      if (result.deleted) setHasBlock(false);
+    };
+    editor.on("transaction", mapTarget);
+    let pointedMath: number | undefined;
+    const pointerDown = (event: MouseEvent) => {
+      if (event.button !== 2) return;
+      const element = (event.target as Element).closest<HTMLElement>('[data-type="block-math"], [data-type="inline-math"]');
+      pointedMath = element ? mathPosition(element) : undefined;
+    };
     const context = (event: MouseEvent) => {
       event.preventDefault();
-      if (editor.state.selection.empty) {
-        const pos = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
-        if (pos) editor.commands.setTextSelection(pos.pos);
+      // Commit an active equation before finding the node at the clicked point.
+      const mathSelector = '[data-type="block-math"], [data-type="inline-math"]';
+      // KaTeX can extend outside its line box, where the browser targets the paragraph.
+      const math = (event.target as Element).closest<HTMLElement>(mathSelector) ??
+        [...dom.querySelectorAll<HTMLElement>(mathSelector)].find(element => {
+          const rect = element.getBoundingClientRect();
+          return event.clientX >= rect.left - 2 && event.clientX <= rect.right + 2 && event.clientY >= rect.top - 8 && event.clientY <= rect.bottom + 8;
+        }) ?? null;
+      const mathPos = pointedMath ?? (math && dom.contains(math) ? mathPosition(math) : undefined);
+      pointedMath = undefined;
+      const active = dom.ownerDocument.activeElement;
+      if (active instanceof HTMLTextAreaElement && active.classList.contains("write-math-input")) active.blur();
+      const hit = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
+      let target = hit ? targetAt(hit.pos, hit.inside) : null;
+      if (mathPos !== undefined) {
+        for (const pos of [mathPos]) {
+          if (pos < 0) continue;
+          const node = editor.state.doc.nodeAt(pos);
+          if (node && (node.type.name === "inlineMath" || node.type.name === "blockMath")) { target = { pos, node }; break; }
+        }
       }
-      open(event.clientX, event.clientY);
+      if (hit && editor.state.selection.empty && !target?.node.isAtom && editor.state.doc.resolve(hit.pos).parent.isTextblock) editor.commands.setTextSelection(hit.pos);
+      open(event.clientX, event.clientY, target);
     };
     const key = (event: KeyboardEvent) => {
       if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
       event.preventDefault();
       const rect = editor.view.coordsAtPos(editor.state.selection.to);
-      open(rect.left, rect.bottom);
+      open(rect.left, rect.bottom, targetAt(editor.state.selection.from));
     };
     const click = (event: MouseEvent) => {
       if (event.detail > 1) { setReview(null); return; }
@@ -70,16 +122,25 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
       if (!editor.state.selection.empty) setReview(null);
     };
     editor.on("selectionUpdate", selectionChanged);
+    dom.addEventListener("mousedown", pointerDown, true);
     dom.addEventListener("contextmenu", context);
     dom.addEventListener("keydown", key); dom.addEventListener("click", click);
     window.addEventListener("scroll", closeOnScroll, true); window.addEventListener("resize", closeOnScroll);
     return () => {
       editor.off("selectionUpdate", selectionChanged);
+      editor.off("transaction", mapTarget);
+      dom.removeEventListener("mousedown", pointerDown, true);
       dom.removeEventListener("contextmenu", context);
       dom.removeEventListener("keydown", key); dom.removeEventListener("click", click);
       window.removeEventListener("scroll", closeOnScroll, true); window.removeEventListener("resize", closeOnScroll);
     };
   }, [editor, canComment, client, docId]);
+  const deleteBlock = () => {
+    const target = block.current;
+    const current = target && editor.state.doc.nodeAt(target.pos);
+    if (!target || !current || !current.eq(target.node) || !editor.isEditable) return;
+    editor.chain().focus().deleteRange({ from: target.pos, to: target.pos + current.nodeSize }).run();
+  };
   const copy = async () => {
     try {
       const { from, to } = editor.state.selection;
@@ -91,7 +152,7 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
   };
   return <>
     <DropdownMenuRoot modal={false} open={Boolean(point)} onOpenChange={open => { if (!open) setPoint(null); }}>
-      <DropdownMenuTrigger asChild><span aria-hidden="true" tabIndex={-1} className={styles.anchor} style={{ left: point?.x ?? 0, top: point?.y ?? 0 }} /></DropdownMenuTrigger>
+      {createPortal(<DropdownMenuTrigger asChild><span aria-hidden="true" tabIndex={-1} className={styles.anchor} style={{ left: point?.x ?? 0, top: point?.y ?? 0 }} /></DropdownMenuTrigger>, editor.view.dom.ownerDocument.body)}
       <DropdownMenuContent aria-label="Text actions" align="start" className={styles.menu}
         onEscapeKeyDown={() => { focusOnClose.current = true; }}
         onCloseAutoFocus={event => { event.preventDefault(); if (focusOnClose.current && !editor.isDestroyed) editor.view.focus(); }}>
@@ -101,6 +162,7 @@ export function EditorMenu({ editor, docId, live, canEdit, canComment, writable,
           <DropdownMenuItem icon={<Bold size={16} />} disabled={selection.empty} onSelect={() => editor.chain().focus().toggleBold().run()}>Bold</DropdownMenuItem>
           <DropdownMenuItem icon={<Italic size={16} />} disabled={selection.empty} onSelect={() => editor.chain().focus().toggleItalic().run()}>Italic</DropdownMenuItem>
           <DropdownMenuItem icon={<Underline size={16} />} disabled={selection.empty} onSelect={() => editor.chain().focus().toggleUnderline().run()}>Underline</DropdownMenuItem>
+          <DropdownMenuItem icon={<Trash2 size={16} />} destructive disabled={!hasBlock} onSelect={deleteBlock}>Delete block</DropdownMenuItem>
         </> : null}
         {canComment ? <DropdownMenuItem icon={<MessageSquarePlus size={16} />} onSelect={onComment}>Add comment</DropdownMenuItem> : null}
         {canComment && selection.suggestions.length ? <DropdownMenuItem icon={<ListChecks size={16} />} onSelect={onReview}>Review suggestions</DropdownMenuItem> : null}

@@ -9,12 +9,12 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import Image from "@tiptap/extension-image";
 import { Color, TextStyle } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
-import { BlockMath, InlineMath } from "@tiptap/extension-mathematics";
+import { EditableBlockMath, EditableInlineMath } from "./math";
 import { DocLink, Footnote, TableOfContents } from "./nodes";
 import { SuggestionDelete, SuggestionInsert, SuggestionNodes } from "./suggestions";
 import { FileFormatting, InlineImage, Subscript, Superscript } from "./formatting";
 
-export function contentExtensions(options: { collaborative: boolean; onMathClick?: (kind: "inlineMath" | "blockMath", latex: string, pos: number) => void }): AnyExtension[] {
+export function contentExtensions(options: { collaborative: boolean }): AnyExtension[] {
   return [
     StarterKit.configure({
       // Collaboration brings its own undo, which only undoes your own changes.
@@ -33,8 +33,8 @@ export function contentExtensions(options: { collaborative: boolean; onMathClick
     TextStyle,
     Color,
     Highlight.configure({ multicolor: true }),
-    InlineMath.configure({ onClick: options.onMathClick ? (node, pos) => options.onMathClick?.("inlineMath", node.attrs.latex, pos) : undefined }),
-    BlockMath.configure({ onClick: options.onMathClick ? (node, pos) => options.onMathClick?.("blockMath", node.attrs.latex, pos) : undefined }),
+    EditableInlineMath,
+    EditableBlockMath,
     SuggestionNodes,
     SuggestionInsert,
     SuggestionDelete,

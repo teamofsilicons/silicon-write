@@ -775,17 +775,60 @@ test.describe("writing", () => {
     await context.close();
   });
 
+  test("right click opens beside the target and deletes that block", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    page.setDefaultTimeout(8000);
+    const doc = await newDoc(page, `Block menu ${tag()}`, "First paragraph.\n\nSecond paragraph.\n\nArea $x^2$ here.\n");
+    await openDoc(page, doc.id);
+    const editor = editorOf(page);
+    const menu = page.getByRole("menu", { name: "Text actions" });
+    const paragraph = editor.locator("p").filter({ hasText: "Second paragraph." });
+    const point = await paragraph.boundingBox();
+    if (!point) throw new Error("Paragraph has no layout");
+    const x = point.x + 50, y = point.y + point.height / 2;
+    await page.mouse.click(x, y, { button: "right" });
+    await expect(menu).toBeVisible();
+    const box = await menu.boundingBox();
+    if (!box) throw new Error("Menu has no layout");
+    expect(Math.abs(box.x - x)).toBeLessThan(25);
+    expect(Math.abs(box.y - y)).toBeLessThan(25);
+    await menu.getByRole("menuitem", { name: "Delete block" }).click();
+    await expectMarkdown(page, doc.id, "First paragraph.\n\nArea $x^2$ here.\n");
+    await editor.locator('[data-type="inline-math"]').click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Delete block" }).click();
+    await expectMarkdown(page, doc.id, "First paragraph.\n\nArea  here.\n");
+    await context.close();
+  });
+
+  test("maths edits can be cancelled and proposed for review", async ({ browser }) => {
+    const { page, context } = await signedIn(browser, "carbon");
+    const doc = await newDoc(page, `Maths suggestions ${tag()}`, "Area $x^2$ here.\n\n$$\na+b\n$$\n");
+    await openDoc(page, doc.id);
+    const editor = editorOf(page);
+    await editor.locator('[data-type="inline-math"]').click();
+    const inline = page.getByRole("textbox", { name: "Inline maths LaTeX" });
+    await inline.fill("discarded");
+    await inline.press("Escape");
+    await expectMarkdown(page, doc.id, "Area $x^2$ here.\n\n$$\na+b\n$$\n");
+    await chooseDocMode(page, "Suggesting");
+    await editor.locator('[data-type="inline-math"]').click();
+    await inline.fill("y^3");
+    await inline.press("Enter");
+    await expectMarkdown(page, doc.id, "Area $x^2$ here.\n\n$$\na+b\n$$\n");
+    await expect.poll(async () => (await ok<{ suggestions: Suggestion[] }>(page, "GET", `/v1/docs/${doc.id}/suggestions`)).suggestions.length).toBeGreaterThan(0);
+    await context.close();
+  });
+
   test("inline maths can be edited and saved", async ({ browser }) => {
     const { page, context } = await signedIn(browser, "carbon");
     const doc = await newDoc(page, `Inline maths ${tag()}`, "Area $x^2$ here.\n");
     await openDoc(page, doc.id);
     const equation = editorOf(page).locator('[data-type="inline-math"]');
     await equation.click();
-    const dialog = page.getByRole("dialog", { name: "Edit inline maths" });
-    await dialog.getByLabel("LaTeX").fill("\\frac{");
-    await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
-    await dialog.getByLabel("LaTeX").fill("y^3");
-    await dialog.getByRole("button", { name: "Save" }).click();
+    const latex = page.getByRole("textbox", { name: "Inline maths LaTeX" });
+    await expect(latex).toHaveValue("x^2");
+    await latex.fill("y^3");
+    await latex.press("Enter");
     await expectMarkdown(page, doc.id, "Area $y^3$ here.\n");
     await page.reload();
     await expect(editorOf(page).locator('[data-type="inline-math"]')).toHaveAttribute("data-latex", "y^3");
@@ -835,14 +878,13 @@ test.describe("writing", () => {
 
     await lineAfterIntro();
     await slash(page, "maths", "Maths");
-    await expect(editor.locator(".katex").first()).toBeVisible();
     blocks.splice(1, 0, "$$\nE = mc^2\n$$");
     await expectBlocks();
     await editor.locator('[data-type="block-math"]').click();
-    const mathDialog = page.getByRole("dialog", { name: "Edit maths block" });
-    await mathDialog.getByLabel("LaTeX").fill("\\frac{a}{b}");
-    await expect(mathDialog.getByLabel("Equation preview").locator(".katex")).toBeVisible();
-    await mathDialog.getByRole("button", { name: "Save" }).click();
+    const latex = page.getByRole("textbox", { name: "Maths block LaTeX" });
+    await expect(latex).toHaveValue("E = mc^2");
+    await latex.fill("\\frac{a}{b}");
+    await latex.press("ControlOrMeta+Enter");
     blocks[1] = "$$\n\\frac{a}{b}\n$$";
     await expectBlocks();
 

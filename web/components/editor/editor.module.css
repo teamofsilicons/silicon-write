@@ -294,5 +294,9 @@
 .editor[data-mode="viewing"] .prose :global(.suggestion-deletion-marker),
 .editor[data-mode="viewing"] .prose :global(ins.suggest-insert) { display: none; }
 
-.prose :global(.tiptap-mathematics-render--editable) { cursor: pointer; }
-.prose :global(.tiptap-mathematics-render--editable:hover) { background: var(--surface-muted); }
+.prose[contenteditable="true"] :global(.write-math) { cursor: pointer; }
+.prose[contenteditable="true"] :global(.write-math:hover) { background: var(--surface-muted); }
+.prose :global(.write-math-input) { box-sizing: border-box; color: var(--foreground); background: var(--surface-muted); border: 1px solid var(--border); font: 14px/1.5 monospace; padding: 4px 6px; resize: vertical; }
+.prose :global(.write-math-input:focus-visible) { outline: 2px solid var(--foreground); outline-offset: 1px; }
+.prose :global(.write-math-input-block) { display: block; width: 100%; min-height: 2.3em; }
+.prose :global(.write-math-input-inline) { display: inline-block; vertical-align: middle; width: min(28ch, 100%); min-height: 2.3em; resize: horizontal; }
