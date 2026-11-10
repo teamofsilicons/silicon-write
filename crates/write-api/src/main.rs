@@ -121,8 +121,27 @@ fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
+fn install_tls_provider() {
+    // Accounts/reqwest and Ting enable different Rustls backends. Select one
+    // before the Ting WebSocket builds its TLS config; automatic selection
+    // panics when both aws-lc-rs and ring are enabled.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
+#[cfg(test)]
+mod tls_tests {
+    #[test]
+    fn websocket_tls_config_can_use_the_process_provider() {
+        super::install_tls_provider();
+        let _ = rustls::ClientConfig::builder()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth();
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    install_tls_provider();
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("WRITE_LOG").unwrap_or_else(|_| "info,sqlx=warn,tower_http=warn".into()))
         .init();

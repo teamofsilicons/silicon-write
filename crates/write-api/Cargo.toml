@@ -15,6 +15,7 @@ write-doc = { path = "../write-doc" }
 yrs = { workspace = true }
 silicon-accounts-client.workspace = true
 silicon-ting-client = "0.4.0"
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
 axum = { workspace = true, features = ["multipart"] }
 sqlx.workspace = true
 tokio.workspace = true

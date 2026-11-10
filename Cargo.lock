@@ -3800,6 +3800,7 @@ dependencies = [
  "hmac 0.12.1",
  "rand 0.10.3",
  "reqwest 0.13.5",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.10.9",
