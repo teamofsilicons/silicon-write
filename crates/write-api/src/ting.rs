@@ -18,13 +18,70 @@ use tokio::sync::Mutex;
 use crate::auth::Caller;
 use crate::state::AppState;
 
-static SEND_PROOF: LazyLock<Mutex<Option<(String, OffsetDateTime)>>> = LazyLock::new(|| Mutex::new(None));
+pub mod sessions;
+
+#[derive(Default)]
+pub struct Ting {
+    send_proof: Mutex<Option<(String, OffsetDateTime)>>,
+    catalog_ready: Mutex<bool>,
+}
+
+/// The catalog is checked before sending; existing definitions are never overwritten.
+async fn ensure_types(state: &AppState) -> anyhow::Result<()> {
+    let mut ready = state.ting.catalog_ready.lock().await;
+    if *ready {
+        return Ok(());
+    }
+    let base = state
+        .config
+        .ting_url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Ting is not configured"))?
+        .trim_end_matches('/');
+    let url = format!("{base}/v1/apps/{}/types", state.config.app_id);
+    let response = state.http.get(&url).send().await?.error_for_status()?;
+    let catalog: Value = response.json().await?;
+    let existing = catalog["items"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("Invalid Ting catalog"))?;
+    let types: Vec<Value> = serde_json::from_str(include_str!("ting/types.json"))?;
+    let missing: Vec<_> = types
+        .into_iter()
+        .filter(|t| !existing.iter().any(|e| e["type"] == t["type"]))
+        .collect();
+    if !missing.is_empty() {
+        let request = IssueAppVerification {
+            receiving_app: state.config.ting_app_id.clone(),
+            scopes: vec!["types.manage".into()],
+            access_ttl_seconds: Some(300),
+        };
+        let proof = state
+            .app()
+            .issue_app_verification(&request, Some(&crate::ids::new_id("ting-types")))
+            .await?;
+        for definition in missing {
+            state
+                .http
+                .post(&url)
+                .bearer_auth(proof.proof_token.expose())
+                .json(&definition)
+                .send()
+                .await?
+                .error_for_status()?;
+        }
+    }
+    *ready = true;
+    Ok(())
+}
 /// Accounts being registered right now (a burst of first requests registers once).
-static ENROLLING: LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> = LazyLock::new(Default::default);
+static ENROLLING: LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    LazyLock::new(Default::default);
 
 /// Registers an account with Ting as a recipient of Silicon Write's notifications.
 pub async fn enroll(state: &AppState, caller: &Caller) {
-    let Some(ting) = state.config.ting_url.clone() else { return };
+    let Some(ting) = state.config.ting_url.clone() else {
+        return;
+    };
     if !ENROLLING.lock().unwrap().insert(caller.uuid.clone()) {
         return;
     }
@@ -41,7 +98,11 @@ async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
     };
     // Each proof request has its own identity: a fresh access token changes its body.
     let key = format!("write-ting-enroll-{}", crate::ids::new_id("proof"));
-    let proof = match state.app().issue_user_verification(&request, Some(&key)).await {
+    let proof = match state
+        .app()
+        .issue_user_verification(&request, Some(&key))
+        .await
+    {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!(account = %caller.id, error = %e, "couldn't get a proof to register with Ting");
@@ -59,7 +120,11 @@ async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
     match response {
         Ok(r) if r.status().is_success() => {
             let body: Value = r.json().await.unwrap_or(Value::Null);
-            let id = body.get("id").or_else(|| body.pointer("/subscription/id")).and_then(Value::as_str).map(str::to_owned);
+            let id = body
+                .get("id")
+                .or_else(|| body.pointer("/subscription/id"))
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             let _ = sqlx::query("update accounts set ting_subscription = $2, ting_enrolled_at = now() where uuid = $1")
                 .bind(&caller.uuid)
                 .bind(id)
@@ -70,7 +135,7 @@ async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
             // waiting was a thing).
             let _ = sqlx::query(
                 "update ting_outbox set status = 'pending', next_at = now(), attempts = 0
-                 where for_uuid = $1 and (status = 'waiting' or (status = 'failed' and last_error like '%no_subscription%'))",
+                 where for_uuid = $1 and (status = 'waiting' or (status = 'failed' and last_error like '%no_subscription%' and last_error not like 'Legacy Ting request%'))",
             )
             .bind(&caller.uuid)
             .execute(&state.db)
@@ -81,36 +146,54 @@ async fn enroll_once(state: &AppState, caller: &Caller, ting: &str) {
             let body = r.text().await.unwrap_or_default();
             tracing::warn!(account = %caller.id, %status, body = %body.chars().take(300).collect::<String>(), "Ting refused the registration");
         }
-        Err(e) => tracing::warn!(account = %caller.id, error = %e, "Ting didn't answer the registration"),
+        Err(e) => {
+            tracing::warn!(account = %caller.id, error = %e, "Ting didn't answer the registration")
+        }
     }
 }
 
 /// Queues a notification. `key` makes it unique: queuing the same key twice sends it once.
-pub async fn queue(state: &AppState, kind: &str, for_uuid: &str, key: &str, data: Value) -> sqlx::Result<()> {
-    sqlx::query("insert into ting_outbox (type, for_uuid, key, data) values ($1, $2, $3, $4) on conflict (key) do nothing")
+pub async fn queue(
+    state: &AppState,
+    kind: &str,
+    for_uuid: &str,
+    key: &str,
+    data: Value,
+) -> sqlx::Result<()> {
+    sqlx::query("insert into ting_outbox (type, for_uuid, key, data, from_uuid) values ($1, $2, $3, $4, $5) on conflict (key) do nothing")
         .bind(kind)
         .bind(for_uuid)
         .bind(key)
-        .bind(data)
+        .bind(&data)
+        .bind(data.pointer("/by/uuid").and_then(Value::as_str))
         .execute(&state.db)
         .await?;
     Ok(())
 }
 
 async fn send_proof(state: &AppState) -> anyhow::Result<String> {
-    let mut cached = SEND_PROOF.lock().await;
+    let mut cached = state.ting.send_proof.lock().await;
     if let Some((token, expires)) = cached.as_ref()
-        && *expires - OffsetDateTime::now_utc() > time::Duration::minutes(2) {
-            return Ok(token.clone());
-        }
+        && *expires - OffsetDateTime::now_utc() > time::Duration::minutes(2)
+    {
+        return Ok(token.clone());
+    }
     let request = IssueAppVerification {
         receiving_app: state.config.ting_app_id.clone(),
         scopes: vec!["tings.send".into()],
         access_ttl_seconds: Some(1800),
     };
-    let key = format!("write-ting-send-{}", OffsetDateTime::now_utc().unix_timestamp() / 60);
-    let proof = state.app().issue_app_verification(&request, Some(&key)).await?;
-    let expires = proof.expires_at.unwrap_or_else(|| OffsetDateTime::now_utc() + time::Duration::minutes(25));
+    let key = format!(
+        "write-ting-send-{}",
+        OffsetDateTime::now_utc().unix_timestamp() / 60
+    );
+    let proof = state
+        .app()
+        .issue_app_verification(&request, Some(&key))
+        .await?;
+    let expires = proof
+        .expires_at
+        .unwrap_or_else(|| OffsetDateTime::now_utc() + time::Duration::minutes(25));
     let token = proof.proof_token.expose().to_owned();
     *cached = Some((token.clone(), expires));
     Ok(token)
@@ -124,6 +207,7 @@ struct Pending {
     for_uuid: String,
     key: String,
     data: Value,
+    from_uuid: Option<String>,
     attempts: i32,
 }
 
@@ -131,29 +215,35 @@ struct Pending {
 pub async fn worker(state: AppState) {
     loop {
         if state.config.ting_url.is_some()
-            && let Err(e) = send_due(&state).await {
-                tracing::warn!(error = %e, "sending notifications failed");
-            }
+            && let Err(e) = send_due(&state).await
+        {
+            tracing::warn!(error = %e, "sending notifications failed");
+        }
         tokio::time::sleep(Duration::from_millis(1500)).await;
     }
 }
 
 async fn send_due(state: &AppState) -> anyhow::Result<()> {
-    let Some(ting) = state.config.ting_url.clone() else { return Ok(()) };
+    let Some(ting) = state.config.ting_url.clone() else {
+        return Ok(());
+    };
     let due: Vec<Pending> = sqlx::query_as(
-        "select id, type, for_uuid, key, data, attempts from ting_outbox where status = 'pending' and next_at <= now() order by id limit 50",
+        "select id, type, for_uuid, key, data, from_uuid, attempts from ting_outbox where status = 'pending' and next_at <= now() order by id limit 50",
     )
     .fetch_all(&state.db)
     .await?;
     if due.is_empty() {
         return Ok(());
     }
+    ensure_types(state).await?;
     let proof = send_proof(state).await?;
     for item in due {
         // Access may have changed while a notification waited for registration or a retry.
         if let Some(doc_id) = item.data.pointer("/doc/id").and_then(Value::as_str) {
             let allowed = match crate::access::load_doc(state, doc_id).await {
-                Ok(doc) => crate::notify::can_read(state, &doc, &item.for_uuid).await.map_err(|e| anyhow::anyhow!(e.message))?,
+                Ok(doc) => crate::notify::can_read(state, &doc, &item.for_uuid)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e.message))?,
                 Err(e) if e.status == axum::http::StatusCode::NOT_FOUND => false,
                 Err(e) => return Err(anyhow::anyhow!(e.message)),
             };
@@ -167,28 +257,44 @@ async fn send_due(state: &AppState) -> anyhow::Result<()> {
             .http
             .post(format!("{}/v1/tings", ting.trim_end_matches('/')))
             .bearer_auth(&proof)
-            .json(&json!({ "type": item.kind, "for": item.for_uuid, "key": item.key, "data": item.data, "metadata": {} }))
+            .json(&json!({ "type": item.kind, "for": item.for_uuid, "from": item.from_uuid, "key": item.key, "data": item.data, "metadata": {} }))
             .timeout(Duration::from_secs(15))
             .send()
             .await;
         let attempts = item.attempts + 1;
         match response {
             Ok(r) if r.status().is_success() => {
-                sqlx::query("update ting_outbox set status = 'sent', sent_at = now(), attempts = $2, last_error = null where id = $1")
+                let receipt: Value = r.json().await?;
+                let status = if receipt["status"] == "blocked" {
+                    "blocked"
+                } else {
+                    "sent"
+                };
+                sqlx::query("update ting_outbox set status = $3, sent_at = now(), attempts = $2, last_error = null where id = $1")
                     .bind(item.id)
                     .bind(attempts)
+                    .bind(status)
                     .execute(&state.db)
                     .await?;
             }
             Ok(r) => {
                 let status = r.status();
                 let body = r.text().await.unwrap_or_default();
-                if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-                    *SEND_PROOF.lock().await = None;
+                let code = serde_json::from_str::<Value>(&body).ok().and_then(|v| {
+                    v.pointer("/error/code")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                });
+                if status == reqwest::StatusCode::UNAUTHORIZED
+                    || status == reqwest::StatusCode::FORBIDDEN
+                {
+                    *state.ting.send_proof.lock().await = None;
                 }
                 // Someone who hasn't allowed Silicon Write at Ting yet (they haven't used it): the
                 // notification waits for them, and goes out once they do (see `enroll`).
-                if status == reqwest::StatusCode::CONFLICT {
+                if status == reqwest::StatusCode::CONFLICT
+                    && code.as_deref() == Some("no_subscription")
+                {
                     sqlx::query("update ting_outbox set status = 'waiting', attempts = $2, last_error = $3 where id = $1")
                         .bind(item.id)
                         .bind(attempts)
@@ -198,7 +304,10 @@ async fn send_due(state: &AppState) -> anyhow::Result<()> {
                     continue;
                 }
                 // A recipient who never registered can't be notified; keep the record and stop after a while.
-                let give_up = status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS && attempts >= 6;
+                let give_up = code.as_deref() == Some("idempotency_conflict")
+                    || (status.is_client_error()
+                        && status != reqwest::StatusCode::TOO_MANY_REQUESTS
+                        && attempts >= 6);
                 let delay = backoff(attempts);
                 sqlx::query("update ting_outbox set status = $2, attempts = $3, last_error = $4, next_at = now() + make_interval(secs => $5) where id = $1")
                     .bind(item.id)

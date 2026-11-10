@@ -1,0 +1,65 @@
+{
+  "date": "2026-11-10",
+  "scope": "local implementation and verification; not deployed",
+  "ting": {
+    "live_backend_version_observed": "0.4.0",
+    "installed_cli_version_observed": "0.4.0",
+    "rust_client": "silicon-ting-client 0.4.0"
+  },
+  "behavior": [
+    "Two-part notification types with versioned JSON Schemas and missing-type registration",
+    "Immutable sender UUID attribution; durable account notifications keep their original idempotency keys",
+    "One anonymous Ting receiver per Write browser page, with receiver ownership and per-document authorization",
+    "60-second document leases renewed every 20 seconds; ordered binding revisions and disconnect cleanup",
+    "Content-free coalesced metadata/comment/API-edit hints; Yjs continues carrying keystrokes and presence",
+    "Reconnect and renewal reconcile authorized state; PDF polling and document events remain fallbacks",
+    "Legacy outbox migration preserves accepted history and quarantines uncertain attempted requests"
+  ],
+  "validation": {
+    "rust_api_unit_tests": {
+      "passed": 30,
+      "log": ".dev/ting-rust-tests.log"
+    },
+    "web_unit_tests": {
+      "passed": 121,
+      "log": ".dev/ting-web-tests.log"
+    },
+    "session_and_migration_api_tests": {
+      "passed": 5,
+      "log": ".dev/ting-final-e2e.log"
+    },
+    "existing_notification_scenarios": {
+      "passed_across_runs": 29,
+      "initial_passed": 26,
+      "initial_interrupted_by_local_api_restart": 2,
+      "rerun_passed": 2,
+      "delayed_recipient_passed": 1,
+      "logs": [
+        ".dev/ting-notifications-e2e.log",
+        ".dev/ting-notifications-rerun.log",
+        ".dev/ting-newcomer.log"
+      ]
+    },
+    "browser": {
+      "passed": 2,
+      "includes": "Accounts setup and PDF live hints/offline reconnect scenario",
+      "log": ".dev/ting-browser-final.log",
+      "screenshot": "web/test-results/ting-pdf-session.png"
+    },
+    "typecheck": "passed",
+    "lint": "passed",
+    "web_build": "passed",
+    "diff_check": "passed"
+  },
+  "production_notifications_sent": false,
+  "deployment_performed": false,
+  "preexisting_edits_preserved": [
+    "deploy/stack.json",
+    "web/components/editor/editor.module.css",
+    "web/components/editor/editor.tsx",
+    "web/components/editor/schema.ts",
+    "web/e2e/editor.spec.ts",
+    "web/components/editor/math-dialog.module.css",
+    "web/components/editor/math-dialog.tsx"
+  ]
+}

@@ -24,9 +24,10 @@ const PREFIX = "/api/";
 
 /** What someone with a public doc's link may do without signing in. */
 const PUBLIC_ROUTES: [string, RegExp][] = [
+  ["GET", /^v1\/ting$/],
   ["GET", /^v1\/docs\/d_[A-Za-z0-9]+$/],
   ["GET", /^v1\/docs\/d_[A-Za-z0-9]+\/(markdown|prosemirror|export|original)$/],
-  ["POST", /^v1\/docs\/d_[A-Za-z0-9]+\/(live|visits)$/],
+  ["POST", /^v1\/docs\/d_[A-Za-z0-9]+\/(live|visits|notifications)$/],
   ["GET", /^v1\/assets\/a_[A-Za-z0-9]+$/],
 ];
 

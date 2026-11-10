@@ -75,7 +75,7 @@ pub async fn comment(
                 // Only people who can open the doc hear about it.
                 let caller = crate::auth::Caller { uuid: account.uuid.clone(), id: account.id.clone(), kind: account.kind.clone(), token: String::new() };
                 if crate::access::doc_role(state, Some(&caller), doc).await?.is_some() {
-                    ting::queue(state, "write.mention.received", &account.uuid, &format!("mention:{comment_id}:{}", account.uuid), base.clone()).await?;
+                    ting::queue(state, "write.mentionReceived", &account.uuid, &format!("mention:{comment_id}:{}", account.uuid), base.clone()).await?;
                 }
             }
     }
@@ -92,12 +92,12 @@ pub async fn comment(
         .await?;
         for uuid in participants {
             if notified.insert(uuid.clone()) && can_read(state, doc, &uuid).await? {
-                ting::queue(state, "write.comment.replied", &uuid, &format!("reply:{comment_id}:{uuid}"), base.clone()).await?;
+                ting::queue(state, "write.commentReplied", &uuid, &format!("reply:{comment_id}:{uuid}"), base.clone()).await?;
             }
         }
     }
     if notified.insert(doc.owner_uuid.clone()) {
-        ting::queue(state, "write.comment.created", &doc.owner_uuid, &format!("comment:{comment_id}:{}", doc.owner_uuid), base).await?;
+        ting::queue(state, "write.commentCreated", &doc.owner_uuid, &format!("comment:{comment_id}:{}", doc.owner_uuid), base).await?;
     }
     Ok(())
 }
@@ -116,7 +116,7 @@ pub async fn thread_resolved(state: &AppState, doc: &DocRow, thread_id: &str, st
         .bind(thread_id).fetch_optional(&state.db).await?;
     ting::queue(
         state,
-        "write.thread.resolved",
+        "write.threadResolved",
         starter,
         &key,
         json!({ "doc": doc_data(state, doc), "thread_id": thread_id, "quote": quote, "comment": comment.unwrap_or_default(), "by": person(resolver), "url": format!("{}?thread={thread_id}", state.config.doc_url(&doc.id)) }),
@@ -133,7 +133,7 @@ pub async fn suggestion_created(state: &AppState, doc_id: &str, suggestion: &wri
     let author = accounts::one(state, &suggestion.author).await?;
     ting::queue(
         state,
-        "write.suggestion.created",
+        "write.suggestionCreated",
         &doc.owner_uuid,
         &format!("suggestion:{doc_id}:{}", suggestion.id),
         json!({
@@ -156,7 +156,7 @@ pub async fn shared(state: &AppState, kind: &str, item_id: &str, title: &str, ur
     }
     ting::queue(
         state,
-        "write.doc.shared",
+        "write.docShared",
         to,
         &format!("shared:{item_id}:{to}:{role}"),
         json!({ "kind": kind, "id": item_id, "title": title, "url": url, "role": role, "by": person(by) }),

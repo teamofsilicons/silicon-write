@@ -16,6 +16,7 @@ import { api, seg } from "@/lib/client/api";
 import { notify, notifyError } from "@/lib/notify";
 import { type LiveDoc } from "@/lib/write/live";
 import { acquireWorkspaceLive } from "@/lib/write/workspace-live";
+import { useTing } from "@/lib/write/use-ting";
 import { useWorkspaceTabs } from "@/components/workspace/workspace-tabs";
 import { keys, useThreads } from "@/lib/write/queries";
 import { atLeast, type Account, type Anchor, type Doc, type LiveTicket, type Thread } from "@/lib/write/types";
@@ -112,7 +113,8 @@ export function DocPage({ initialDoc, account, initialLiveTicket }: DocPageProps
     }
   }, [docId, doc.kind, canEdit, lostAccess, liveError, editor, consumeEditorFocus]);
 
-  const threadsQuery = useThreads(docId, "all", canComment, doc.kind === "pdf" ? 2_000 : false);
+  const tingActive = useTing(docId, account?.uuid ?? null, !doc.deleted_at && !lostAccess && !emailRequired, canComment);
+  const threadsQuery = useThreads(docId, "all", canComment, doc.kind === "pdf" ? (tingActive ? 30_000 : 2_000) : false);
   const allThreads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data]);
   const threads = useMemo(() => allThreads.filter(thread => thread.status === "open"), [allThreads]);
   const focusedThread = allThreads.find(thread => thread.id === focusedThreadId);

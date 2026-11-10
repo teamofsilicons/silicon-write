@@ -282,3 +282,26 @@ folders. Browsing a folder directly still shows its contents, except independent
 archived children. Unarchiving a folder preserves those independent child archives.
 Search, complete listings and direct links remain available. Losing access removes
 an item from Archive too; permanent deletion removes its archive records.
+
+## Live notification receiver sessions (Ting 0.4)
+
+These optional routes deliver content-free update hints for docs and PDFs. Yjs still synchronizes document text,
+and `/events`/`join` remain the resumable agent interfaces. See [ting.md](ting.md) for lifecycle and delivery rules.
+
+- `GET /v1/ting` (public): `{enabled, url}`. `url` is Write's receiver-only WebSocket gateway.
+- Connect to that URL. The first JSON frame is
+  `{op:"ready", session_id, binding, lease_seconds:60}`. Keep `binding` only in memory; it proves possession of
+  this socket, not document access. No account/app credential is needed on this socket.
+- `POST /v1/docs/{id}/notifications`: `{session_id, binding, revision}`. `revision` is a positive, increasing
+  safe integer within this socket. Requires document read access and any current email grant. Returns
+  `{active:true, lease_seconds:60}`. Renew every 20 seconds. A stale revision is a no-op.
+- Post the same body with a newer revision and `remove:true` to detach; returns `{active:false, lease_seconds:60}`.
+  Detach requires the socket capability but works even after document access was lost. Stale revisions return
+  the current `active` state without changing it.
+- Receive `{op:"tings", session_id, tings:[...]}` (or `silent_digest`). Consume only `write.documentChanged`
+  for the current receiver and subscribed doc. Its `data` is `{doc_id, changes:["meta"|"threads"|"document"]}`.
+  Refetch the applicable authorized API; there is no direct-session ACK. Never treat a hint as document content.
+
+Disconnect destroys the receiver and its bindings. Reconnect gets a new ID and capability; rebind and refetch
+because hints are not replayed. Renewals recheck access, and broadcasts recheck current document permissions and
+email-gate version. Sessions never grant presence, editing rights, account sign-in, or access to another doc.

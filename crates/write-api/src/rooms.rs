@@ -48,6 +48,7 @@ fn access_closed() -> WsMessage {
 #[derive(Default)]
 pub struct Rooms {
     map: Mutex<HashMap<String, Arc<Room>>>,
+    pub notifications: crate::ting::sessions::Sessions,
 }
 
 pub struct Room {
@@ -158,6 +159,7 @@ impl Rooms {
 
     /// Sends a JSON event to everyone with the doc open.
     pub async fn notify(&self, doc_id: &str, event: Value) {
+        if let Some(change) = event["type"].as_str() { self.notifications.changed(doc_id, change); }
         let room = self.map.lock().await.get(doc_id).cloned();
         if let Some(room) = room {
             let bytes = event_message(&event);
@@ -184,6 +186,7 @@ impl Rooms {
 
     /// Recomputes every connection's role after sharing changed; connections that lost access are closed.
     pub async fn recheck(&self, state: &AppState, doc_id: &str) {
+        self.notifications.changed(doc_id, "meta");
         let room = self.map.lock().await.get(doc_id).cloned();
         let Some(room) = room else { return };
         let Ok(doc) = crate::access::load_doc(state, doc_id).await else {
@@ -545,6 +548,11 @@ impl RoomState {
         }
         tx.commit().await?;
         self.events.push(json!({"type":"document", "seq":self.seq, "origin":origin.as_str(), "author_uuid":author}));
+        // Yjs already carries keystrokes. Ting wakes metadata/comment consumers
+        // and announces finite API edits without creating a ting per keystroke.
+        if !matches!(origin, Origin::Live) {
+            state.rooms.notifications.changed(doc_id, "document");
+        }
         for update in &updates {
             let bytes = encode(&Message::Sync(SyncMessage::Update(update.clone())));
             // An offline editor with GC disabled can send text it already deleted. Its history

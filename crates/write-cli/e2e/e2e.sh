@@ -277,10 +277,10 @@ if curl -fsS -m 2 "$TING/_tings" >/dev/null 2>&1; then
   found=0
   for _ in $(seq 1 30); do
     curl -fsS "$TING/_tings" | jq -e --arg t "$THREAD" --arg u "$CUUID" \
-      '.items[] | select(.type == "write.mention.received" and .for_uuid == $u and .data.thread_id == $t)' >/dev/null && { found=1; break; }
+      '.items[] | select(.type == "write.mentionReceived" and .for_uuid == $u and .data.thread_id == $t)' >/dev/null && { found=1; break; }
     sleep 0.3
   done
-  [ $found = 1 ] && pass "the mention reached the Carbon as a write.mention.received ting" || fail "mention ting delivered"
+  [ $found = 1 ] && pass "the mention reached the Carbon as a write.mentionReceived ting" || fail "mention ting delivered"
 fi
 check "reply" $C1 --json reply "$THREAD" --body "Yes, Tuesday works."
 REPLY=$(jqv .id)

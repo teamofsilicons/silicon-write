@@ -1,0 +1,453 @@
+[
+  {
+    "type": "write.mentionReceived",
+    "description": "Someone mentioned you in a Silicon Write comment.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "doc",
+        "thread_id",
+        "comment_id",
+        "comment",
+        "quote",
+        "by",
+        "url"
+      ],
+      "properties": {
+        "doc": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "url"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "comment_id": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "required": [
+            "uuid",
+            "id",
+            "display_name",
+            "kind"
+          ],
+          "properties": {
+            "uuid": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          }
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "type": "write.commentCreated",
+    "description": "Someone commented on your Silicon Write document.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "doc",
+        "thread_id",
+        "comment_id",
+        "comment",
+        "quote",
+        "by",
+        "url"
+      ],
+      "properties": {
+        "doc": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "url"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "comment_id": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "required": [
+            "uuid",
+            "id",
+            "display_name",
+            "kind"
+          ],
+          "properties": {
+            "uuid": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          }
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "type": "write.commentReplied",
+    "description": "Someone replied to a Silicon Write comment thread you participate in.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "doc",
+        "thread_id",
+        "comment_id",
+        "comment",
+        "quote",
+        "by",
+        "url"
+      ],
+      "properties": {
+        "doc": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "url"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "comment_id": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "required": [
+            "uuid",
+            "id",
+            "display_name",
+            "kind"
+          ],
+          "properties": {
+            "uuid": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          }
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "type": "write.threadResolved",
+    "description": "A Silicon Write comment thread you started was resolved.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "doc",
+        "thread_id",
+        "comment",
+        "quote",
+        "by",
+        "url"
+      ],
+      "properties": {
+        "doc": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "url"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "required": [
+            "uuid",
+            "id",
+            "display_name",
+            "kind"
+          ],
+          "properties": {
+            "uuid": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          }
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "type": "write.suggestionCreated",
+    "description": "Someone suggested a change to your Silicon Write document.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "doc",
+        "suggestion_id",
+        "inserted",
+        "deleted",
+        "by",
+        "seq"
+      ],
+      "properties": {
+        "doc": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "url"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "suggestion_id": {
+          "type": "string"
+        },
+        "inserted": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "required": [
+            "uuid",
+            "id",
+            "display_name",
+            "kind"
+          ],
+          "properties": {
+            "uuid": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          }
+        },
+        "seq": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "type": "write.docShared",
+    "description": "Someone shared a Silicon Write document or folder with you.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id",
+        "title",
+        "url",
+        "role",
+        "by"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "required": [
+            "uuid",
+            "id",
+            "display_name",
+            "kind"
+          ],
+          "properties": {
+            "uuid": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "write.documentChanged",
+    "description": "Refresh an open Silicon Write document; contains no document or comment text.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "doc_id",
+        "changes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "document",
+              "meta",
+              "threads"
+            ]
+          }
+        }
+      }
+    }
+  }
+]

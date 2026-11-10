@@ -46,11 +46,14 @@ The application service itself retains network access for Accounts, Ting and Pos
 1. Silicon Accounts (done 2026-10-17): the app `write` exists (owner c:saket) with Google, Apple and email sign-in,
    device flow and public client on, redirect `https://write.teamofsilicons.com/auth/callback`, and optional email.
    Its active Accounts webhook points to `/v1/webhooks/accounts` on the API origin.
-2. Silicon Ting: the following types are registered:
-   `write.mention.received`, `write.comment.created`, `write.comment.replied`, `write.suggestion.created`,
-   `write.thread.resolved`, `write.doc.shared`. Sending uses App verification with `tings.send`; recipient enrollment
-   uses User verification with `subscriptions.register`. Registration and proof issuance are verified; notification
-   delivery has not been tested by sending to other people.
+2. Silicon Ting 0.4: the API checks the public catalog and registers missing definitions from
+   `crates/write-api/src/ting/types.json` using `types.manage`. Account notifications use `write.mentionReceived`,
+   `write.commentCreated`, `write.commentReplied`, `write.suggestionCreated`, `write.threadResolved`, and
+   `write.docShared`; `write.documentChanged` is a content-free live-session hint. Sending uses App verification
+   with `tings.send`; recipient enrollment uses User verification with `subscriptions.register`. Apply migration
+   `0009_ting_sessions.sql` and reconcile any uncertain legacy outbox requests before resending. See
+   [the integration/rollout guide](../docs/ting.md). The local integration checks are not production delivery evidence.
+
 3. Namecheap DNS: `write` CNAME points to `7365698a83a53afa.vercel-dns-017.com`; `api.write` A points to `3.146.142.123`.
    `dns.py` defaults to a dry run, snapshots the zone privately, preserves unrelated records and mail mode,
    and checks for changes immediately before applying. DNS changes must use the current verified provider targets.

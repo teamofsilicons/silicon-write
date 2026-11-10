@@ -18,7 +18,7 @@
 // - email invitations (pending, the invitation email, becoming access when that Carbon signs in to write, also when
 //   their first requests come all at once);
 // - public links (none, view, comment, edit), anonymous callers, making a doc private again, images and PDFs;
-// - the write.doc.shared ting through the Ting stand-in;
+// - the write.docShared ting through the Ting stand-in;
 // - sharing across the trash, permanent deletion, copies, history undo and transfers; role changes reaching open live
 //   connections.
 
@@ -1921,7 +1921,7 @@ describe("public links", () => {
 // Notifications
 // ------------------------------------------------------------------------------------------------------------------
 
-describe("the write.doc.shared ting", () => {
+describe("the write.docShared ting", () => {
   test("sharing a doc with a Carbon tells them through Ting, with the doc, the role and who shared it", { timeout: TEST_TIMEOUT }, async () => {
     const owner = await carbon("owner");
     const friend = await carbon("friend");
@@ -1929,9 +1929,9 @@ describe("the write.doc.shared ting", () => {
     const doc = await newDoc(owner.api, { title: `Shared ${unique()}` });
     await share(owner.api, "docs", doc.id, friend.id, "commenter");
     const tings = await eventually(async () => {
-      const items = (await tingsFor(friend.uuid)).filter(t => t.type === "write.doc.shared" && t.data?.id === doc.id);
+      const items = (await tingsFor(friend.uuid)).filter(t => t.type === "write.docShared" && t.data?.id === doc.id);
       return items.length ? items : null;
-    }, { timeout: 20_000, what: "the write.doc.shared ting" });
+    }, { timeout: 20_000, what: "the write.docShared ting" });
     assert.equal(tings.length, 1);
     const data = tings[0].data;
     assert.equal(data.kind, "doc");
@@ -1943,7 +1943,7 @@ describe("the write.doc.shared ting", () => {
     // Sharing again with the same role doesn't tell them twice.
     await share(owner.api, "docs", doc.id, friend.id, "commenter");
     await sleep(3_000);
-    assert.equal((await tingsFor(friend.uuid)).filter(t => t.type === "write.doc.shared" && t.data?.id === doc.id).length, 1);
+    assert.equal((await tingsFor(friend.uuid)).filter(t => t.type === "write.docShared" && t.data?.id === doc.id).length, 1);
   });
 
   test("sharing a folder with a Silicon tells it through Ting, and an editor's invitation names the editor", { timeout: TEST_TIMEOUT }, async () => {
@@ -1954,9 +1954,9 @@ describe("the write.doc.shared ting", () => {
     const folder = await newFolder(owner.api, `Shared folder ${unique()}`);
     await share(owner.api, "folders", folder.id, editor.id, "editor");
     await share(editor.api, "folders", folder.id, helper.id, "viewer");
-    const ting = await eventually(async () => (await tingsFor(helper.uuid)).find(t => t.type === "write.doc.shared" && t.data?.id === folder.id), {
+    const ting = await eventually(async () => (await tingsFor(helper.uuid)).find(t => t.type === "write.docShared" && t.data?.id === folder.id), {
       timeout: 20_000,
-      what: "the folder's write.doc.shared ting",
+      what: "the folder's write.docShared ting",
     });
     assert.equal(ting.data.kind, "folder");
     assert.equal(ting.data.title, folder.name);
@@ -1986,7 +1986,7 @@ describe("the write.doc.shared ting", () => {
     // Now the Silicon starts using Silicon Write (and is registered with Ting).
     await enrolled(newcomer);
     const arrived = await within(async () => {
-      const ting = (await tingsFor(newcomer.uuid)).find(t => t.type === "write.doc.shared" && t.data?.id === doc.id);
+      const ting = (await tingsFor(newcomer.uuid)).find(t => t.type === "write.docShared" && t.data?.id === doc.id);
       return { done: Boolean(ting), ting };
     }, { timeout: 30_000 });
     const now = (await outbox()).tings.find(t => t.key === key);
@@ -2087,7 +2087,7 @@ describe("sharing across the trash, permanent deletion and transfers", () => {
     assert.equal(opens, 404, "the friend can't open a doc in the trash");
     assert.ok(
       byId.status >= 400 && byEmail.status >= 400 && tings.length === 0 && mails.length === 0,
-      `sharing a doc in the trash answered ${byId.status} (c:id) and ${byEmail.status} (email); ${tings.length} write.doc.shared ting(s) and ${mails.length} invitation email(s) went out for a doc that answers ${opens}`,
+      `sharing a doc in the trash answered ${byId.status} (c:id) and ${byEmail.status} (email); ${tings.length} write.docShared ting(s) and ${mails.length} invitation email(s) went out for a doc that answers ${opens}`,
     );
   });
 

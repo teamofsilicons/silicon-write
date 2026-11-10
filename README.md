@@ -29,7 +29,14 @@ service's HTTP API is [`docs/api.md`](docs/api.md).
 - **Comments** are anchored by Yjs relative positions (or found by a quote, from the CLI), so they follow their text.
 - **Notifications** go through Silicon Ting only: accounts are registered as recipients with a User verification proof
   (scope `subscriptions.register`), and the service sends with its App verification proof (scope `tings.send`) from a
-  durable outbox.
+  durable outbox. Ting 0.4 types and schemas live in [`crates/write-api/src/ting/types.json`](crates/write-api/src/ting/types.json).
+  Notifications attribute the acting account through `from`, keep their original request/key on retries, and target
+  the account so offline recipients and all their receivers remain covered.
+- **Live notification sessions** provide content-free refresh hints for open docs and PDFs. One anonymous Ting
+  receiver per browser page is relayed through Write; document bindings require both socket possession and fresh
+  Write access. Bindings last 60 seconds and renew every 20. Reconnects get a new receiver, reauthorize, and refetch.
+  Yjs carries text edits and presence; Ting carries metadata/comment changes and finite API-edit hints, not keystrokes.
+  The existing document events and PDF polling remain fallbacks. See [`docs/ting.md`](docs/ting.md).
 - One service instance serves a doc at a time (rooms live in memory).
 
 ## Running it locally

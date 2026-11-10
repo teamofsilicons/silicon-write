@@ -43,6 +43,9 @@ fn router(state: AppState) -> Router {
         .route("/healthz", get(service::healthz))
         .route("/readyz", get(service::readyz))
         .route("/v1/me", get(library::me))
+        .route("/v1/ting", get(ting::sessions::config))
+        .route("/v1/ting/live", get(ting::sessions::connect))
+        .route("/v1/docs/{id}/notifications", post(ting::sessions::watch))
         .route("/v1/library", get(library::library))
         .route("/v1/docs", get(library::all_docs).post(library::new_doc))
         .route("/v1/docs/import", post(content::import_new))
@@ -164,8 +167,10 @@ async fn main() {
         rooms: Default::default(),
         http: reqwest::Client::builder().timeout(Duration::from_secs(30)).build().expect("http client"),
         voice_slots: tokio::sync::Semaphore::new(2),
+        ting: Default::default(),
     }));
     tokio::spawn(ting::worker(state.clone()));
+    tokio::spawn(ting::sessions::worker(state.clone()));
     tokio::spawn(mail::worker(state.clone()));
     {
         let state = state.clone();

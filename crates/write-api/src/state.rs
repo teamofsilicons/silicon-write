@@ -21,6 +21,7 @@ pub struct Inner {
     pub rooms: Rooms,
     pub http: reqwest::Client,
     pub voice_slots: tokio::sync::Semaphore,
+    pub ting: crate::ting::Ting,
 }
 
 impl std::ops::Deref for AppState {

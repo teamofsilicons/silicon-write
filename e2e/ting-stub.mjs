@@ -1,17 +1,23 @@
 // A local stand-in for Silicon Ting (https://backend.ting.teamofsilicons.com), for end-to-end tests.
 //
-// It speaks the part of Ting 0.3 that Silicon Write uses, and checks every proof for real with the
+// It speaks the part of Ting 0.4 that Silicon Write uses, and checks every proof for real with the
 // local Silicon Accounts stack (as the app `ting`), the way Ting does:
 // - POST /v1/subscriptions: a User verification proof (receiving app ting, scope
 //   subscriptions.register) registers the proof's account as a recipient of the issuing app.
 // - POST /v1/tings: an App verification proof (scope tings.send) from the app named by the type's
-//   prefix; the recipient must be subscribed. Keys de-duplicate.
+//   prefix; the recipient must be subscribed or the live anonymous receiver must accept the app.
+//   Two-part types and registered data schemas are enforced; changed key replays conflict.
+// - /v1/apps/{app}/types: public reads and types.manage app-proof registration.
+// - /v1/ws: anonymous receiver sessions, app registration, heartbeat and targeted hints.
 // Tests read what arrived at GET /_tings (?for=uuid) and GET /_subscriptions.
 //
 //   TING_STUB_SECRET=<ting's app secret> node e2e/ting-stub.mjs   (port 4372, TING_STUB_PORT to change)
 
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
+const require = createRequire(new URL("../web/package.json", import.meta.url));
+const { WebSocketServer } = require("next/dist/compiled/ws");
 
 const port = Number(process.env.TING_STUB_PORT ?? 4372);
 const accounts = process.env.ACCOUNTS_API ?? "http://127.0.0.1:9889";
@@ -24,6 +30,8 @@ const basic = `Basic ${Buffer.from(`ting:${secret}`).toString("base64")}`;
 
 const subscriptions = []; // { id, app_id, uuid, id_public }
 const tings = []; // { id, type, for_uuid, key, data, created_at }
+const types = new Map();
+const sessions = new Map();
 const rejected = []; // { path, status, reason }
 
 async function verify(token) {
@@ -52,7 +60,7 @@ function refuse(res, path, status, code, reason) {
   send(res, status, { error: { code, message: reason } });
 }
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   try {
     if (req.method === "GET" && url.pathname === "/_tings") {
@@ -62,8 +70,19 @@ createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/_subscriptions") return send(res, 200, { items: subscriptions });
     if (req.method === "GET" && url.pathname === "/_rejected") return send(res, 200, { items: rejected });
     if (req.method === "GET" && url.pathname === "/healthz") return send(res, 200, { ok: true });
+    if (req.method === "GET" && url.pathname === "/_sessions") return send(res, 200, { items: [...sessions.keys()] });
+    const typeRoute = url.pathname.match(/^\/v1\/apps\/([^/]+)\/types$/);
+    if (req.method === "GET" && typeRoute) return send(res, 200, { items: [...types.values()].filter(t => t.type.startsWith(`${typeRoute[1]}.`)) });
     const auth = req.headers.authorization ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    if (req.method === "POST" && typeRoute) {
+      const body = await readJson(req);
+      const proof = token && await verify(token);
+      if (!proof || proof.kind !== "app_verification" || !proof.scopes?.includes("types.manage") || proof.issuing_app?.app_id !== typeRoute[1]) return refuse(res, url.pathname, 403, "forbidden", "catalog needs types.manage authority for this app");
+      if (!new RegExp(`^${typeRoute[1]}\\.[A-Za-z0-9]+$`).test(body.type) || !body.schema) return refuse(res, url.pathname, 422, "invalid", "type and schema required");
+      types.set(body.type, body);
+      return send(res, 201, body);
+    }
     if (req.method === "POST" && url.pathname === "/v1/subscriptions") {
       const body = await readJson(req);
       const proof = token && (await verify(token));
@@ -87,19 +106,59 @@ createServer(async (req, res) => {
       if (proof.kind !== "app_verification") return refuse(res, url.pathname, 403, "forbidden", "sending needs an App verification proof");
       if (!proof.scopes?.includes("tings.send")) return refuse(res, url.pathname, 403, "forbidden", "missing scope tings.send");
       const app = String(body.type ?? "").split(".")[0];
-      if (!/^[a-z0-9_-]+\.[a-z0-9_]+\.[a-z0-9_]+$/.test(body.type ?? "")) return refuse(res, url.pathname, 422, "invalid", "type must be app.service.event");
+      if (!/^[a-z0-9_-]+\.[A-Za-z0-9]+$/.test(body.type ?? "")) return refuse(res, url.pathname, 422, "invalid", "type must be app.notificationName");
+      if (!types.has(body.type)) return refuse(res, url.pathname, 404, "type_not_found", "register this type first");
+      if (!validData(body.data, types.get(body.type).schema)) return refuse(res, url.pathname, 422, "invalid_data", "data does not match the schema");
       if (proof.issuing_app?.app_id !== app) return refuse(res, url.pathname, 403, "forbidden", "the type belongs to another app");
       if (!body.key || typeof body.data !== "object") return refuse(res, url.pathname, 422, "invalid", "key and data are required");
       const sub = subscriptions.find(s => s.app_id === app && (s.uuid === body.for || s.account_id === body.for));
-      if (!sub) return refuse(res, url.pathname, 409, "no_subscription", "the recipient hasn't allowed this app");
+      const fingerprint = JSON.stringify(body);
       const existing = tings.find(t => t.key === body.key && t.app === app);
-      if (existing) return send(res, 200, existing);
-      const ting = { id: `ting_${randomBytes(6).toString("hex")}`, app, type: body.type, for_uuid: sub.uuid, key: body.key, data: body.data, created_at: new Date().toISOString() };
+      if (existing) return existing.fingerprint === fingerprint ? send(res, 200, { id: existing.id, status: "accepted" }) : refuse(res, url.pathname, 409, "idempotency_conflict", "changed request under the same key");
+      const session = body.session_id ? sessions.get(body.session_id) : null;
+      if (body.session_id && (!session || !session.apps.includes(app))) return refuse(res, url.pathname, 409, "session_gone", "this session no longer accepts this app");
+      if (!body.session_id && !sub) return refuse(res, url.pathname, 409, "no_subscription", "the recipient hasn't allowed this app");
+      const ting = { id: `ting_${randomBytes(6).toString("hex")}`, app, type: body.type, for_uuid: sub?.uuid ?? null, from: body.from ?? null, session_id: body.session_id ?? null, key: body.key, data: body.data, created_at: new Date().toISOString(), fingerprint };
       tings.push(ting);
-      return send(res, 201, ting);
+      if (session) session.ws.send(JSON.stringify({ op: "tings", session_id: body.session_id, tings: [ting] }));
+      return send(res, 202, { id: ting.id, status: "accepted" });
     }
     send(res, 404, { error: { code: "not_found", message: "no such route" } });
   } catch (error) {
     send(res, 500, { error: { code: "internal", message: String(error) } });
   }
-}).listen(port, "127.0.0.1", () => console.log(`ting-stub listening on http://127.0.0.1:${port}`));
+});
+
+function validData(data, schema) {
+  if (schema === true) return true;
+  if (schema === false) return false;
+  if (schema.type === "object" && (!data || typeof data !== "object" || Array.isArray(data))) return false;
+  if (schema.type === "array" && !Array.isArray(data)) return false;
+  if (schema.type === "string" && typeof data !== "string") return false;
+  if (schema.type === "integer" && !Number.isInteger(data)) return false;
+  if (schema.enum && !schema.enum.includes(data)) return false;
+  if (schema.required?.some(key => !(key in data))) return false;
+  if (schema.properties && !Object.entries(data).every(([key, value]) => schema.properties[key] ? validData(value, schema.properties[key]) : schema.additionalProperties !== false)) return false;
+  if (schema.items && !data.every(item => validData(item, schema.items))) return false;
+  return true;
+}
+
+const sockets = new WebSocketServer({ server, path: "/v1/ws" });
+sockets.on("connection", ws => {
+  const id = `receiver_${randomBytes(16).toString("hex")}`;
+  sessions.set(id, { ws, apps: [] });
+  ws.send(JSON.stringify({ op: "ready", protocol: "v1", session_id: id, receiver_id: id }));
+  let pong = true;
+  ws.on("pong", () => { pong = true; });
+  const heartbeat = setInterval(() => { if (!pong) return ws.terminate(); pong = false; ws.ping(); }, 5000);
+  ws.on("close", () => { clearInterval(heartbeat); sessions.delete(id); });
+  ws.on("message", raw => {
+    try {
+      const message = JSON.parse(raw.toString());
+      if (message.op !== "register" || !Array.isArray(message.app_ids) || message.session_token) return ws.close();
+      sessions.get(id).apps = message.app_ids;
+      ws.send(JSON.stringify({ op: "registered", request_id: message.request_id, session_id: id, for: null, app_ids: message.app_ids }));
+    } catch { ws.close(); }
+  });
+});
+server.listen(port, "127.0.0.1", () => console.log(`ting-stub listening on http://127.0.0.1:${port}`));

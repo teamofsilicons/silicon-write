@@ -115,7 +115,7 @@ const about = t => `${t.type} ${t.data.comment_id ?? t.data.suggestion_id ?? t.d
 const sorted = list => [...list].sort();
 
 function assertNoDuplicates(list, who) {
-  const keys = list.filter(t => t.type !== "write.thread.resolved").map(t => `${about(t)} ${t.data.role ?? ""}`);
+  const keys = list.filter(t => t.type !== "write.threadResolved").map(t => `${about(t)} ${t.data.role ?? ""}`);
   const twice = keys.filter((k, i) => keys.indexOf(k) !== i);
   assert.deepEqual(twice, [], `${who} was told the same thing more than once: ${twice.join(", ")}`);
 }
@@ -1292,9 +1292,9 @@ describe("replies, reactions, edits, deletes and resolving", () => {
     const got = {
       "thread.resolved entries": events.filter(e => e.kind === "thread.resolved" && e.data.thread === thread.id).length,
       "comment.deleted entries": events.filter(e => e.kind === "comment.deleted" && e.data.comment === answered.id).length,
-      "write.thread.resolved tings to the starter": (await newTings(ann, seen)).filter(t => t.type === "write.thread.resolved").length,
+      "write.threadResolved tings to the starter": (await newTings(ann, seen)).filter(t => t.type === "write.threadResolved").length,
     };
-    assert.deepEqual(got, { "thread.resolved entries": 1, "comment.deleted entries": 1, "write.thread.resolved tings to the starter": 1 }, "one resolution and one deletion, each kept once");
+    assert.deepEqual(got, { "thread.resolved entries": 1, "comment.deleted entries": 1, "write.threadResolved tings to the starter": 1 }, "one resolution and one deletion, each kept once");
   });
 
   test("replies, reactions and threads made at the same moment are all kept, and each is announced once", async () => {
@@ -1319,7 +1319,7 @@ describe("replies, reactions, edits, deletes and resolving", () => {
     assert.deepEqual(sorted((await threads(owner, doc.id)).filter(t => t.quote === "Second paragraph.").map(t => t.id)), sorted(opened.map(t => t.id)));
     await settle(...everyone);
     const [toOwner, toAnn, toBob, toCat] = await Promise.all(everyone.map(p => newTings(p, seen)));
-    assert.deepEqual(sorted(toAnn.map(about)), sorted(replies.map(c => `write.comment.replied ${c.id}`)), "Ann started the thread: every reply reaches her, once");
+    assert.deepEqual(sorted(toAnn.map(about)), sorted(replies.map(c => `write.commentReplied ${c.id}`)), "Ann started the thread: every reply reaches her, once");
     const byOthers = [...replies.slice(0, 2).map(c => c.id), ...opened.map(t => t.comments[0].id)];
     assert.deepEqual(sorted(toOwner.map(t => t.data.comment_id)), sorted(byOthers), "the owner hears of each comment someone else made, once (as new, or as a reply)");
     const own = { [bob.id]: [replies[0].id, opened[0].comments[0].id], [cat.id]: [replies[1].id, opened[1].comments[0].id] };
@@ -1707,7 +1707,7 @@ describe("notifications through Silicon Ting", () => {
     const doc = await newDoc(owner, "Alpha beta gamma.\n");
     await share(owner, doc.id, commenter, "commenter");
     const thread = await comment(commenter, doc.id, quote("beta"), "Can you hear me?");
-    await waitForTing(owner, "write.comment.created", t => t.data.thread_id === thread.id);
+    await waitForTing(owner, "write.commentCreated", t => t.data.thread_id === thread.id);
   });
 
   test("the owner hears about a new comment: the doc, the quoted text, the comment and who", async () => {
@@ -1718,7 +1718,7 @@ describe("notifications through Silicon Ting", () => {
     await settle(owner, writer);
     const seen = await mark(owner, writer);
     const thread = await comment(writer, doc.id, quote("beta gamma"), "Could this be shorter?");
-    const ting = await waitForTing(owner, "write.comment.created", t => t.data.thread_id === thread.id);
+    const ting = await waitForTing(owner, "write.commentCreated", t => t.data.thread_id === thread.id);
     assert.deepEqual(ting.data.doc, { id: doc.id, title: doc.title, url: `${env.web}/d/${doc.id}` });
     assert.equal(ting.data.quote, "beta gamma");
     assert.equal(ting.data.comment, "Could this be shorter?");
@@ -1729,7 +1729,7 @@ describe("notifications through Silicon Ting", () => {
 
     await comment(owner, doc.id, quote("Second"), "A note to myself");
     await settle(owner, writer);
-    assert.deepEqual((await newTings(owner, seen)).map(about), [`write.comment.created ${thread.comments[0].id}`], "one ting, and none for the owner's own comment");
+    assert.deepEqual((await newTings(owner, seen)).map(about), [`write.commentCreated ${thread.comments[0].id}`], "one ting, and none for the owner's own comment");
     assert.deepEqual(await newTings(writer, seen), [], "nobody hears about their own comment");
   });
 
@@ -1748,10 +1748,10 @@ describe("notifications through Silicon Ting", () => {
     assert.equal((await writer.api.post(`/v1/threads/${thread.id}/resolve`)).status, 200);
     await settle(owner, ann, writer);
     const told = {
-      "write.comment.created": [(await newTings(owner, seen)).find(t => t.type === "write.comment.created"), started, ann],
-      "write.mention.received": [(await newTings(writer, seen)).find(t => t.type === "write.mention.received"), started, ann],
-      "write.comment.replied": [(await newTings(ann, seen)).find(t => t.type === "write.comment.replied"), answered.body, owner],
-      "write.thread.resolved": [(await newTings(ann, seen)).find(t => t.type === "write.thread.resolved"), started, writer],
+      "write.commentCreated": [(await newTings(owner, seen)).find(t => t.type === "write.commentCreated"), started, ann],
+      "write.mentionReceived": [(await newTings(writer, seen)).find(t => t.type === "write.mentionReceived"), started, ann],
+      "write.commentReplied": [(await newTings(ann, seen)).find(t => t.type === "write.commentReplied"), answered.body, owner],
+      "write.threadResolved": [(await newTings(ann, seen)).find(t => t.type === "write.threadResolved"), started, writer],
     };
     const missing = {};
     for (const [type, [ting, body, by]] of Object.entries(told)) {
@@ -1784,7 +1784,7 @@ describe("notifications through Silicon Ting", () => {
     await settle(...everyone);
     const got = {};
     for (const p of [plainOne, underscored, hyphened]) got[p.id] = (await newTings(p, seen)).map(t => t.type);
-    assert.deepEqual(got, { [plainOne.id]: [], [underscored.id]: ["write.mention.received"], [hyphened.id]: ["write.mention.received"] }, "who a mention of a handle ending in _ or - reached");
+    assert.deepEqual(got, { [plainOne.id]: [], [underscored.id]: ["write.mentionReceived"], [hyphened.id]: ["write.mentionReceived"] }, "who a mention of a handle ending in _ or - reached");
   });
 
   test("a Silicon's mention reaches the Carbon however the c:id sits in the sentence", async () => {
@@ -1814,14 +1814,14 @@ describe("notifications through Silicon Ting", () => {
     }
     await settle(owner, ann, writer);
     const toAnn = await newTings(ann, seen);
-    const reached = Object.fromEntries(Object.entries(made).map(([what, id]) => [what, toAnn.filter(t => t.type === "write.mention.received" && t.data.comment_id === id).length]));
+    const reached = Object.fromEntries(Object.entries(made).map(([what, id]) => [what, toAnn.filter(t => t.type === "write.mentionReceived" && t.data.comment_id === id).length]));
     assert.deepEqual(reached, Object.fromEntries(Object.keys(forms).map(what => [what, 1])), "how many mention tings each way of writing the c:id brought");
     const first = toAnn.find(t => t.data.comment_id === made["at the start"]);
     assert.equal(first.data.by.id, writer.id);
     assert.equal(first.data.by.kind, "silicon");
     assert.equal(first.data.comment, forms["at the start"]);
     const toOwner = await newTings(owner, seen);
-    assert.deepEqual(sorted(toOwner.map(about)), sorted(Object.values(made).map(id => `write.comment.created ${id}`)), "the owner hears of each comment once");
+    assert.deepEqual(sorted(toOwner.map(about)), sorted(Object.values(made).map(id => `write.commentCreated ${id}`)), "the owner hears of each comment once");
     assert.deepEqual(await newTings(writer, seen), []);
   });
 
@@ -1847,12 +1847,12 @@ describe("notifications through Silicon Ting", () => {
     const got = {};
     for (const p of everyone) got[p.id] = (await newTings(p, seen)).map(t => t.type);
     assert.deepEqual(got, {
-      [owner.id]: ["write.mention.received"],
+      [owner.id]: ["write.mentionReceived"],
       [author.id]: [],
       [outsider.id]: [],
-      [viewer.id]: ["write.mention.received"],
-      [member.id]: ["write.mention.received"],
-      [writer.id]: ["write.mention.received"],
+      [viewer.id]: ["write.mentionReceived"],
+      [member.id]: ["write.mentionReceived"],
+      [writer.id]: ["write.mentionReceived"],
     }, "the owner is told once (as mentioned), those who can't open the doc aren't told");
     const ting = (await newTings(writer, seen))[0];
     assert.deepEqual(ting.data.doc, { id: doc.id, title: doc.title, url: `${env.web}/d/${doc.id}` });
@@ -1871,10 +1871,10 @@ describe("notifications through Silicon Ting", () => {
     await settle(owner, passerby, reader);
     let seen = await mark(owner, passerby, reader);
     const thread = await comment(passerby, doc.id, quote("beta"), `@${reader.id} have a look`);
-    const toOwner = await waitForTing(owner, "write.comment.created", t => t.data.thread_id === thread.id);
+    const toOwner = await waitForTing(owner, "write.commentCreated", t => t.data.thread_id === thread.id);
     assert.equal(toOwner.data.by.id, passerby.id);
     assert.equal(toOwner.data.comment, `@${reader.id} have a look`);
-    const toReader = await waitForTing(reader, "write.mention.received", t => t.data.thread_id === thread.id);
+    const toReader = await waitForTing(reader, "write.mentionReceived", t => t.data.thread_id === thread.id);
     assert.equal(toReader.data.quote, "beta");
     await settle(owner, passerby, reader);
     assert.deepEqual((await newTings(passerby, seen)).map(t => t.type), []);
@@ -1900,7 +1900,7 @@ describe("notifications through Silicon Ting", () => {
     await settle(owner, writer);
     const seen = await mark(owner, writer);
     const thread = await comment(owner, doc.id, quote(paragraphText), `@${writer.id} make this shorter`);
-    const ting = await waitForTing(writer, "write.mention.received", t => t.data.thread_id === thread.id);
+    const ting = await waitForTing(writer, "write.mentionReceived", t => t.data.thread_id === thread.id);
     const md = await writer.api.get(`/v1/docs/${ting.data.doc.id}/markdown?comments=inline`);
     assert.equal(md.status, 200);
     assert.ok(md.body.markdown.includes(`[!comment ${ting.data.thread_id} by ${owner.id}`), md.body.markdown);
@@ -1911,8 +1911,8 @@ describe("notifications through Silicon Ting", () => {
     await reply(writer, ting.data.thread_id, "Done.");
     assert.equal((await writer.api.post(`/v1/threads/${ting.data.thread_id}/resolve`)).status, 200);
     await settle(owner, writer);
-    assert.deepEqual(sorted((await newTings(owner, seen)).map(t => t.type)), ["write.comment.replied", "write.thread.resolved"]);
-    assert.deepEqual((await newTings(writer, seen)).map(t => t.type), ["write.mention.received"]);
+    assert.deepEqual(sorted((await newTings(owner, seen)).map(t => t.type)), ["write.commentReplied", "write.threadResolved"]);
+    assert.deepEqual((await newTings(writer, seen)).map(t => t.type), ["write.mentionReceived"]);
   });
 
   test("a reply reaches everyone in the thread but its author; the owner hears about threads they're not in", async () => {
@@ -1929,9 +1929,9 @@ describe("notifications through Silicon Ting", () => {
     await settle(owner, ann, bob, cat);
     const got = async p => sorted((await newTings(p, seen)).map(about));
     const first = thread.comments[0].id;
-    assert.deepEqual(await got(owner), sorted([`write.comment.created ${first}`, `write.comment.created ${fromBob.id}`, `write.comment.replied ${fromCat.id}`]));
-    assert.deepEqual(await got(ann), sorted([`write.comment.replied ${fromBob.id}`, `write.comment.replied ${fromOwner.id}`, `write.comment.replied ${fromCat.id}`]));
-    assert.deepEqual(await got(bob), sorted([`write.comment.replied ${fromOwner.id}`, `write.mention.received ${fromCat.id}`]), "a mentioned participant is told once");
+    assert.deepEqual(await got(owner), sorted([`write.commentCreated ${first}`, `write.commentCreated ${fromBob.id}`, `write.commentReplied ${fromCat.id}`]));
+    assert.deepEqual(await got(ann), sorted([`write.commentReplied ${fromBob.id}`, `write.commentReplied ${fromOwner.id}`, `write.commentReplied ${fromCat.id}`]));
+    assert.deepEqual(await got(bob), sorted([`write.commentReplied ${fromOwner.id}`, `write.mentionReceived ${fromCat.id}`]), "a mentioned participant is told once");
     assert.deepEqual(await got(cat), [], "Cat wasn't in the thread before replying");
     const replied = (await newTings(ann, seen)).find(t => t.data.comment_id === fromCat.id);
     assert.equal(replied.data.quote, "beta");
@@ -1954,7 +1954,7 @@ describe("notifications through Silicon Ting", () => {
     assert.equal((await bob.api.patch(`/v1/comments/${fromBob.id}`, { body: `Bob answers, and asks @${dan.id}` })).status, 200);
     await settle(...everyone);
     const told = await newTings(dan, seen);
-    assert.deepEqual(told.map(about), [`write.mention.received ${fromBob.id}`]);
+    assert.deepEqual(told.map(about), [`write.mentionReceived ${fromBob.id}`]);
     assert.equal(told[0].data.comment, `Bob answers, and asks @${dan.id}`, "the ting carries the comment as it reads now");
     for (const p of [owner, ann, bob]) assert.deepEqual((await newTings(p, seen)).map(about), [], `${p.id} heard about an edit that only mentioned ${dan.id}`);
   });
@@ -1983,7 +1983,7 @@ describe("notifications through Silicon Ting", () => {
     const doc = await newDoc(owner, "Alpha beta gamma.\n");
     await share(owner, doc.id, ann, "commenter");
     const thread = await comment(ann, doc.id, quote("beta"), `@${owner.id} please look`);
-    await waitForTing(owner, "write.mention.received", t => t.data.thread_id === thread.id);
+    await waitForTing(owner, "write.mentionReceived", t => t.data.thread_id === thread.id);
     await settle(owner, ann);
     const seen = await mark(owner);
     assert.equal((await ann.api.patch(`/v1/comments/${thread.comments[0].id}`, { body: "Never mind" })).status, 200);
@@ -2025,7 +2025,7 @@ describe("notifications through Silicon Ting", () => {
     await settle(owner, ann);
     let seen = await mark(owner, ann);
     assert.equal((await owner.api.post(`/v1/threads/${thread.id}/resolve`)).status, 200);
-    const ting = await waitForTing(ann, "write.thread.resolved", t => t.data.thread_id === thread.id);
+    const ting = await waitForTing(ann, "write.threadResolved", t => t.data.thread_id === thread.id);
     assert.deepEqual(ting.data.doc, { id: doc.id, title: doc.title, url: `${env.web}/d/${doc.id}` });
     assert.equal(ting.data.quote, "beta");
     assert.equal(ting.data.by.id, owner.id);
@@ -2040,7 +2040,7 @@ describe("notifications through Silicon Ting", () => {
     await sleep(1_100);
     assert.equal((await owner.api.post(`/v1/threads/${thread.id}/resolve`)).status, 200);
     await settle(ann);
-    assert.deepEqual((await newTings(ann, seen)).map(t => t.type), ["write.thread.resolved"], "resolved again later: told again");
+    assert.deepEqual((await newTings(ann, seen)).map(t => t.type), ["write.threadResolved"], "resolved again later: told again");
   });
 
   test("a thread resolved, reopened and resolved again within a second is two resolutions", async () => {
@@ -2109,12 +2109,12 @@ describe("notifications through Silicon Ting", () => {
     const read = (await commenter.api.get(`/v1/docs/${doc.id}/markdown`)).body;
     let r = await commenter.api.put(`/v1/docs/${doc.id}/markdown`, { markdown: read.markdown.replace("Third one.", "Third."), base_seq: read.seq, suggest: true });
     assert.equal(r.status, 200, show(r.body));
-    const whole = await waitForTing(owner, "write.suggestion.created", t => t.data.by.id === commenter.id);
+    const whole = await waitForTing(owner, "write.suggestionCreated", t => t.data.by.id === commenter.id);
     assert.equal(whole.data.deleted, " one", `a whole-Markdown suggestion: ${show(whole.data)}`);
 
     r = await commenter.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "beta", new: "BETA" }], suggest: true });
     assert.equal(r.status, 200, show(r.body));
-    const fromCommenter = await waitForTing(owner, "write.suggestion.created", t => t.data.by.id === commenter.id && t.data.inserted === "BETA");
+    const fromCommenter = await waitForTing(owner, "write.suggestionCreated", t => t.data.by.id === commenter.id && t.data.inserted === "BETA");
     assert.deepEqual(fromCommenter.data.doc, { id: doc.id, title: doc.title, url: `${env.web}/d/${doc.id}` });
     assert.equal(fromCommenter.data.deleted, "beta");
     assert.match(fromCommenter.data.suggestion_id, /^s_/);
@@ -2122,7 +2122,7 @@ describe("notifications through Silicon Ting", () => {
 
     r = await editor.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "here", new: "there" }], suggest: true });
     assert.equal(r.status, 200, show(r.body));
-    const fromSilicon = await waitForTing(owner, "write.suggestion.created", t => t.data.by.id === editor.id);
+    const fromSilicon = await waitForTing(owner, "write.suggestionCreated", t => t.data.by.id === editor.id);
     assert.equal(fromSilicon.data.by.kind, "silicon");
 
     r = await owner.api.post(`/v1/docs/${doc.id}/edits`, { edits: [{ old: "gamma", new: "delta" }], suggest: true });
@@ -2134,7 +2134,7 @@ describe("notifications through Silicon Ting", () => {
       const id = `s_live${unique()}`;
       await liveChange(commenter, doc.id, () => text.insert(0, "Hey ", { suggestionInsert: { id, author: commenter.uuid } }));
       assert.deepEqual(client.events.filter(e => e.type === "rejected"), [], "a commenter's live suggestion is accepted");
-      const fromLive = await waitForTing(owner, "write.suggestion.created", t => t.data.suggestion_id === id);
+      const fromLive = await waitForTing(owner, "write.suggestionCreated", t => t.data.suggestion_id === id);
       assert.equal(fromLive.data.inserted, "Hey ");
       assert.equal(fromLive.data.by.id, commenter.id);
     } finally {
@@ -2187,7 +2187,7 @@ describe("notifications through Silicon Ting", () => {
     assert.ok(listed.every(s => s.author?.id === commenter.id), show(listed));
     await settle(owner, commenter, viewer);
     const told = await newTings(owner, seen);
-    assert.ok(told.every(t => t.type === "write.suggestion.created"), show(told.map(about)));
+    assert.ok(told.every(t => t.type === "write.suggestionCreated"), show(told.map(about)));
     assert.deepEqual(sorted(told.map(t => t.data.suggestion_id)), sorted(listed.map(s => s.id)), "one ting per suggestion");
     const toBeta = told.find(t => t.data.inserted === "BETA");
     assert.ok(toBeta, `the edit's ting: ${show(told.map(t => t.data))}`);
@@ -2258,7 +2258,7 @@ describe("notifications through Silicon Ting", () => {
     assert.equal(suggested.status, 200, show(suggested.body));
     const [mine] = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
     assert.equal(mine?.author?.id, commenter.id, show(mine));
-    await waitForTing(owner, "write.suggestion.created", t => t.data.suggestion_id === mine.id);
+    await waitForTing(owner, "write.suggestionCreated", t => t.data.suggestion_id === mine.id);
     const client = await live(editor, doc.id);
     try {
       const text = client.fragment.get(0).get(0);
@@ -2277,7 +2277,7 @@ describe("notifications through Silicon Ting", () => {
     await settle(owner, commenter, editor);
     const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
     assert.deepEqual(listed.map(s => [s.id, s.author?.id]), [[mine.id, commenter.id]], "still the commenter's one suggestion");
-    assert.deepEqual((await newTings(owner, seen)).map(about), [`write.suggestion.created ${mine.id}`], "announced once, when it was made");
+    assert.deepEqual((await newTings(owner, seen)).map(about), [`write.suggestionCreated ${mine.id}`], "announced once, when it was made");
   });
 
   test("new text put elsewhere under someone's pending suggestion is refused, as a suggestion in their name would be", async () => {
@@ -2349,7 +2349,7 @@ describe("notifications through Silicon Ting", () => {
     const listed = (await owner.api.get(`/v1/docs/${doc.id}/suggestions`)).body.suggestions;
     assert.deepEqual(listed.map(s => [s.id, s.author?.id]), [[own, editor.id]], "only the Silicon's suggestion in its own name is in the doc");
     const told = await newTings(owner, seen);
-    assert.deepEqual(told.map(t => [t.type, t.data.suggestion_id, t.data.by.id]), [["write.suggestion.created", own, editor.id]]);
+    assert.deepEqual(told.map(t => [t.type, t.data.suggestion_id, t.data.by.id]), [["write.suggestionCreated", own, editor.id]]);
     assert.deepEqual([...(await newTings(commenter, seen)), ...(await newTings(editor, seen))].map(about), []);
   });
 
@@ -2367,12 +2367,12 @@ describe("notifications through Silicon Ting", () => {
     await settle(first, commenter, writer);
     const seen = await mark(first, commenter, writer);
     const thread = await comment(commenter, doc.id, quote("beta"), "For the new owner");
-    const ting = await waitForTing(writer, "write.comment.created", t => t.data.thread_id === thread.id);
+    const ting = await waitForTing(writer, "write.commentCreated", t => t.data.thread_id === thread.id);
     assert.equal(ting.data.by.id, commenter.id);
     assert.equal(ting.data.comment, "For the new owner");
     await settle(first, commenter, writer);
     assert.deepEqual((await newTings(first, seen)).map(about), [], "the previous owner (now an editor) isn't told as the owner");
-    assert.deepEqual((await newTings(writer, seen)).map(about), [`write.comment.created ${thread.comments[0].id}`]);
+    assert.deepEqual((await newTings(writer, seen)).map(about), [`write.commentCreated ${thread.comments[0].id}`]);
   });
 
   test("being invited to a doc or a folder is a ting for the one invited", async () => {
@@ -2385,7 +2385,7 @@ describe("notifications through Silicon Ting", () => {
     await settle(owner, carbonFriend, writer);
     const seen = await mark(owner, carbonFriend, writer);
     await share(owner, doc.id, carbonFriend, "commenter");
-    const toDoc = await waitForTing(carbonFriend, "write.doc.shared", t => t.data.id === doc.id);
+    const toDoc = await waitForTing(carbonFriend, "write.docShared", t => t.data.id === doc.id);
     assert.deepEqual(toDoc.data, {
       kind: "doc",
       id: doc.id,
@@ -2397,14 +2397,14 @@ describe("notifications through Silicon Ting", () => {
     const again = await owner.api.post(`/v1/docs/${doc.id}/sharing`, { to: carbonFriend.id, role: "commenter" });
     assert.equal(again.status, 200, `inviting someone again with the same role (docs/api.md: 200): ${show(again.body)}`);
     assert.equal((await owner.api.post(`/v1/folders/${folder.id}/sharing`, { to: writer.id, role: "editor" })).status, 201);
-    const toFolder = await waitForTing(writer, "write.doc.shared", t => t.data.id === folder.id);
+    const toFolder = await waitForTing(writer, "write.docShared", t => t.data.id === folder.id);
     assert.equal(toFolder.data.kind, "folder");
     assert.equal(toFolder.data.title, folderName);
     assert.equal(toFolder.data.role, "editor");
     assert.ok(toFolder.data.url.includes(folder.id), toFolder.data.url);
     await settle(owner, carbonFriend, writer);
-    assert.deepEqual((await newTings(carbonFriend, seen)).map(about), [`write.doc.shared ${doc.id}`], "sharing again with the same role isn't news");
-    assert.deepEqual((await newTings(writer, seen)).map(about), [`write.doc.shared ${folder.id}`]);
+    assert.deepEqual((await newTings(carbonFriend, seen)).map(about), [`write.docShared ${doc.id}`], "sharing again with the same role isn't news");
+    assert.deepEqual((await newTings(writer, seen)).map(about), [`write.docShared ${folder.id}`]);
     assert.deepEqual(await newTings(owner, seen), [], "the one inviting isn't told");
   });
 
@@ -2440,7 +2440,7 @@ describe("notifications through Silicon Ting", () => {
       const opened = await friend.api.get(`/v1/docs/${doc.id}`);
       return { ok: opened.status === 200, value: { status: opened.status, member: { email: r.body.email, account: r.body.account?.id ?? null, pending: r.body.pending } } };
     }, { timeout: 15_000, every: 1_000 });
-    const ting = await waitForTing(friend, "write.doc.shared", t => t.data.id === doc.id, 10_000);
+    const ting = await waitForTing(friend, "write.docShared", t => t.data.id === doc.id, 10_000);
     assert.equal(ting.data.role, "commenter");
     assert.equal((await newTings(friend, seen)).length, 1);
   });
@@ -2449,7 +2449,7 @@ describe("notifications through Silicon Ting", () => {
     const result = await newcomer;
     assert.equal(result.me, 200);
     assert.equal(result.opens, 200, "the Silicon can open the doc it was invited to");
-    assert.deepEqual(sorted(result.tings), ["write.doc.shared", "write.mention.received"],
+    assert.deepEqual(sorted(result.tings), ["write.docShared", "write.mentionReceived"],
       `the tings were dropped while it wasn't registered with Ting: outbox ${show(result.outboxRows)}, signed in ${Math.round(result.signedInAfterMs / 1000)} s later`);
   });
 });
