@@ -73,4 +73,7 @@ Deploy the API before the web client. The API needs outbound HTTPS and WebSocket
 plus `types.manage`, `tings.send` and delegated `subscriptions.register` proofs for `WRITE_TING_APP_ID`.
 Existing `WRITE_API_URL`, `WRITE_TING_URL` and proxy WebSocket upgrade support are reused. Apply the migration and
 check failed legacy outbox items before claiming delivery. Disabling `WRITE_TING_URL` leaves durable work queued
-and live clients on their existing fallback paths. No production deployment is implied by local test results.
+and live clients on their existing fallback paths. Production API and web rollout, real-session checks, and recovery notes are recorded in
+[`deploy/verification-ting-sessions-20261110.json`](../deploy/verification-ting-sessions-20261110.json).
+The service explicitly selects its Rustls crypto provider before starting any clients: Accounts/reqwest and Ting
+enable different TLS backends, so automatic provider selection is ambiguous. Local HTTP stubs cannot validate TLS.

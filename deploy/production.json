@@ -1,10 +1,10 @@
 {
-  "recorded_at": "2026-10-24T16:13:49.410086+00:00",
+  "recorded_at": "2026-11-10T14:09:33.468718+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_EyKk5Y4VRoxKdvQRmjtiqEQ4jZBj",
+    "deployment_id": "dpl_AiYehjHLoMQkNtr5d7n6DQr2sFyt",
     "public_https": true,
     "public_routes_verified": [
       "/",
@@ -13,7 +13,7 @@
       "/llms.txt"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "277403142bf9c2207207c15aa896d8eeae8a7023",
+    "revision": "e3738bfe5e97a0383e453c9280dba1560b5e9dfc",
     "browser_checks": [
       "Neutral Silicon UI surfaces and text-colored caret verified live",
       "Formatting toolbar visible by default and workspace plus retained without arrow buttons",
@@ -27,13 +27,14 @@
       "Cached document preview is visible before live sync; authenticated live document then replaces it with unchanged text",
       "Optional public-file email gate verified signed out and signed in; owner-only viewer history records entered and account emails with visit timestamps"
     ],
-    "custom_domain_verified": true
+    "custom_domain_verified": true,
+    "deployment_url": "https://silicon-write-bhbm69c1h-saketdev12-5675s-projects.vercel.app"
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "ddb926140aa460d34927b380b73c890f9e1b40de",
-    "archive_sha256": "072e354e15f1b6562d706c23699e2d8b2d26779f4a8e696c281ea34e946dffcc",
-    "install_ssm_command": "cc1b6311-9082-4925-a25d-fa386a20b7e8",
+    "revision": "3bb28198751fdd20635ef6a1bbf9abaa3076eeb6",
+    "archive_sha256": "413563e798d1ab3326c074e2be94737c0a60d4d6ba22438ec45aab697f64214f",
+    "install_ssm_command": "63e3a4cf-9ea1-4190-8e85-c4da972e89b5",
     "readiness": true,
     "private_document_journey": [
       "ordinary device sign-in authorizes production API",
@@ -103,7 +104,7 @@
       "existing_docx_export_bytes": 10470,
       "fixture_moved_to_trash": true
     },
-    "predeploy_backup": "predeploy-20261029T131919Z"
+    "predeploy_backup": "predeploy-20261110T140128Z"
   },
   "infrastructure": {
     "aws_account": "234951665042",
@@ -119,7 +120,8 @@
       80,
       443
     ],
-    "runtime_secret_name": "silicon-write/production/runtime"
+    "runtime_secret_name": "silicon-write/production/runtime",
+    "swap_bytes": 2147483648
   },
   "dns": {
     "provider": "namecheap",
@@ -151,7 +153,7 @@
   },
   "limitations": [
     "Invitation sender authorization and mail delivery unverified; no test email sent.",
-    "Notification types and proof issuance verified; no notifications sent."
+    "Durable notification delivery to another account was not exercised in the Ting sessions release; ephemeral receiver delivery was verified."
   ],
   "secrets_included": false,
   "backup_verification": {
@@ -222,5 +224,6 @@
   "voice_label_verification": "deploy/verification-voice-labels-20261022.json",
   "content_cache_verification": "deploy/verification-content-cache-20261023.json",
   "public_email_verification": "deploy/verification-public-email-20261024.json",
-  "archive_selection_verification": "deploy/verification-archive-selection-20261029.json"
+  "archive_selection_verification": "deploy/verification-archive-selection-20261029.json",
+  "ting_sessions_verification": "verification-ting-sessions-20261110.json"
 }

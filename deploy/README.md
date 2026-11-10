@@ -83,6 +83,10 @@ Source history is also backed up as a private Git bundle in the production bucke
 
 ## Backups and recovery
 
+The production host has 2 GiB of persistent swap on its existing encrypted disk (added on 2026-11-10 after
+a predeployment backup exhausted RAM). The database recovered and subsequent backups completed; the Ting
+[release receipt](verification-ting-sessions-20261110.json) records the incident and verification.
+
 `silicon-write-backup.timer` runs hourly. `backup.py` takes a PostgreSQL snapshot while briefly holding locks that
 keep document/asset references consistent with the file archive, then uploads both checksummed files and a receipt
 to `silicon-write-production-backups-qgkxwl8wkwl0/backups/`. The private bucket is encrypted and versioned with

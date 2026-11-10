@@ -1,6 +1,6 @@
 {
   "date": "2026-11-10",
-  "scope": "local implementation and verification; not deployed",
+  "scope": "production release and verification",
   "ting": {
     "live_backend_version_observed": "0.4.0",
     "installed_cli_version_observed": "0.4.0",
@@ -17,12 +17,12 @@
   ],
   "validation": {
     "rust_api_unit_tests": {
-      "passed": 30,
-      "log": ".dev/ting-rust-tests.log"
+      "passed": 31,
+      "log": ".dev/ting-tls-rust-tests.log"
     },
     "web_unit_tests": {
-      "passed": 121,
-      "log": ".dev/ting-web-tests.log"
+      "passed": 128,
+      "log": ".dev/ting-unit-tests.log"
     },
     "session_and_migration_api_tests": {
       "passed": 5,
@@ -41,18 +41,25 @@
       ]
     },
     "browser": {
-      "passed": 2,
-      "includes": "Accounts setup and PDF live hints/offline reconnect scenario",
-      "log": ".dev/ting-browser-final.log",
-      "screenshot": "web/test-results/ting-pdf-session.png"
+      "passed_unique_cases": 27,
+      "initial_passed": 25,
+      "image_origin_mismatch_failures": 2,
+      "image_rerun_passed": 2,
+      "notes": "Local API generated localhost asset URLs; the image checks passed after aligning the browser hostname. Ting PDF hints/reconnect and existing math/context-menu checks passed.",
+      "logs": [
+        ".dev/ting-release-browser.log",
+        ".dev/ting-release-images-localhost.log"
+      ]
     },
     "typecheck": "passed",
     "lint": "passed",
     "web_build": "passed",
-    "diff_check": "passed"
+    "diff_check": "passed",
+    "deployment_unit_tests": 12,
+    "linux_aarch64_build": "passed"
   },
-  "production_notifications_sent": false,
-  "deployment_performed": false,
+  "production_notifications_sent": true,
+  "deployment_performed": true,
   "preexisting_edits_preserved": [
     "deploy/stack.json",
     "web/components/editor/editor.module.css",
@@ -61,5 +68,70 @@
     "web/e2e/editor.spec.ts",
     "web/components/editor/math-dialog.module.css",
     "web/components/editor/math-dialog.tsx"
+  ],
+  "production_notification_scope": "Ephemeral live hints to verification receivers only",
+  "production_durable_notifications_sent": false,
+  "release_worktree": "/Users/codanium/Documents/silicon/.worktrees/write-ting-live-20261110",
+  "production": {
+    "recorded_at": "2026-11-10T14:09:33.468718+00:00",
+    "api_revision": "3bb28198751fdd20635ef6a1bbf9abaa3076eeb6",
+    "api_archive_sha256": "413563e798d1ab3326c074e2be94737c0a60d4d6ba22438ec45aab697f64214f",
+    "install_ssm_command": "63e3a4cf-9ea1-4190-8e85-c4da972e89b5",
+    "web_revision": "e3738bfe5e97a0383e453c9280dba1560b5e9dfc",
+    "web_deployment_id": "dpl_AiYehjHLoMQkNtr5d7n6DQr2sFyt",
+    "web_deployment_url": "https://silicon-write-bhbm69c1h-saketdev12-5675s-projects.vercel.app",
+    "public_url": "https://write.teamofsilicons.com",
+    "predeploy_backup": "predeploy-20261110T140128Z",
+    "identity": "si:saket-agents",
+    "checks": [
+      "Authenticated creation and anonymous private-document denial",
+      "Real Ting 0.4 receiver hint, binding ownership, session isolation, and content-free payload",
+      "Disconnected receiver cannot be renewed",
+      "Two real production Yjs clients sync; fresh reconnect and HTTPS read retain the edit",
+      "Production Word and PDF converters succeed",
+      "All seven Ting 0.4 Write notification definitions registered",
+      "Live public PDF title refreshes through real Ting on the production domain",
+      "Authenticated document receiver receives production comment hints",
+      "Anonymous browser viewer receives no private comment-activity hints",
+      "Production browser reconnect reconciles metadata changed while offline",
+      "Revoking link access prevents later live hints"
+    ],
+    "catalog_types": [
+      "write.mentionReceived",
+      "write.commentCreated",
+      "write.commentReplied",
+      "write.threadResolved",
+      "write.suggestionCreated",
+      "write.docShared",
+      "write.documentChanged"
+    ],
+    "exports": {
+      "docx": 10507,
+      "pdf": 12290
+    },
+    "browser_page_errors": [],
+    "test_fixtures_private_and_trashed": true,
+    "legacy_outbox_sent_history_preserved": true,
+    "preexisting_failed_legacy_shares": 3,
+    "migration": 9,
+    "screenshot": ".dev/ting-release/production-browser.png",
+    "test_transport": "Verified TLS and hostname; local API requests pin the verified production IP to avoid intermittent local connection failures. Browser uses the real production domain.",
+    "final_health_ssm_command": "246bb158-86a4-4718-a11f-d6a3f039197c",
+    "final_health_passed": true,
+    "post_release_tls_panics": 0,
+    "temporary_debug_config_removed": true,
+    "backup_receipt_verified_from_s3": true
+  },
+  "deployment_recovery": [
+    {
+      "issue": "Backup memory pressure killed PostgreSQL before the first API switch; shutdown remained stuck after normal restart.",
+      "resolution": "Added persistent 2 GiB swap on the existing encrypted disk, completed PostgreSQL recovery with SIGQUIT after SIGINT did not release the remaining process, then completed verified predeploy backups.",
+      "recovery_ssm_command": "0b387951-d064-4abf-b78b-1f943b52cd90"
+    },
+    {
+      "issue": "Production TLS exposed ambiguous Rustls crypto-provider selection between Accounts/reqwest and Ting; the local HTTP stub did not exercise TLS.",
+      "resolution": "Explicitly select aws-lc-rs at startup, add a client-TLS configuration regression test, redeploy, and verify real Ting session delivery.",
+      "fix_commit": "3bb28198751fdd20635ef6a1bbf9abaa3076eeb6"
+    }
   ]
 }
