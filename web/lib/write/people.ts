@@ -1,4 +1,5 @@
 "use client";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/client/api";
 import { useSessionView } from "@/lib/client/session";
@@ -60,6 +61,19 @@ export function usePeople(enabled = true) {
       return { items, status: page.contacts_status };
     },
   });
+}
+
+export function useSavedPeople(enabled = true) {
+  const { data } = usePeople(enabled);
+  return useMemo(() => {
+    const people = new Map<string, Person>();
+    for (const person of data?.items ?? []) {
+      if (!person.trust) continue;
+      people.set(person.uuid, person);
+      people.set(person.id, person);
+    }
+    return people;
+  }, [data]);
 }
 
 export function useOrganizations(enabled = true) {

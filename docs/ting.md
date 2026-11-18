@@ -39,7 +39,7 @@ require a second cross-site login or adding Write to Ting's credentialed browser
 The gateway returns the actual Ting `session_id` and a random, in-memory binding capability. A browser cannot bind
 an arbitrary guessed/observed Ting session: the capability proves possession of this gateway socket. Each
 `POST /v1/docs/{id}/notifications` separately checks Write permissions and the email gate. The subscription stores
-account identity, gate version and expiry, never the account access token. Anonymous public readers can subscribe
+the gate version, expiry and a memory-only caller session so Write can recheck revocation and organization membership. Write never sends the bearer to Ting. Anonymous public readers can subscribe
 only where their public/email-gated read access allows. Viewer subscriptions receive no thread-change hints.
 
 One page shares its receiver among mounted document consumers. Each binding expires after 60 seconds and is

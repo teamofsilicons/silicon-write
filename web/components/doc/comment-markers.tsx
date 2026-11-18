@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPeople, photo, type Person } from "@/lib/write/people";
 
 import { useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
@@ -10,15 +11,15 @@ import styles from "./comments.module.css";
 
 const authorOf = (thread: Thread) => thread.comments.find(comment => !comment.deleted)?.author ?? thread.created_by;
 
-function Marker({ threads, top, activeThread, onActivate }: { threads: Thread[]; top: number; activeThread: string | null; onActivate: (id: string) => void }) {
+function Marker({ threads, top, activeThread, onActivate, saved }: { saved: Map<string, Person>; threads: Thread[]; top: number; activeThread: string | null; onActivate: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const choosing = useRef(false);
   const thread = threads.find(item => item.unread) ?? threads[0];
-  const author = authorOf(thread);
+  const author = saved.get(authorOf(thread).uuid) ?? authorOf(thread);
   const name = displayName(author);
   const unread = threads.some(item => item.unread);
   const label = threads.length > 1 ? `${threads.length} comment threads · ${unread ? "Unread activity" : "Read"}` : `Comment by ${name} · ${unread ? "Unread activity" : "Read"}`;
-  const face = <><Avatar name={name} src={author.pfp_url || undefined} size="sm" className={styles.markerPhoto} />{threads.length > 1 ? <span className={styles.markerCount} aria-hidden="true">{threads.length}</span> : null}</>;
+  const face = <><Avatar name={name} src={photo(author)} size="sm" className={styles.markerPhoto} />{threads.length > 1 ? <span className={styles.markerCount} aria-hidden="true">{threads.length}</span> : null}</>;
   if (threads.length === 1) return <button type="button" className={styles.marker} style={{ top }} data-comment-marker={thread.id} data-unread={unread ? "true" : "false"}
     aria-label={label} title={label} aria-haspopup="dialog" aria-pressed={thread.id === activeThread} onClick={() => onActivate(thread.id)}>{face}</button>;
   return <Popover open={open} onOpenChange={setOpen}>
@@ -26,10 +27,10 @@ function Marker({ threads, top, activeThread, onActivate }: { threads: Thread[];
       data-unread={unread ? "true" : "false"} aria-label={label} title={label}>{face}</button></PopoverTrigger>
     <PopoverContent side="right" className={styles.markerChoices} aria-label="Comments on this passage" onCloseAutoFocus={event => { if (choosing.current) { event.preventDefault(); choosing.current = false; } }}>
       {threads.map(item => {
-        const person = authorOf(item);
+        const person = saved.get(authorOf(item).uuid) ?? authorOf(item);
         return <button type="button" key={item.id} className={styles.markerChoice} data-unread={item.unread ? "true" : "false"}
           onClick={() => { choosing.current = true; setOpen(false); onActivate(item.id); }}>
-          <Avatar name={displayName(person)} src={person.pfp_url || undefined} size="sm" className={styles.markerPhoto} />
+          <Avatar name={displayName(person)} src={photo(person)} size="sm" className={styles.markerPhoto} />
           <span><strong>{displayName(person)}</strong><span>{item.comments.find(comment => !comment.deleted)?.body.slice(0, 120) || "Comment thread"}</span><small>{item.unread ? "Unread activity" : "Read"}</small></span>
         </button>;
       })}
@@ -45,6 +46,7 @@ export function CommentMarkers({ editor, threads, activeThread, onActivate }: {
   onActivate: (id: string) => void;
 }) {
   const rail = useRef<HTMLDivElement>(null);
+  const saved = useSavedPeople(threads.length > 0);
   const [positions, setPositions] = useState<{ id: string; top: number }[]>([]);
 
   useEffect(() => {
@@ -91,7 +93,7 @@ export function CommentMarkers({ editor, threads, activeThread, onActivate }: {
   }
   return (
     <div ref={rail} className={styles.markerRail} aria-label="Comments beside the document">
-      {groups.map(group => <Marker key={group.threads.map(thread => thread.id).join(" ")} {...group} activeThread={activeThread} onActivate={onActivate} />)}
+      {groups.map(group => <Marker saved={saved} key={group.threads.map(thread => thread.id).join(" ")} {...group} activeThread={activeThread} onActivate={onActivate} />)}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPeople } from "@/lib/write/people";
 
 /**
  * The library: your docs and folders (UNDERSTANDING.md, "Docs and folders"), what's shared with you, recent docs and
@@ -80,6 +81,7 @@ type Dialogs =
   | null;
 
 function Transfers({ transfers, onDone }: { transfers: Transfer[]; onDone: () => void }) {
+  const saved = useSavedPeople(transfers.length > 0);
   const pending = transfers.filter(t => t.status === "pending");
   if (!pending.length) return null;
   const decide = async (t: Transfer, action: "accept" | "decline") => {
@@ -97,7 +99,7 @@ function Transfers({ transfers, onDone }: { transfers: Transfer[]; onDone: () =>
         <div key={t.id} className={styles.transfer}>
           <ArrowLeftRight size={16} aria-hidden="true" />
           <span className={styles.transferText}>
-            <strong>{t.from.id}</strong> wants to give you the {t.item.kind} “{t.item.title}”.
+            <strong>{saved.get(t.from.uuid)?.display_name ?? t.from.id}</strong> wants to give you the {t.item.kind} “{t.item.title}”.
           </span>
           <Button variant="secondary" size="sm" onClick={() => void decide(t, "accept")}>Accept</Button>
           <Button variant="ghost" size="sm" onClick={() => void decide(t, "decline")}>Decline</Button>
@@ -110,6 +112,7 @@ function Transfers({ transfers, onDone }: { transfers: Transfer[]; onDone: () =>
 export function Library({ view, folderId }: { view: LibraryView; folderId?: string }) {
   const { openDocs } = useWorkspaceTabs();
   const me = useSessionView().account?.uuid;
+  const saved = useSavedPeople();
   const includeShared = view === "mine" && !folderId;
   const library = useLibrary(view, folderId ?? null);
   const shared = useLibrary("shared", null, includeShared);
@@ -125,7 +128,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
   const folder = data?.folder ?? null;
   const inTrash = Boolean(folder?.deleted_at);
   const canAdd = view === "mine" && !error && !inTrash && (!folderId || Boolean(folder && atLeast(folder.role, "editor")));
-  const heading = folder ? { title: folder.name, description: folder.archived ? "This folder is archived in your library. Its contents and sharing are unchanged." : inTrash ? "This folder is in the trash. Restore it from Trash to add or change its contents." : folder.owner.uuid !== me ? `${folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : folderId ? { title: error ? "Folder unavailable" : "Folder", description: "" } : TITLES[view];
+  const heading = folder ? { title: folder.name, description: folder.archived ? "This folder is archived in your library. Its contents and sharing are unchanged." : inTrash ? "This folder is in the trash. Restore it from Trash to add or change its contents." : folder.owner.uuid !== me ? `${saved.get(folder.owner.uuid)?.display_name ?? folder.owner.id}'s folder, shared with you as ${folder.role}.` : "A folder." } : folderId ? { title: error ? "Folder unavailable" : "Folder", description: "" } : TITLES[view];
 
   const newDoc = async () => {
     try {
@@ -272,7 +275,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
                 <FolderIcon size={18} className={styles.rowIcon} aria-hidden="true" />
                 {view === "trash" ? <span className={styles.rowTitle}>{f.name}</span> : <Link href={`/library/${f.id}`} className={styles.rowTitle}>{f.name}</Link>}
               </div>
-              <span className={styles.rowMeta}>Folder{f.owner.uuid !== me ? ` · Shared by ${f.owner.id}` : ""}</span>
+              <span className={styles.rowMeta}>Folder{f.owner.uuid !== me ? ` · Shared by ${saved.get(f.owner.uuid)?.display_name ?? f.owner.id}` : ""}</span>
             </div>
             {view === "trash" ? (
               <span className={styles.trashActions}>
@@ -313,7 +316,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
               {view === "trash" ? <span className={styles.rowTitle}>{d.title}</span> : <Link href={`/d/${d.id}`} className={styles.rowTitle}>{d.title}</Link>}
               <span className={styles.rowMeta}>
                 {d.kind === "pdf" ? "PDF · " : ""}
-                {d.owner.uuid !== me ? `Shared by ${d.owner.id} · ` : ""}
+                {d.owner.uuid !== me ? `Shared by ${saved.get(d.owner.uuid)?.display_name ?? d.owner.id} · ` : ""}
                 {d.created_by.uuid !== d.owner.uuid ? `created by ${d.created_by.id} · ` : ""}
                 {view === "trash" && d.deleted_at ? `deleted ${formatRelative(d.deleted_at)}` : `edited ${formatRelative(d.updated_at)}`}
               </span>

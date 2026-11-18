@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPeople, photo } from "@/lib/write/people";
 
 /**
  * A quiet document bar: back, connection state, writing tools and the actions that belong to the whole doc.
@@ -53,6 +54,7 @@ interface Presence {
 }
 
 function usePresence(live: LiveDoc | null): Presence[] {
+  const saved = useSavedPeople(Boolean(live));
   const [people, setPeople] = useState<Presence[]>([]);
   useEffect(() => {
     if (!live) return;
@@ -64,14 +66,15 @@ function usePresence(live: LiveDoc | null): Presence[] {
         const user = (state as { user?: { id?: string; name?: string; pfp_url?: string } }).user;
         if (!user) return;
         const key = user.id || `anon-${clientId}`;
-        if (!seen.has(key)) seen.set(key, { clientId, id: user.id ?? "", name: user.name || user.id || "Someone", src: user.pfp_url || undefined });
+        const contact = saved.get(key);
+        if (!seen.has(key)) seen.set(key, { clientId, id: user.id ?? "", name: contact?.display_name || user.name || user.id || "Someone", src: (contact && photo(contact)) || user.pfp_url || undefined });
       });
       setPeople([...seen.values()]);
     };
     awareness.on("change", update);
     update();
     return () => awareness.off("change", update);
-  }, [live]);
+  }, [live, saved]);
   return people;
 }
 

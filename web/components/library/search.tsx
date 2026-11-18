@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPeople } from "@/lib/write/people";
 
 /** Search the text of every doc you can open. */
 import { useEffect, useState } from "react";
@@ -19,6 +20,7 @@ function Snippet({ text }: { text: string }) {
 }
 
 export function Search() {
+  const saved = useSavedPeople();
   const initial = useSearchParams().get("q") ?? "";
   const [q, setQ] = useState(initial);
   const [query, setQuery] = useState(initial);
@@ -53,7 +55,7 @@ export function Search() {
           <li key={doc.id} className={styles.result}>
             <Link href={`/d/${doc.id}`}>{doc.title}</Link>
             {snippet ? <Snippet text={snippet} /> : null}
-            <span className={styles.rowMeta}>{doc.owner.id} · edited {formatRelative(doc.updated_at)}</span>
+            <span className={styles.rowMeta}>{saved.get(doc.owner.uuid)?.display_name ?? doc.owner.id} · edited {formatRelative(doc.updated_at)}</span>
           </li>
         ))}
       </ul>

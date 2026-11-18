@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPeople } from "@/lib/write/people";
 
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { FilePlus2, FileText, Search } from "lucide-react";
@@ -16,6 +17,7 @@ export function OpenDocDialog({ open, onOpenChange, onOpen, openDocIds }: {
   onOpen: (docs: Doc[]) => void;
   openDocIds: readonly string[];
 }) {
+  const saved = useSavedPeople(open);
   const docs = useAllDocs(open);
   const folders = useAllFolders(open);
   const refresh = useRefreshLibrary();
@@ -33,10 +35,10 @@ export function OpenDocDialog({ open, onOpenChange, onOpen, openDocIds }: {
     return (docs.data?.docs ?? []).filter(doc => !doc.deleted_at).map(doc => {
       const folder = doc.folder_id ? byId.get(doc.folder_id) : undefined;
       const path = doc.path.map(part => part.name).join(" / ") || (folder ? [...folder.path.map(part => part.name), folder.name].join(" / ") : "Top level");
-      return { doc, path, owner: displayName(doc.owner) };
+      return { doc, path, owner: displayName(saved.get(doc.owner.uuid) ?? doc.owner) };
     }).filter(({ doc, path, owner }) => terms.every(term => `${doc.title} ${path} ${owner} ${doc.owner.id}`.toLocaleLowerCase().includes(term)))
       .sort((a, b) => b.doc.updated_at.localeCompare(a.doc.updated_at) || a.doc.title.localeCompare(b.doc.title));
-  }, [docs.data, folders.data, search]);
+  }, [docs.data, folders.data, search, saved]);
   const activeIndex = Math.min(highlight, Math.max(0, results.length - 1));
   const active = docs.error ? undefined : results[activeIndex];
   const optionId = (id: string) => `${listId}-${id}`;

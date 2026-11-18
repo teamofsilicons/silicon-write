@@ -261,9 +261,11 @@ pub async fn watch(
     } else {
         let (doc, _) = access::require_doc(&state, caller.as_ref(), &id, Role::Viewer).await?;
         crate::visitors::ensure(&state, caller.as_ref(), &doc, &headers, false).await?;
-        // Leases store identity, never a reusable access credential.
+        // Write keeps the caller in memory for this lease so every delivery can
+        // check revocation and current group membership. Ting receives only the
+        // receiver ID and the content-free document hint.
         if let Some(caller) = &mut caller {
-            caller.token.clear();
+            caller.organizations = Default::default();
         }
         Some(Subscription {
             caller,

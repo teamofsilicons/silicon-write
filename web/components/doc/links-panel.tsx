@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPeople } from "@/lib/write/people";
 
 /** The docs that link to this one with [[its title]]. */
 import Link from "next/link";
@@ -10,6 +11,7 @@ import type { Doc } from "@/lib/write/types";
 import styles from "./doc.module.css";
 
 export function LinksPanel({ doc, onClose }: { doc: Doc; onClose: () => void }) {
+  const saved = useSavedPeople();
   const { data, isLoading } = useQuery({
     queryKey: ["backlinks", doc.id],
     queryFn: () => api.get<{ docs: Doc[] }>(`/v1/docs/${seg(doc.id)}/backlinks`),
@@ -33,7 +35,7 @@ export function LinksPanel({ doc, onClose }: { doc: Doc; onClose: () => void }) 
         {docs.map(d => (
           <li key={d.id}>
             <Link href={`/d/${d.id}`}>{d.title}</Link>
-            <span className={styles.meta}>{d.owner.id} · edited {formatRelative(d.updated_at)}</span>
+            <span className={styles.meta}>{saved.get(d.owner.uuid)?.display_name ?? d.owner.id} · edited {formatRelative(d.updated_at)}</span>
           </li>
         ))}
       </ul>

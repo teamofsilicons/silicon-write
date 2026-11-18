@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPeople } from "@/lib/write/people";
 
 /**
  * Version history (UNDERSTANDING.md, "Versions"): every version with who made it and what changed; open one to see its
@@ -103,6 +104,7 @@ export function VersionsPanel({ doc, editor, live, onClose }: { doc: Doc; editor
   const [view, setView] = useState<"changes" | "doc">("changes");
   /** What the version is compared with: the version before it, the doc now, or any other version. */
   const [against, setAgainst] = useState<string>("previous");
+  const saved = useSavedPeople();
   const [authorship, setAuthorship] = useState(false);
   const [naming, setNaming] = useState("");
   const latestSeq = versions[0]?.seq ?? doc.seq;
@@ -211,7 +213,7 @@ export function VersionsPanel({ doc, editor, live, onClose }: { doc: Doc; editor
                 className={styles.chipButton}
                 onClick={() => void run("The changes weren't undone", () => api.post(`/v1/docs/${seg(doc.id)}/undo`, { account: a.id, since: selected.seq }), `Undid ${a.id}'s changes since this version`)}
               >
-                {a.id}
+                {saved.get(a.uuid)?.display_name ?? a.id}
               </button>
             ))}
           </div>

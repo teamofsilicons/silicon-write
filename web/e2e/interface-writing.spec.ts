@@ -206,6 +206,7 @@ test("save a trusted contact in Write, find them by a fuzzy name and preview bef
       sharing.getByRole("combobox", { name: "Role of " + peer.id }),
     ).toBeVisible();
   } finally {
+    await ctx.request.put("/api/v1/contacts/connection", {headers: sameOrigin(), data: {connected: false}});
     await ctx.close();
   }
 });
