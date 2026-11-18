@@ -137,9 +137,10 @@ export async function carbonTokens(carbon, options = {}) {
   });
   const id = flow.id;
   if (flow.step === "choose_method") flow = await step("continue as", "POST", `/v1/flows/${id}/continue`, {});
+  if (flow.step === "select_account") flow = await step("select account", "POST", `/v1/flows/${id}/select-account`, { account_uuid: options.accountUuid ?? carbon.uuid });
   for (let i = 0; i < 12 && flow.step === "details"; i++) {
     const fields = flow.details?.fields ?? [];
-    const share = fields.filter(f => f.mode === "optional").map(f => f.field);
+    const share = options.share ?? fields.filter(f => f.mode === "optional").map(f => f.field);
     flow = await step("details", "POST", `/v1/flows/${id}/details/continue`, { share });
   }
   if (flow.step === "review") flow = await step("review", "POST", `/v1/flows/${id}/review`, { approve: true });

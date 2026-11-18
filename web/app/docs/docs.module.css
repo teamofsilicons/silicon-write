@@ -13,3 +13,5 @@
 
 .article td { overflow-wrap: anywhere; }
 .article table code { white-space: normal; }
+/* Long endpoint paths wrap inline. Code blocks keep their own horizontal scroll. */
+.article :not(pre) > code { overflow-wrap: anywhere; }

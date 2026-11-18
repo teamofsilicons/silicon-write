@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -12,6 +13,36 @@ import {
   API,
 } from "./support";
 import { docSyncState } from "./doc-support";
+
+function seedFixture(
+  db: "write_orgs_e2e" | "write_contacts_e2e",
+  sql: string,
+  values: Record<string, string>,
+) {
+  const local = "/opt/homebrew/opt/postgresql@16/bin/psql";
+  execFileSync(
+    process.env.PSQL ?? (existsSync(local) ? local : "psql"),
+    [
+      "-X",
+      "-q",
+      "-h",
+      "127.0.0.1",
+      "-p",
+      "5471",
+      "-U",
+      "postgres",
+      "-d",
+      db,
+      "-v",
+      "ON_ERROR_STOP=1",
+      ...Object.entries(values).flatMap(([key, value]) => [
+        "-v",
+        key + "=" + value,
+      ]),
+    ],
+    { input: sql, stdio: ["pipe", "pipe", "pipe"] },
+  );
+}
 
 test("a separate browser frontend creates, edits and exports without Write cookies", async ({
   browser,
@@ -182,6 +213,21 @@ test("save a trusted contact in Write, find them by a fuzzy name and preview bef
     await expect(
       dialog.getByRole("list", { name: "Saved contacts" }),
     ).toContainText("Notebook collaborator");
+    const photoId = randomUUID();
+    seedFixture(
+      "write_contacts_e2e",
+      `begin;
+      insert into photos(id,owner,data,created_at) values (:'photo',:'owner',decode(:'image','hex'),1);
+      update contacts set photo_id=:'photo' where owner=:'owner' and name='Notebook collaborator';
+      commit;`,
+      {
+        photo: photoId,
+        owner: (await storedSession(ctx)).session.acct.uuid,
+        image: readFileSync("../e2e/api/fixtures/library/dot.png").toString(
+          "hex",
+        ),
+      },
+    );
     await page.keyboard.press("Escape");
     const doc = await (
       await page.request.post("/api/v1/docs", {
@@ -198,6 +244,13 @@ test("save a trusted contact in Write, find them by a fuzzy name and preview bef
       .getByRole("option", { name: /Notebook collaborator/ })
       .click();
     await expect(input).toHaveValue(peer.id);
+    const preview = sharing.locator('img[src*="' + photoId + '"]');
+    await expect(preview).toBeVisible();
+    await expect
+      .poll(() =>
+        preview.evaluate((el) => (el as HTMLImageElement).naturalWidth),
+      )
+      .toBeGreaterThan(0);
     await expect(
       sharing.getByText("Notebook collaborator", { exact: true }),
     ).toBeVisible();
@@ -206,7 +259,10 @@ test("save a trusted contact in Write, find them by a fuzzy name and preview bef
       sharing.getByRole("combobox", { name: "Role of " + peer.id }),
     ).toBeVisible();
   } finally {
-    await ctx.request.put("/api/v1/contacts/connection", {headers: sameOrigin(), data: {connected: false}});
+    await ctx.request.put("/api/v1/contacts/connection", {
+      headers: sameOrigin(),
+      data: { connected: false },
+    });
     await ctx.close();
   }
 });
@@ -251,36 +307,10 @@ test("an administrator configures a default and shares with an organization team
       },
       teams: { studio: { id: "studio", name: team, members: [member.uuid] } },
     };
-    const sql =
-      process.env.PSQL ??
-      (existsSync("/opt/homebrew/opt/postgresql@16/bin/psql")
-        ? "/opt/homebrew/opt/postgresql@16/bin/psql"
-        : "psql");
-    execFileSync(
-      sql,
-      [
-        "-X",
-        "-q",
-        "-h",
-        "127.0.0.1",
-        "-p",
-        "5471",
-        "-U",
-        "postgres",
-        "-d",
-        "write_orgs_e2e",
-        "-v",
-        "ON_ERROR_STOP=1",
-        "-v",
-        "id=" + id,
-        "-v",
-        "state=" + JSON.stringify(state),
-      ],
-      {
-        input:
-          "insert into organizations(org_id,state,created_at,updated_at) values(:'id',:'state'::jsonb,1,1);",
-        stdio: ["pipe", "pipe", "pipe"],
-      },
+    seedFixture(
+      "write_orgs_e2e",
+      "insert into organizations(org_id,state,created_at,updated_at) values(:'id',:'state'::jsonb,1,1);",
+      { id, state: JSON.stringify(state) },
     );
     await page.reload();
     await page.getByRole("button", { name: "Organization settings" }).click();
