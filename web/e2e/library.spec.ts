@@ -752,7 +752,7 @@ test("the share dialog: share with the friend by c:id, they open it from Shared 
   await expect(people.getByRole("listitem")).toHaveCount(1);
   await expect(people.getByRole("listitem").first()).toContainText(carbon.id);
 
-  const who = dialog.getByRole("textbox", { name: "Who to share with" });
+  const who = dialog.getByRole("combobox", { name: "Who to share with" });
   const share = dialog.getByRole("button", { name: "Share", exact: true });
   await expect(who).toBeFocused();
   await expect(share).toBeDisabled();
@@ -843,9 +843,9 @@ test("someone with view access sees who has it, can't share or change roles, and
   await menu.getByRole("menuitem", { exact: true, name: "Share" }).click();
   const dialog = friend.page.getByRole("dialog", { name: "Share", exact: true });
   await expect(dialog.getByText("Only the owner and editors can share this.")).toBeVisible();
-  await expect(dialog.getByRole("textbox", { name: "Who to share with" })).toHaveCount(0);
+  await expect(dialog.getByRole("combobox", { name: "Who to share with" })).toHaveCount(0);
   await expect(dialog.getByRole("combobox")).toHaveCount(0);
-  await expect(dialog.getByRole("textbox", { name: "Transfer to" })).toHaveCount(0);
+  await expect(dialog.getByRole("combobox", { name: "Transfer to" })).toHaveCount(0);
   const people = dialog.getByRole("list", { name: "People with access" });
   await expect(people.getByRole("listitem").filter({ hasText: carbon.id })).toContainText("Owner");
   await expect(people.getByRole("listitem").filter({ hasText: friend.id })).toContainText("Viewer");
@@ -877,7 +877,7 @@ test("inviting an email that isn't on Silicon Accounts yet keeps a pending invit
   const email = `write-invitee-${RUN}${(++made).toString(36)}@example.test`;
   await page.goto("/library");
   const dialog = await shareFromRow(page, doc.title);
-  await dialog.getByRole("textbox", { name: "Who to share with" }).fill(email);
+  await dialog.getByRole("combobox", { name: "Who to share with" }).fill(email);
   await choose(page, dialog.getByRole("combobox", { name: "Role", exact: true }), "Suggester");
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
   await expect(page.getByText(`Invited ${email}`)).toBeVisible();
@@ -919,20 +919,20 @@ test("an editor's share dialog: they invite people, but can't change or remove a
   const people = dialog.getByRole("list", { name: "People with access" });
   const invited = people.getByRole("listitem").filter({ hasText: pending });
   // An editor can invite, sees everyone's role, and can leave; nothing more.
-  await expect(dialog.getByRole("textbox", { name: "Who to share with" })).toBeVisible();
+  await expect(dialog.getByRole("combobox", { name: "Who to share with" })).toBeVisible();
   await expect(invited).toContainText("Editor");
   await expect(dialog.getByRole("combobox", { name: `Role of ${pending}` })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: `Remove ${pending}` })).toHaveCount(0);
   await expect(people.getByRole("listitem").filter({ hasText: friend.id }).getByRole("button", { name: "Leave" })).toBeVisible();
   await expect(dialog.getByRole("combobox", { name: "Who can open the link" })).toHaveCount(0);
-  await expect(dialog.getByRole("textbox", { name: "Transfer to" })).toHaveCount(0);
+  await expect(dialog.getByRole("combobox", { name: "Transfer to" })).toHaveCount(0);
   await shot(page, "desktop-share-dialog-editor", false);
   // Every row shows whole: who it is, and their role.
   expect.soft(await layoutProblems(page), "the editor's share dialog shows every row whole").toEqual([]);
 
   // They invite someone new, as a commenter: the owner sees it, with the editor as who invited them.
   const newcomer = `write-newcomer-${RUN}${(++made).toString(36)}@example.test`;
-  await dialog.getByRole("textbox", { name: "Who to share with" }).fill(newcomer);
+  await dialog.getByRole("combobox", { name: "Who to share with" }).fill(newcomer);
   await choose(page, dialog.getByRole("combobox", { name: "Role", exact: true }), "Suggester");
   await dialog.getByRole("button", { name: "Share", exact: true }).click();
   await expect(page.getByText(`Invited ${newcomer}`)).toBeVisible();
@@ -943,7 +943,7 @@ test("an editor's share dialog: they invite people, but can't change or remove a
 
   // Inviting the owner's pending invite again as a viewer would lower someone else's role: only the owner may do that
   // (docs/api.md, "only the owner can change or remove other people").
-  await dialog.getByRole("textbox", { name: "Who to share with" }).fill(pending);
+  await dialog.getByRole("combobox", { name: "Who to share with" }).fill(pending);
   await choose(page, dialog.getByRole("combobox", { name: "Role", exact: true }), "Viewer");
   const again = await answerTo(page, "POST", `/v1/docs/${doc.id}/sharing`, () => dialog.getByRole("button", { name: "Share", exact: true }).click());
   const role = (await must<Sharing>(carbon.page, "GET", `/v1/docs/${doc.id}/sharing`)).members.find(m => m.email === pending)?.role;
@@ -961,7 +961,7 @@ test("the share and transfer boxes say what is wrong with what was typed, and no
   const doc = await newDoc(page, named("Inputs"), { markdown: "Nothing to see." });
   await page.goto("/library");
   const dialog = await shareFromRow(page, doc.title);
-  const who = dialog.getByRole("textbox", { name: "Who to share with" });
+  const who = dialog.getByRole("combobox", { name: "Who to share with" });
   const share = dialog.getByRole("button", { name: "Share", exact: true });
   /**
    * Once the toast titled `title` shows, the toasts about `typed` that blame Silicon Accounts ("didn't answer"). Read
@@ -989,7 +989,7 @@ test("the share and transfer boxes say what is wrong with what was typed, and no
 
   // Transfers: to someone who doesn't exist, and to an email (only a c:id or si:id can take a doc over).
   await dialog.getByText("Transfer ownership", { exact: true }).click();
-  const to = dialog.getByRole("textbox", { name: "Transfer to" });
+  const to = dialog.getByRole("combobox", { name: "Transfer to" });
   const transfer = dialog.getByRole("button", { name: "Transfer" });
   await to.fill(`c:nobody_${RUN}`);
   const unknown = await pressLookingUp(page, transfer, `/v1/docs/${doc.id}/transfer`);
@@ -1023,7 +1023,7 @@ test("a shared folder: the friend opens it from Shared with me, and a doc they m
   await expect(dialog.getByText("Everyone you add can open everything in this folder, now and later.")).toBeVisible();
   // No public link for folders.
   await expect(dialog.getByRole("region", { name: "Public link" })).toHaveCount(0);
-  await dialog.getByRole("textbox", { name: "Who to share with" }).fill(friend.id);
+  await dialog.getByRole("combobox", { name: "Who to share with" }).fill(friend.id);
   expect((await pressLookingUp(carbon.page, dialog.getByRole("button", { name: "Share", exact: true }), `/v1/folders/${team.id}/sharing`)).status).toBe(201);
   await expect(carbon.page.getByText(`Shared with ${friend.id}`)).toBeVisible();
   await expect(dialog.getByRole("combobox", { name: `Role of ${friend.id}` })).toContainText("Editor");
@@ -1072,8 +1072,8 @@ test("a shared folder: the friend opens it from Shared with me, and a doc they m
 
   // The ting that told the friend links to the folder, and the link opens it.
   const outbox = await (await carbon.page.request.get(`${API}/v1/dev/outbox`)).json() as { tings: { type: string; data: { id?: string; url?: string } }[] };
-  const ting = outbox.tings.find(t => t.type === "write.doc.shared" && t.data.id === team.id);
-  expect(ting, "a write.doc.shared ting for the folder").toBeTruthy();
+  const ting = outbox.tings.find(t => t.type === "write.docShared" && t.data.id === team.id);
+  expect(ting, "a write.docShared ting for the folder").toBeTruthy();
   const path = new URL(ting!.data.url!).pathname;
   const opened = await friend.page.goto(path);
   expect.soft(opened?.status(), `the folder's link ${ting!.data.url} opens (it is ${path})`).toBe(200);
@@ -1231,7 +1231,7 @@ test("names reach other Carbons exactly as typed: markup in a doc or folder name
   await expect(link(carbon.page, folderName, docName)).toBeVisible();
   const dialog = await shareFromRow(carbon.page, docName);
   await dialog.getByText("Transfer ownership", { exact: true }).click();
-  await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
+  await dialog.getByRole("combobox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(carbon.page, dialog.getByRole("button", { name: "Transfer" }), `/v1/docs/${doc.id}/transfer`)).status).toBe(200);
   await expect(carbon.page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
   await carbon.page.keyboard.press("Escape");
@@ -1273,7 +1273,7 @@ test("a transfer offered to the friend shows on their My docs with Accept and De
   await page.goto(`/library/${outbox.id}`);
   let dialog = await shareFromRow(page, handover.title);
   await dialog.getByText("Transfer ownership", { exact: true }).click();
-  const to = dialog.getByRole("textbox", { name: "Transfer to" });
+  const to = dialog.getByRole("combobox", { name: "Transfer to" });
   await expect(dialog.getByRole("button", { name: "Transfer" })).toBeDisabled();
   // Not to yourself.
   await to.fill(carbon.id);
@@ -1291,7 +1291,7 @@ test("a transfer offered to the friend shows on their My docs with Accept and De
   await page.goto("/library");
   dialog = await shareFromRow(page, keep.title);
   await dialog.getByText("Transfer ownership", { exact: true }).click();
-  await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
+  await dialog.getByRole("combobox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(page, dialog.getByRole("button", { name: "Transfer" }), `/v1/docs/${keep.id}/transfer`)).status).toBe(200);
   await expect(page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
   await page.keyboard.press("Escape");
@@ -1351,7 +1351,7 @@ test("a folder transferred to the friend moves to them with everything in it", a
   await carbon.page.getByRole("button", { name: "Share folder" }).click();
   const dialog = carbon.page.getByRole("dialog", { name: "Share", exact: true });
   await dialog.getByText("Transfer ownership", { exact: true }).click();
-  await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
+  await dialog.getByRole("combobox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(carbon.page, dialog.getByRole("button", { name: "Transfer" }), `/v1/folders/${folder.id}/transfer`)).status).toBe(200);
   await expect(carbon.page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
 
@@ -1385,7 +1385,7 @@ test("an offer for a doc its owner then puts in the trash is withdrawn, and the 
   await page.goto("/library");
   const dialog = await shareFromRow(page, doc.title);
   await dialog.getByText("Transfer ownership", { exact: true }).click();
-  await dialog.getByRole("textbox", { name: "Transfer to" }).fill(friend.id);
+  await dialog.getByRole("combobox", { name: "Transfer to" }).fill(friend.id);
   expect((await pressLookingUp(page, dialog.getByRole("button", { name: "Transfer" }), `/v1/docs/${doc.id}/transfer`)).status).toBe(200);
   await expect(page.getByText(`Asked ${friend.id} to take it over`)).toBeVisible();
   // The share dialog shows nothing about the offer once made, and has no way to take it back.

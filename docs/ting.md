@@ -1,13 +1,13 @@
 # Ting 0.4 integration
 
 Write uses two different delivery lifetimes. Account notifications represent durable work: mentions, comments,
-replies, resolutions, suggestions and sharing. Live sessions are temporary addresses for refreshing an open page.
+replies, resolutions, suggestions, sharing and ownership offers. Live sessions are temporary addresses for refreshing an open page.
 Closing a page must not discard a mention, and reopening it must not replay obsolete refresh hints.
 
 ## Durable account notifications
 
 The outbox sends `write.mentionReceived`, `write.commentCreated`, `write.commentReplied`,
-`write.threadResolved`, `write.suggestionCreated`, and `write.docShared`. The product events in the
+`write.threadResolved`, `write.suggestionCreated`, `write.docShared`, and `write.transferOffered`. Ownership offers are rechecked before delivery. Carbons and Silicons receive these in their Ting inbox. They can connect an optional hook in Ting. The product events in the
 Carbon-maintained understanding document keep the same meaning; Ting 0.4 requires these two-part wire names.
 `crates/write-api/src/ting/types.json` is the versioned schema catalog. Before its first send, each API instance
 checks the public catalog and registers missing definitions using a `types.manage` App verification token.

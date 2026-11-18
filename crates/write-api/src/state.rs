@@ -19,6 +19,7 @@ pub struct Inner {
     pub accounts: AccountsClient,
     pub jwks: RwLock<Option<(silicon_accounts_client::types::Jwks, Instant)>>,
     pub rooms: Rooms,
+    pub live_sessions: std::sync::Mutex<std::collections::HashMap<String, (i64, crate::auth::Caller)>>,
     pub http: reqwest::Client,
     pub voice_slots: tokio::sync::Semaphore,
     pub ting: crate::ting::Ting,

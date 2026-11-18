@@ -3,6 +3,7 @@ import { GET as forward } from "@/app/api/[...path]/route";
 import { json } from "@/lib/server/responses";
 import { errorBody } from "@/lib/server/session";
 import { renderBeautifulPdf } from "@/lib/server/pdf/render";
+import { serverEnv } from "@/lib/server/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   url.pathname = `/api/v1/docs/${id}/export`;
   url.search = "?format=html";
   // Reuse the existing download authorization, refresh handling, and email-view grants.
-  const source = await forward(new NextRequest(url, { headers: request.headers, signal: request.signal }));
+  let source: Response;
+  if (request.headers.has("x-write-interface-render") || request.headers.has("authorization")) {
+    const headers = new Headers();
+    for (const name of ["authorization","x-write-view-grants"]) {
+      const value = request.headers.get(name);
+      if (value) headers.set(name,value);
+    }
+    source = await fetch(`${serverEnv().appApiUrl}/v1/docs/${id}/export?format=html`,
+      {headers,signal:request.signal,cache:"no-store",redirect:"error"});
+  } else {
+    source = await forward(new NextRequest(url, { headers: request.headers, signal: request.signal }));
+  }
   if (!source.ok) return source;
   const headers = new Headers(source.headers);
   for (const header of ["content-length", "content-range", "accept-ranges", "etag", "last-modified"]) headers.delete(header);

@@ -11,6 +11,8 @@ pub struct Config {
     /// This service's own public URL (for asset links and the live connection).
     pub api_url: String,
     pub accounts_url: String,
+    pub contacts_url: String,
+    pub organizations_url: String,
     pub app_id: String,
     pub app_secret: String,
     /// Signs live-connection tickets.
@@ -58,6 +60,8 @@ impl Config {
             database_url,
             web_url: var("WRITE_WEB_URL").unwrap_or_else(|| "http://localhost:4370".into()),
             accounts_url: var("ACCOUNTS_URL").unwrap_or_else(|| "https://accounts.teamofsilicons.com".into()),
+            contacts_url: var("WRITE_CONTACTS_URL").unwrap_or_else(|| "https://contacts.teamofsilicons.com".into()),
+            organizations_url: var("WRITE_ORGANIZATIONS_URL").unwrap_or_else(|| "https://organizations.teamofsilicons.com".into()),
             app_id: var("WRITE_APP_ID").unwrap_or_else(|| "write".into()),
             app_secret,
             ticket_secret: ticket_secret.into_bytes(),

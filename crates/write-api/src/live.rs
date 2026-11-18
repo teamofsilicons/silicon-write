@@ -31,6 +31,8 @@ struct Ticket {
     e: i64,
     #[serde(default)]
     g: i64,
+    #[serde(default)]
+    session: Option<String>,
 }
 
 fn sign(state: &AppState, payload: &str) -> String {
@@ -64,7 +66,14 @@ pub async fn ticket(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth,
         return Err(ApiError::conflict("A PDF shown as it is has no live text.").hint("Turn it into a doc to edit it."));
     }
     let expires = OffsetDateTime::now_utc().unix_timestamp() + TICKET_TTL;
-    let token = issue(&state, &Ticket { d: id.clone(), a: caller.as_ref().map(|c| c.uuid.clone()), r: role, e: expires, g: doc.email_gate_version });
+    let session = caller.as_ref().map(|c| {
+        let key = crate::ids::new_id("live");
+        let mut sessions = state.live_sessions.lock().unwrap();
+        sessions.retain(|_, (end,_)| *end > OffsetDateTime::now_utc().unix_timestamp());
+        sessions.insert(key.clone(),(expires,c.clone()));
+        key
+    });
+    let token = issue(&state, &Ticket { d: id.clone(), a: caller.as_ref().map(|c| c.uuid.clone()), r: role, e: expires, g: doc.email_gate_version, session });
     let base = state.config.api_url.trim_end_matches('/').replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
     let account = match &caller {
         Some(c) => Some(accounts::one(&state, &c.uuid).await?),
@@ -95,11 +104,20 @@ pub async fn connect(State(state): State<AppState>, Path(id): Path<String>, Quer
     };
     // The role may have changed since the ticket was issued.
     let doc = access::load_doc(&state, &id).await?;
-    let caller = account.as_ref().map(|a| crate::auth::Caller { uuid: a.uuid.clone(), id: a.id.clone(), kind: a.kind.clone(), token: String::new() });
+    let caller = match &ticket.a {
+        Some(uuid) => {
+            let mut c = ticket.session.as_ref().and_then(|key| state.live_sessions.lock().unwrap().get(key).map(|(_,c)| c.clone()))
+                .filter(|c| c.uuid == *uuid).ok_or_else(ApiError::unauthorized)?;
+            crate::auth::active(&state,&c.token,uuid).await?;
+            c.organizations = Default::default();
+            Some(c)
+        }
+        None => None,
+    };
     let role = access::doc_role(&state, caller.as_ref(), &doc).await?.ok_or_else(|| ApiError::not_found("This doc"))?;
     if doc.require_email && doc.public_access != "none" && ticket.g != doc.email_gate_version { return Err(crate::visitors::required()); }
     let _ = ticket.r;
     Ok(ws
         .max_message_size(32 * 1024 * 1024)
-        .on_upgrade(move |socket| crate::rooms::serve(state, id, account, role, socket)))
+        .on_upgrade(move |socket| crate::rooms::serve(state, id, account, caller, role, socket)))
 }

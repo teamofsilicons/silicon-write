@@ -56,6 +56,7 @@ export interface Library {
 }
 
 export interface Member {
+  group?: { key: string; name: string } | null;
   id: string;
   account: Account | null;
   email: string | null;

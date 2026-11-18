@@ -28,6 +28,26 @@ use crate::views;
 const MAX_UPLOAD: usize = 50 * 1024 * 1024;
 const MAX_MARKDOWN: usize = 5 * 1024 * 1024;
 
+#[derive(Deserialize)]
+pub struct PdfAppearance { theme: Option<String> }
+pub async fn beautiful_pdf(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>,
+    Query(q): Query<PdfAppearance>, headers: axum::http::HeaderMap) -> ApiResult<Response> {
+    // Resolve the real document and enforce the same grant as HTML export before contacting the renderer.
+    let (doc,_) = access::require_doc(&state,caller.as_ref(),&id,Role::Viewer).await?;
+    let theme = q.theme.as_deref().unwrap_or("light");
+    if !matches!(theme,"light"|"dark") { return Err(ApiError::invalid("Choose light or dark for the PDF.")); }
+    let mut req = state.http.get(format!("{}/api/v1/docs/{}/beautiful-pdf",state.config.web_url.trim_end_matches('/'),doc.id))
+        .query(&[("theme",theme)]).header("x-write-interface-render","1").timeout(std::time::Duration::from_secs(120));
+    if let Some(c) = caller { req = req.bearer_auth(c.token); }
+    if let Some(grants) = headers.get("x-write-view-grants") { req = req.header("x-write-view-grants",grants); }
+    let res = req.send().await.map_err(|_| ApiError::unavailable("The PDF renderer could not be reached."))?;
+    let mut response = Response::builder().status(res.status()).header(header::CACHE_CONTROL,"private, no-store");
+    for name in [header::CONTENT_TYPE,header::CONTENT_DISPOSITION] {
+        if let Some(v) = res.headers().get(&name) { response = response.header(name,v); }
+    }
+    response.body(Body::from_stream(res.bytes_stream())).map_err(ApiError::internal)
+}
+
 // ------------------------------------------------------------------------------------------
 // Reading
 // ------------------------------------------------------------------------------------------
@@ -456,7 +476,7 @@ pub async fn import_new(State(state): State<AppState>, Auth(caller): Auth, multi
     };
     activity::record(&state, Some(&doc.id), None, &caller.uuid, "doc.imported", json!({ "filename": upload.filename })).await?;
     let role = access::doc_role(&state, Some(&caller), &doc).await?.unwrap_or(Role::Owner);
-    Ok((StatusCode::CREATED, Json(serde_json::to_value(views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?).unwrap())))
+    Ok((StatusCode::CREATED, Json(serde_json::to_value(views::doc_view(&state, &doc, role, Some(&caller)).await?).unwrap())))
 }
 
 /// Opening a file on top of a doc makes it the doc's next version.
@@ -534,7 +554,7 @@ pub async fn convert_pdf(State(state): State<AppState>, Auth(caller): Auth, Path
     activity::record(&state, Some(&id), None, &caller.uuid, "doc.converted", json!({})).await?;
     state.rooms.notify(&id, json!({ "type": "meta" })).await;
     let (doc_row, role) = access::require_doc(&state, Some(&caller), &id, Role::Viewer).await?;
-    Ok(Json(serde_json::to_value(views::doc_view(&state, &doc_row, role, Some(&caller.uuid)).await?).unwrap()))
+    Ok(Json(serde_json::to_value(views::doc_view(&state, &doc_row, role, Some(&caller)).await?).unwrap()))
 }
 
 // ------------------------------------------------------------------------------------------
@@ -555,7 +575,7 @@ pub async fn backlinks(State(state): State<AppState>, Auth(caller): Auth, Path(i
         return Ok(Json(json!({ "docs": [] })));
     }
     let title = name.to_lowercase();
-    let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
+    let ids = access::accessible_doc_ids(&state, &caller).await?;
     let docs: Vec<DocRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {DOC_COLUMNS} from docs where id = any($1) and id <> $2 and links @> array[$3]::text[] order by updated_at desc")))
         .bind(&ids)
         .bind(&id)
@@ -574,7 +594,7 @@ pub async fn resolve_link(State(state): State<AppState>, Auth(caller): Auth, Que
     if title.is_empty() {
         return Ok(Json(json!({ "doc": null })));
     }
-    let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
+    let ids = access::accessible_doc_ids(&state, &caller).await?;
     let doc: Option<DocRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "select {DOC_COLUMNS} from docs where id = any($1) and (
             lower(title) = $2
@@ -588,7 +608,7 @@ pub async fn resolve_link(State(state): State<AppState>, Auth(caller): Auth, Que
     match doc {
         Some(doc) => {
             let role = access::doc_role(&state, Some(&caller), &doc).await?.unwrap_or(Role::Viewer);
-            Ok(Json(json!({ "doc": views::doc_view(&state, &doc, role, Some(&caller.uuid)).await? })))
+            Ok(Json(json!({ "doc": views::doc_view(&state, &doc, role, Some(&caller)).await? })))
         }
         None => Ok(Json(json!({ "doc": null }))),
     }
@@ -644,7 +664,7 @@ pub async fn search(State(state): State<AppState>, Auth(caller): Auth, Query(q):
     if query.is_empty() {
         return Ok(Json(json!({ "results": [] })));
     }
-    let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
+    let ids = access::accessible_doc_ids(&state, &caller).await?;
     let like = format!("%{}%", query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
     let rows: Vec<(String, String)> = sqlx::query_as(
         "select id, ts_headline('simple', plain_text, websearch_to_tsquery('simple', $2), 'MaxWords=24, MinWords=10, StartSel=**, StopSel=**') as snippet
@@ -662,7 +682,7 @@ pub async fn search(State(state): State<AppState>, Auth(caller): Auth, Query(q):
     for (doc_id, snippet) in rows {
         let doc = access::load_doc(&state, &doc_id).await?;
         if let Some(role) = access::doc_role(&state, Some(&caller), &doc).await? {
-            results.push(json!({ "doc": views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?, "snippet": snippet }));
+            results.push(json!({ "doc": views::doc_view(&state, &doc, role, Some(&caller)).await?, "snippet": snippet }));
         }
     }
     Ok(Json(json!({ "results": results })))

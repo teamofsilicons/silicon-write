@@ -307,9 +307,13 @@ async fn dispatch(
         .as_deref()
         .unwrap()
         .trim_end_matches('/');
-    stream::iter(due).for_each_concurrent(8, |(session, doc_id, sub, mut changes)| {
+    stream::iter(due).for_each_concurrent(8, |(session, doc_id, mut sub, mut changes)| {
         let proof = &proof;
         async move {
+            if let Some(caller) = sub.caller.as_mut() {
+                if crate::auth::active(state, &caller.token, &caller.uuid).await.is_err() { return; }
+                caller.organizations = Default::default();
+            }
             let Ok((doc, role)) = access::require_doc(state, sub.caller.as_ref(), &doc_id, Role::Viewer).await else { return };
             if sub.expires <= Instant::now() || doc.email_gate_version != sub.gate_version { return; }
             if role < Role::Commenter { changes.retain(|c| c != "threads"); }

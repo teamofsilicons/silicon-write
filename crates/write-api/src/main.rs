@@ -3,6 +3,8 @@
 mod access;
 mod archive;
 mod accounts;
+mod people;
+mod organizations;
 mod activity;
 mod auth;
 mod comments;
@@ -41,8 +43,17 @@ use crate::state::{AppState, Inner};
 fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(service::healthz))
+        .route("/openapi.json", get(service::openapi))
+        .route("/v1/interface-api", get(service::interface_guide))
         .route("/readyz", get(service::readyz))
         .route("/v1/me", get(library::me))
+        .route("/v1/organizations", get(organizations::me))
+        .route("/v1/organizations/{id}/settings", get(organizations::settings).put(organizations::update))
+        .route("/v1/people", get(people::list))
+        .route("/v1/people/lookup", get(people::lookup))
+        .route("/v1/contacts/connection", get(people::connection).put(people::set_connection))
+        .route("/v1/contacts", post(people::save))
+        .route("/v1/contacts/photos/{id}", get(people::photo))
         .route("/v1/ting", get(ting::sessions::config))
         .route("/v1/ting/live", get(ting::sessions::connect))
         .route("/v1/docs/{id}/notifications", post(ting::sessions::watch))
@@ -61,6 +72,7 @@ fn router(state: AppState) -> Router {
         .route("/v1/docs/{id}/prosemirror", get(content::get_prosemirror))
         .route("/v1/docs/{id}/edits", post(content::post_edits))
         .route("/v1/docs/{id}/export", get(content::export))
+        .route("/v1/docs/{id}/beautiful-pdf", get(content::beautiful_pdf))
         .route("/v1/docs/{id}/assets", post(content::upload_asset))
         .route("/v1/docs/{id}/backlinks", get(content::backlinks))
         .route("/v1/docs/{id}/authorship", get(content::authorship))
@@ -117,7 +129,25 @@ fn router(state: AppState) -> Router {
         .route("/v1/dev/outbox", get(service::dev_outbox))
         .layer(DefaultBodyLimit::max(60 * 1024 * 1024))
         .layer(axum::middleware::map_response(error::plain_rejections))
+        .layer(axum::middleware::from_fn(|request: axum::extract::Request, next: axum::middleware::Next| async move {
+            let private = request.headers().contains_key(axum::http::header::AUTHORIZATION)
+                || request.headers().contains_key("x-write-view-grants");
+            let mut response = next.run(request).await;
+            if private {
+                response.headers_mut().insert(axum::http::header::CACHE_CONTROL, axum::http::HeaderValue::from_static("private, no-store"));
+            }
+            response
+        }))
         .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(tower_http::cors::CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods([axum::http::Method::GET, axum::http::Method::HEAD, axum::http::Method::POST,
+                axum::http::Method::PUT, axum::http::Method::PATCH, axum::http::Method::DELETE])
+            .allow_headers([axum::http::header::AUTHORIZATION, axum::http::header::CONTENT_TYPE,
+                axum::http::header::RANGE, axum::http::HeaderName::from_static("last-event-id"),
+                axum::http::HeaderName::from_static("x-write-view-grants")])
+            .expose_headers([axum::http::header::CONTENT_DISPOSITION, axum::http::header::CONTENT_RANGE,
+                axum::http::header::ACCEPT_RANGES, axum::http::header::RETRY_AFTER]))
         .with_state(state)
 }
 
@@ -184,7 +214,8 @@ async fn main() {
         accounts,
         jwks: Default::default(),
         rooms: Default::default(),
-        http: reqwest::Client::builder().timeout(Duration::from_secs(30)).build().expect("http client"),
+        live_sessions: Default::default(),
+        http: reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(30)).build().expect("http client"),
         voice_slots: tokio::sync::Semaphore::new(2),
         ting: Default::default(),
     }));

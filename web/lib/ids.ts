@@ -24,6 +24,7 @@ export function parseAccountId(input: string): IdCheck {
   const match = /^(c|si):(.*)$/.exec(text);
   if (!match) return { ok: false, message: `"${input.trim()}" has no c: or si: in front. Use c:${text.replace(/^[^:]*:/, "")} for a Carbon or si:${text.replace(/^[^:]*:/, "")} for a Silicon.` };
   const [, prefix, handle] = match as unknown as [string, "c" | "si", string];
+  if (/^[a-z0-9_-]{1,64}\.[a-z0-9_-]{1,64}$/.test(handle)) return {ok:true, value:{id:text, kind:prefix==="c"?"carbon":"silicon", handle}};
   if (handle.length < 3 || handle.length > 30) return { ok: false, message: `The handle "${handle}" is ${handle.length} character${handle.length === 1 ? "" : "s"}; it must be 3 to 30.` };
   if (!HANDLE.test(handle)) {
     const index = [...handle].findIndex(char => !/[a-z0-9_-]/.test(char));

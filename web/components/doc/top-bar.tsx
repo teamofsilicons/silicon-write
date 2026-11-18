@@ -30,6 +30,7 @@ import { ShareDialog } from "@/components/share/share-dialog";
 import { MoveDialog } from "@/components/library/move-dialog";
 import type { Panel } from "./doc-page";
 import { SyncState } from "./status-bar";
+import { MarkdownSource } from "../editor/markdown-source";
 import { BeautifulPdfDialog } from "./beautiful-pdf-dialog";
 import styles from "./doc.module.css";
 
@@ -98,6 +99,15 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
   const refreshLibrary = useRefreshLibrary();
   const people = usePresence(live);
   const pendingSuggestions = useEditorState({ editor, selector: ({ editor: current }) => current ? suggestionsIn(current.state.doc).length : 0 }) ?? 0;
+  const [sourceOpen,setSourceOpen] = useState(false);
+  const canUseSource = !!live && !!editor && !doc.deleted_at && (canEdit || canComment) && mode !== "viewing";
+  useEffect(()=>{
+    const shortcut = (e: KeyboardEvent) => {
+      if (canUseSource && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "m") { e.preventDefault(); setSourceOpen(true); }
+    };
+    window.addEventListener("keydown",shortcut);
+    return ()=>window.removeEventListener("keydown",shortcut);
+  },[canUseSource]);
   const [shareOpen, setShareOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [pdfTheme, setPdfTheme] = useState<Theme | null>(null);
@@ -169,7 +179,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
   const reviewDescription = `${openThreads} open comment ${openThreads === 1 ? "thread" : "threads"}, ${pendingSuggestions} pending ${pendingSuggestions === 1 ? "suggestion" : "suggestions"}`;
 
   return (
-    <header className={styles.topBar}>
+    <header data-write-bar className={styles.topBar}>
       <div className={styles.topLeft}>
         {account ? (
           <Link href="/library" className={styles.back} data-sq="control" aria-label="Back to My docs" title="Back to My docs">
@@ -299,6 +309,8 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
                 Move to a folder
               </DropdownMenuItem>
             ) : null}
+            {account && <DropdownMenuItem onSelect={()=>window.open("https://ting.teamofsilicons.com/#inbox","_blank","noopener,noreferrer")}>Ting inbox</DropdownMenuItem>}
+            {canUseSource && <DropdownMenuItem shortcut="⌘⇧M" onSelect={()=>setSourceOpen(true)}>Edit Markdown…</DropdownMenuItem>}
             {doc.kind === "doc" ? (
               <DropdownMenuItem icon={<Search size={16} />} shortcut="⌘F" onSelect={onFind}>
                 Find{canEdit ? " and replace" : ""}
@@ -331,6 +343,7 @@ export function TopBar({ doc, account, live, editor, mode, onMode, canEdit, canC
           </DropdownMenuContent>
         </DropdownMenuRoot>
       </div>
+      {sourceOpen && live && canUseSource && <MarkdownSource docId={doc.id} live={live} suggest={!canEdit || mode === "suggesting"} onClose={()=>setSourceOpen(false)}/>}
       {shareOpen ? <ShareDialog kind="docs" id={doc.id} title={doc.title} open={shareOpen} onOpenChange={setShareOpen} /> : null}
       {pdfTheme ? <BeautifulPdfDialog id={doc.id} title={doc.title} initialTheme={pdfTheme} live={live} onClose={() => setPdfTheme(null)} /> : null}
       {moveOpen ? (

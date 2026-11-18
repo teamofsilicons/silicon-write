@@ -26,6 +26,7 @@ import { FindReplace } from "./nodes";
 import { contentExtensions } from "./schema";
 import { SuggestMode } from "./suggestions";
 import { LinkChip } from "./link-chip";
+import { pasteMarkdown } from "./markdown-paste";
 import styles from "./editor.module.css";
 
 export type EditMode = "editing" | "suggesting" | "viewing";
@@ -115,6 +116,18 @@ export function DocEditor(props: DocEditorProps) {
       editable: writable,
       immediatelyRender: false,
       editorProps: {
+        handleScrollToSelection: view => {
+          if (!view.hasFocus() || !view.state.selection.empty) return false;
+          const {top,bottom} = view.coordsAtPos(view.state.selection.head);
+          const viewport = window.visualViewport;
+          const start = viewport?.offsetTop ?? 0;
+          const height = viewport?.height ?? window.innerHeight;
+          const toolbar = document.querySelector<HTMLElement>("#doc-formatting:not([hidden])") ?? document.querySelector<HTMLElement>("header[data-write-bar]");
+          const edge = Math.max(start, toolbar?.getBoundingClientRect().bottom ?? start) + 16;
+          if (top < edge) window.scrollBy(0,top - edge);
+          else if (bottom > start + height - Math.min(80,height * .12)) window.scrollBy(0,bottom - start - height * .73);
+          return true;
+        },
         attributes: { class: styles.prose, "aria-label": "Doc", spellcheck: "true" },
         handleDOMEvents: {
           click: (view, event) => {
@@ -146,7 +159,8 @@ export function DocEditor(props: DocEditorProps) {
         },
         handlePaste: (view, event) => {
           const files = [...(event.clipboardData?.files ?? [])].filter(f => f.type.startsWith("image/"));
-          if (!files.length || !view.editable) return false;
+          if (!files.length) return pasteMarkdown(view,event);
+          if (!view.editable) return false;
           event.preventDefault();
           for (const file of files) void insertUploaded(view.state.selection.from, file);
           return true;

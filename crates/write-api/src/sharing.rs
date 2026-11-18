@@ -46,13 +46,15 @@ struct ShareRow {
     id: String,
     folder_id: Option<String>,
     account_uuid: Option<String>,
+    group_key: Option<String>,
+    group_name: Option<String>,
     email: Option<String>,
     role: String,
     invited_by: String,
     created_at: time::OffsetDateTime,
 }
 
-const SHARE_COLUMNS: &str = "id, folder_id, account_uuid, email, role, invited_by, created_at";
+const SHARE_COLUMNS: &str = "id, folder_id, account_uuid, group_key, group_name, email, role, invited_by, created_at";
 
 struct Item {
     title: String,
@@ -106,7 +108,8 @@ async fn member_view(_state: &AppState, row: &ShareRow, via: Value, people: &std
         "email": row.email,
         "role": row.role,
         "via": via,
-        "pending": row.account_uuid.is_none(),
+        "pending": row.email.is_some(),
+        "group": row.group_key.as_ref().map(|key| json!({"key":key,"name":row.group_name})),
         "invited_by": people.get(&row.invited_by),
         "created_at": row.created_at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),
     })
@@ -175,7 +178,7 @@ pub async fn folder_members(State(state): State<AppState>, Auth(caller): Auth, P
 #[derive(Deserialize)]
 pub struct ShareBody {
     to: String,
-    role: String,
+    role: Option<String>,
 }
 
 fn shareable_role(role: &str) -> ApiResult<Role> {
@@ -201,10 +204,25 @@ async fn add(state: &AppState, caller: &Caller, target: Target, id: &str, body: 
     if item.deleted {
         return Err(ApiError::conflict(format!("This {} is in the trash.", target.kind())).hint("Restore it first, then share it."));
     }
-    let role = shareable_role(&body.role)?;
     let to = body.to.trim();
+    let group = if to.starts_with("team:") || to.starts_with("organization:") {
+        Some(crate::organizations::target(state, caller, to).await?)
+    } else { None };
+    let role = match (body.role.as_deref(), group) {
+        (Some(role), _) => shareable_role(role)?,
+        (None, Some(group)) => shareable_role(&crate::organizations::saved(state, &group.org_id).await?.default_role)?,
+        (None, None) => return Err(ApiError::invalid("Choose an invitation role.")),
+    };
     let inviter = accounts::one(state, &caller.uuid).await?;
-    let (row, change) = if looks_like_email(to) {
+    let (row, change) = if let Some(group) = group {
+        let col = target.column();
+        let added = sqlx::query(sqlx::AssertSqlSafe(format!("insert into shares (id,{col},group_key,group_name,role,invited_by)
+            values ($1,$2,$3,$4,$5,$6) on conflict ({col},group_key) where {col} is not null and group_key is not null do nothing")))
+            .bind(ids::new_id("m")).bind(id).bind(to).bind(&group.name).bind(role.as_str()).bind(&caller.uuid).execute(&state.db).await?.rows_affected();
+        let row = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {SHARE_COLUMNS} from shares where {col}=$1 and group_key=$2")))
+            .bind(id).bind(to).fetch_one(&state.db).await?;
+        if added > 0 { (row,Change::Added) } else { reinvite(state,&item,target,row,role).await? }
+    } else if looks_like_email(to) {
         let email = to.to_lowercase();
         // Someone who already uses Silicon Write with this address gets it straight away.
         match accounts::by_email(state, &email).await? {
@@ -449,7 +467,7 @@ pub async fn set_public(State(state): State<AppState>, Auth(caller): Auth, Path(
         state.rooms.notify(&id, json!({ "type": "meta" })).await;
     }
     let (doc, role) = access::require_doc(&state, Some(&caller), &id, Role::Viewer).await?;
-    Ok(Json(serde_json::to_value(views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?).unwrap()))
+    Ok(Json(serde_json::to_value(views::doc_view(&state, &doc, role, Some(&caller)).await?).unwrap()))
 }
 
 /// After a sharing change: everyone with the doc (or a doc in the folder) open gets their new role.

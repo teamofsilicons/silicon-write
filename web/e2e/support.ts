@@ -46,7 +46,7 @@ const atApp = (url: URL | string) => String(url).startsWith(BASE) && !String(url
 async function requestCode(page: Page, email: string): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const after = await lastSeq();
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("button", { name: /^(Continue|Send me a code)$/i }).click();
     const codeStep = page.getByRole("group", { name: /^Code from the/ }).first();
     const waiting = page.getByRole("button", { name: /^Try again in \d+:\d\d$/ });
     const outcome = await Promise.race([
@@ -58,7 +58,7 @@ async function requestCode(page: Page, email: string): Promise<string> {
     const waitMs = (minutes * 60 + seconds) * 1000;
     test.info().setTimeout(test.info().timeout + waitMs + 60_000);
     console.log(`the shared stack's code limit for this network: waiting ${Math.round(waitMs / 1000)} s before asking again`);
-    await page.getByRole("button", { name: "Continue", exact: true }).waitFor({ timeout: waitMs + 20_000 });
+    await page.getByRole("button", { name: /^(Continue|Send me a code)$/i }).waitFor({ timeout: waitMs + 20_000 });
   }
   throw new Error(`no code could be sent to ${email}: the stack kept refusing (its limit on codes per network)`);
 }
@@ -75,7 +75,7 @@ export async function signInOnHostedPages(page: Page, email: string): Promise<vo
   await page.getByRole("heading",{name: new RegExp(`Sign in to ${appConfig.name}`)}).waitFor();
   if (await emailMethod.isVisible()) await emailMethod.click();
   const field = page.getByRole("textbox", { name: "Email" });
-  const continueAs = page.getByRole("button", { name: /^Continue as / });
+  const continueAs = page.getByRole("button", { name: /^Continue as /i });
   const first = await Promise.race([
     continueAs.waitFor({ timeout: 30_000 }).then(() => "account" as const),
     field.waitFor({ timeout: 30_000 }).then(() => "email" as const),
@@ -88,7 +88,7 @@ export async function signInOnHostedPages(page: Page, email: string): Promise<vo
     await page.keyboard.type(code, { delay: 25 });
   }
   // Then: "Create account" for a new address, the app's details page(s), maybe a review page, and back to the app.
-  const next = page.getByRole("button", { name: /^(Create account|Finish setup|Share and continue|Review)$/ });
+  const next = page.getByRole("button", { name: /^(Create account|Finish setup|Share and continue|Review|Continue|Allow access|Approve|Sign in to Write)$/i });
   for (let step = 0; step < 8; step++) {
     const stop = await Promise.race([
       page.waitForURL(atApp, { timeout: 60_000 }).then(() => "app" as const),

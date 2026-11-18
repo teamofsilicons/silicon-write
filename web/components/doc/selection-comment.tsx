@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/silicon-ui/button/button";
+import { usePeople, mergePeople, photo } from "@/lib/write/people";
 import { MentionInput, serializeMentions, type MentionInputHandle, type MentionValue } from "@/components/silicon-ui/mention-input/mention-input";
 import { api, seg } from "@/lib/client/api";
 import { notifyError } from "@/lib/notify";
@@ -81,16 +82,9 @@ function selectedTextLine(editor: Editor): DOMRect | null {
 
 export function useMentionPeople(docId: string, enabled: boolean) {
   const sharing = useSharing("docs", docId, enabled);
-  return useMemo(() => {
-    const people = new Map<string, { id: string; name: string; role?: string; avatar?: string }>();
-    const add = (a: Account | null | undefined, role?: string) => {
-      if (!a?.id) return;
-      people.set(a.id, { id: a.id, name: a.display_name ? `${a.display_name} (${a.id})` : a.id, role, avatar: a.pfp_url || undefined });
-    };
-    add(sharing.data?.owner, "Owner");
-    for (const m of sharing.data?.members ?? []) add(m.account, m.role);
-    return [...people.values()];
-  }, [sharing.data]);
+  const directory = usePeople(enabled);
+  return useMemo(() => mergePeople(directory.data?.items ?? [], [sharing.data?.owner,...(sharing.data?.members ?? []).map(m=>m.account)])
+    .map(p => ({ id: p.id, name: p.display_name || p.id, role: p.id, avatar: photo(p), trust: p.trust ?? 0 })), [directory.data, sharing.data]);
 }
 
 export function SelectionComment({

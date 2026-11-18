@@ -116,17 +116,19 @@ pub async fn ancestors(state: &AppState, folder_id: Option<&str>) -> ApiResult<V
     Ok(rows)
 }
 
-async fn share_role(state: &AppState, account: &str, doc_id: Option<&str>, folders: &[FolderRow]) -> ApiResult<Option<Role>> {
-    let folder_ids: Vec<String> = folders.iter().map(|f| f.id.clone()).collect();
-    let roles: Vec<String> = sqlx::query_scalar(
-        "select role from shares where account_uuid = $1 and (doc_id = $2 or folder_id = any($3))",
-    )
-    .bind(account)
-    .bind(doc_id)
-    .bind(&folder_ids)
-    .fetch_all(&state.db)
-    .await?;
-    Ok(roles.iter().filter_map(|r| Role::parse(r)).max())
+async fn share_role(state: &AppState, caller: &Caller, doc_id: Option<&str>, folders: &[FolderRow]) -> ApiResult<Option<Role>> {
+    let ids: Vec<_> = folders.iter().map(|f| f.id.as_str()).collect();
+    let shares: Vec<(String,Option<String>)> = sqlx::query_as(
+        "select role,group_key from shares where (account_uuid=$1 or group_key is not null) and (doc_id=$2 or folder_id=any($3))"
+    ).bind(&caller.uuid).bind(doc_id).bind(&ids).fetch_all(&state.db).await?;
+    let mut role = shares.iter().filter(|(_,g)| g.is_none()).filter_map(|(r,_)| Role::parse(r)).max();
+    if !caller.token.is_empty() && shares.iter().any(|(r,g)| g.is_some() && Role::parse(r) > role) {
+        let groups = &crate::organizations::context(state,caller).await?.groups;
+        for (r,g) in shares {
+            if g.is_some_and(|g| groups.contains(&g)) { role = role.max(Role::parse(&r)); }
+        }
+    }
+    Ok(role)
 }
 
 /// The caller's role on a doc as its owner or someone it's shared with (directly or through a
@@ -140,7 +142,7 @@ pub async fn member_doc_role(state: &AppState, caller: &Caller, doc: &DocRow) ->
         return Ok(None);
     }
     let chain = ancestors(state, doc.folder_id.as_deref()).await?;
-    share_role(state, &caller.uuid, Some(&doc.id), &chain).await
+    share_role(state, caller, Some(&doc.id), &chain).await
 }
 
 /// The caller's role on a doc, if any.
@@ -170,7 +172,7 @@ pub async fn folder_role(state: &AppState, caller: &Caller, folder: &FolderRow) 
         return Ok(None);
     }
     let chain = ancestors(state, Some(&folder.id)).await?;
-    share_role(state, &caller.uuid, None, &chain).await
+    share_role(state, caller, None, &chain).await
 }
 
 /// Loads a doc the caller may act on with at least `min`.
@@ -207,35 +209,37 @@ pub async fn require_folder(state: &AppState, caller: &Caller, id: &str, min: Ro
 }
 
 /// Every doc id the account can open (owned, shared directly, or inside a shared folder).
-pub async fn accessible_doc_ids(state: &AppState, account: &str) -> ApiResult<Vec<String>> {
+pub async fn accessible_doc_ids(state: &AppState, caller: &Caller) -> ApiResult<Vec<String>> {
     let ids: Vec<String> = sqlx::query_scalar(
         "with recursive tree as (
-            select f.id from folders f join shares s on s.folder_id = f.id where s.account_uuid = $1 and f.deleted_at is null
+            select f.id from folders f join shares s on s.folder_id = f.id where (s.account_uuid = $1 or s.group_key = any($2)) and f.deleted_at is null
             union
             select f.id from folders f join tree t on f.parent_id = t.id where f.deleted_at is null
         )
         select d.id from docs d where d.deleted_at is null and (
             d.owner_uuid = $1
-            or d.id in (select doc_id from shares where account_uuid = $1 and doc_id is not null)
+            or d.id in (select doc_id from shares where (account_uuid = $1 or group_key = any($2)) and doc_id is not null)
             or d.folder_id in (select id from tree)
         )",
     )
-    .bind(account)
+    .bind(&caller.uuid)
+    .bind(crate::organizations::library_groups(state,caller).await?)
     .fetch_all(&state.db)
     .await?;
     Ok(ids)
 }
 
-pub async fn accessible_folder_ids(state: &AppState, account: &str) -> ApiResult<Vec<String>> {
+pub async fn accessible_folder_ids(state: &AppState, caller: &Caller) -> ApiResult<Vec<String>> {
     let ids: Vec<String> = sqlx::query_scalar(
         "with recursive tree as (
-            select f.id from folders f join shares s on s.folder_id = f.id where s.account_uuid = $1 and f.deleted_at is null
+            select f.id from folders f join shares s on s.folder_id = f.id where (s.account_uuid = $1 or s.group_key = any($2)) and f.deleted_at is null
             union
             select f.id from folders f join tree t on f.parent_id = t.id where f.deleted_at is null
         )
         select id from folders where deleted_at is null and (owner_uuid = $1 or id in (select id from tree))",
     )
-    .bind(account)
+    .bind(&caller.uuid)
+    .bind(crate::organizations::library_groups(state,caller).await?)
     .fetch_all(&state.db)
     .await?;
     Ok(ids)

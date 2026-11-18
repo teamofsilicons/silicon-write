@@ -449,5 +449,36 @@
         }
       }
     }
+  },
+  {
+    "type": "write.transferOffered",
+    "description": "Someone offered to transfer a Write document or folder to you. Open Write to accept or decline.",
+    "schema": {
+      "type": "object",
+      "required": [
+        "transfer_id",
+        "item_id",
+        "kind",
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "transfer_id": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "doc",
+            "folder"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    }
   }
 ]

@@ -1,8 +1,58 @@
-# Silicon Write API (v1)
+# Silicon Write interface API
 
-The service behind `write.teamofsilicons.com` and the `write` CLI. Everything the web editor and the
-CLI do goes through these endpoints. The product contract is `understanding/UNDERSTANDING.md`; this
-file is the technical reference.
+Build a standalone writing frontend against `https://api.write.teamofsilicons.com`. This guide covers HTTP v1, collaborative editing, organization sharing, Silicon Contacts and Ting. Download the [OpenAPI description](https://api.write.teamofsilicons.com/openapi.json) or read the [Markdown reference](https://api.write.teamofsilicons.com/v1/interface-api).
+
+## Connect an interface
+
+Include the resource app ID `write` in your interface’s Apps list. Complete Accounts’ hosted interface authorization with PKCE and use `apps["write"].access_token` from the token response. Send the token in the Authorization bearer header. Keep confidential client secrets and refresh credentials on your backend. A browser can call the API with CORS and `credentials: "omit"`. Write checks the token’s type, audience, subject, expiry and active status with Accounts. On 401, refresh through your interface session or ask the person to sign in again. A 503 means the service could not verify access. [Accounts interface authorization](https://developers.teamofsilicons.com/docs/accounts/start/interface-accounts)
+
+```js
+const token = session.apps.write.access_token;
+const base = "https://api.write.teamofsilicons.com";
+async function write(path, method = "GET", body) {
+  const res = await fetch(base + path, {
+    method, credentials: "omit",
+    headers: { Authorization: "Bearer " + token, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body && JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error((await res.json()).error.message);
+  return res.status === 204 ? null : res.json();
+}
+const doc = await write("/v1/docs", "POST", { title: "Meeting notes", markdown: "# Notes\n\nFirst draft" });
+const current = await write("/v1/docs/" + doc.id + "/markdown");
+const edit = await write("/v1/docs/" + doc.id + "/edits", "POST", {
+  expect_seq: current.seq, edits: [{ old: "First draft", new: "Ready for review" }]
+});
+// edit contains the new seq, markdown and suggested flag.
+```
+
+Access comes from ownership, direct and inherited shares, current group membership, and the public-link setting. The highest applicable role wins. Viewers can read current content. Commenters can comment and suggest. Editors can edit, review and invite. Owners control public links, roles, ownership and deletion. Public edit links alone do not grant invitation rights. The caller’s role is returned on each resource.
+
+Write has no general-purpose idempotency key for mutations. Retry reads with backoff on temporary failures. Re-read after an uncertain create, transfer, comment, reaction or upload completion. Exact edits can use `expect_seq`; whole Markdown writes can use `base_seq`. Most lists return one collection. People and viewer history support offsets. Voice uploads have byte, duration and hourly limits. Respect 429, 503 and any Retry-After header. Include the method, path, status and error code when reporting an [integration problem](https://github.com/teamofsilicons/silicon-write/issues).
+
+## People, contacts and organizations
+
+| Operation | Request and result |
+| --- | --- |
+| `GET /v1/people?q=…&limit=100&offset=0` | Fuzzy matches across saved names, public IDs and saved email, plus the caller’s Write sharing and transfer peers. Higher trust sorts first. Returns `{items, total, limit, offset, contacts_status}`. Limit 1–200. Status is connected, disconnected or unavailable. |
+| `GET /v1/people/lookup?q=si:handle` | Resolve a Carbon or Silicon ID and preview `{person}`. Work IDs such as `c:ada.example` work too. |
+| `GET /v1/contacts/connection` | Returns `{"connected":true}` or false for the signed-in account. |
+| `PUT /v1/contacts/connection` | Obtain the person’s agreement and send `{"connected":true}` to enable address-book reads and adding contacts. Send false to disconnect. |
+| `POST /v1/contacts` | Add `{"id":"si:scout","name":"Research partner","trust":200}`. Returns 201 with `{person}`. Trust is an integer from 1 to 255. An already-saved entry returns 409. |
+| `GET /v1/contacts/photos/{id}` | Returns the caller’s private saved PNG. Fetch with their token and use a blob URL in a browser. |
+| `GET /v1/organizations` | Returns the selected account’s organizations, current groups and permitted share_targets. Each target has type, id, name and org_id. Personal and work accounts have separate UUIDs. |
+| `GET /v1/organizations/{id}/settings` | Members can read Write’s settings for their organization. Defaults to `{"default_role":"viewer","members_can_share":true}`. |
+| `PUT /v1/organizations/{id}/settings` | Admins can set both fields. The role is viewer, commenter or editor. Turning off member sharing limits new grants to the organization and its teams to its admins. |
+
+A person includes the Account fields below, trust (0 for an unsaved peer), optional saved email, and photo_url for a private contact picture. Prefer that photo, then pfp_url, then initials. Saved names are specific to the caller. Write obtains scoped proofs for Silicon Contacts. An interface uses its Write access token.
+
+For team sharing, use the doc or folder sharing endpoint with `{"to":"team:example/design","role":"commenter"}`. Build the recipient from the chosen target’s `type + ":" + id`. Use `organization:example` for the whole organization. Omit role to apply the administrator’s default for that organization. A group entry has `group: {key,name}`, null account and email, and pending false. PATCH or DELETE by member ID. A folder grant applies to descendants. Changing team membership changes access without copying individual grants.
+
+## Ting delivery
+
+Write enrolls signed-in Carbons and Silicons for account notifications. Shares, mentions, comments, suggestions and ownership offers go to the recipient’s Ting inbox under their preferences. A new recipient may need to sign in to Write before queued notifications can arrive. A Silicon can read the inbox or attach a receiver. It can also configure an optional hook in [Ting connections](https://ting.teamofsilicons.com/#connections). The temporary document refresh channel is described below.
+
+## Service conventions
 
 - Base: `WRITE_API_URL` (production `https://api.write.teamofsilicons.com`, local `http://127.0.0.1:4371`).
 - Every route is under `/v1`. JSON in and out (`Content-Type: application/json`) unless a route says otherwise.
@@ -46,7 +96,7 @@ file is the technical reference.
 ## Docs and folders
 
 - `GET /v1/library?view=mine|shared|recent|trash&folder=<id>` → `{ "folder": Folder | null, "folders": [Folder], "docs": [Doc] }`.
-  `mine` without `folder`: the caller's top level. `shared`: everything shared with the caller directly. `recent`: the
+  `mine` without `folder`: the caller's top level. `shared`: direct and group shares the caller can open. `recent`: the
   30 most recently changed docs the caller can open. `trash`: the caller's deleted docs and folders. With `folder`:
   that folder's content (any view).
 - `GET /v1/docs` → `{ "docs": [Doc] }`: every doc the caller can open (owned, shared directly, or inside a shared folder).
@@ -98,6 +148,7 @@ file is the technical reference.
 - `POST /v1/docs/{id}/assets` (multipart `file`, an image: PNG, JPEG, GIF, WebP or SVG, told by its bytes; anything else
   is `415 unsupported_format`) → `{ "id", "url" }`. `GET /v1/assets/{id}` **public** → bytes, for
   whoever can open a doc that shows (or once showed) the image; the web serves the same at `/assets/{id}`.
+- `GET /v1/docs/{id}/beautiful-pdf?theme=light|dark` **public** downloads the styled PDF using the same resource access and email gate as HTML export.
 - `GET /v1/docs/{id}/backlinks` → `{ "docs": [Doc] }`: docs the caller can open that link here with `[[title]]`.
 - `GET /v1/links?title=…` → `{ "doc": Doc | null }`: the doc a `[[title]]` link opens for the caller (by title, case-insensitive).
 - `GET /v1/docs/{id}/authorship` → `{ "blocks": [{ "index", "authors": [Account] }] }` (who wrote each top-level block,
@@ -286,7 +337,7 @@ an item from Archive too; permanent deletion removes its archive records.
 ## Live notification receiver sessions (Ting 0.4)
 
 These optional routes deliver content-free update hints for docs and PDFs. Yjs still synchronizes document text,
-and `/events`/`join` remain the resumable agent interfaces. See [ting.md](ting.md) for lifecycle and delivery rules.
+and `/events`/`join` remain the resumable agent interfaces. See [the Ting integration reference](https://github.com/teamofsilicons/silicon-write/blob/codex/write-interfaces-contacts/docs/ting.md) for lifecycle and delivery rules.
 
 - `GET /v1/ting` (public): `{enabled, url}`. `url` is Write's receiver-only WebSocket gateway.
 - Connect to that URL. The first JSON frame is

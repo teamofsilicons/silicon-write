@@ -20,6 +20,10 @@
 }
 
 .prose > * + * { margin-top: .75em; }
+.editor:not([data-mode="viewing"]) .prose { padding-bottom: 50dvh; }
+.sourceDialog { width: min(760px, calc(100vw - 24px)); }
+.sourceText { box-sizing: border-box; width: 100%; height: min(58dvh, 620px); padding: 12px 14px 24dvh; resize: vertical; background: var(--surface); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; font: 14px/1.6 var(--font-mono); tab-size: 4; }
+.sourceActions { display: flex; justify-content: flex-end; gap: 8px; }
 .prose p { margin: 0; }
 .prose p + p { margin-top: 1em; }
 

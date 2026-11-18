@@ -183,7 +183,7 @@ async fn snapshot(state: &AppState, caller: &Caller, room: &Arc<Room>) -> ApiRes
             accounts::many(state, &rows.iter().map(|r| r.1.clone()).collect::<Vec<_>>()).await?;
         revisions = json!(rows.into_iter().map(|(seq, author, origin, at)| json!({"seq":seq,"author":people.get(&author).cloned().unwrap_or_else(|| Account::unknown(&author)),"origin":origin,"created_at":at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()})).collect::<Vec<_>>());
     }
-    let mut doc_view = views::doc_view(state, &row, role, Some(&caller.uuid)).await?;
+    let mut doc_view = views::doc_view(state, &row, role, Some(caller)).await?;
     doc_view.seq = seq;
     // A share may change during the reads. Never send fields authorized only by an old role.
     let (_, final_role) =
@@ -254,6 +254,7 @@ struct Session {
     last_presence: Option<Value>,
     role: Role,
     started: Instant,
+    auth_checked: Instant,
     last_heartbeat: Instant,
     ended: bool,
 }
@@ -282,7 +283,7 @@ async fn open(
     let room = state.rooms.get(&state, &id).await?;
     let presence = if joined {
         let account = accounts::one(&state, &caller.uuid).await?;
-        let id = room.inner.lock().await.join(account);
+        let id = room.inner.lock().await.join(account, caller.clone());
         Some(Presence {
             room: room.clone(),
             id,
@@ -300,6 +301,7 @@ async fn open(
         last_presence: None,
         role,
         started: Instant::now(),
+        auth_checked: Instant::now(),
         last_heartbeat: Instant::now(),
         ended: false,
     };
@@ -344,16 +346,10 @@ impl Session {
                 self.end().await;
                 return Ok(json!({"type":"reconnect","reason":"session_refresh"}));
             }
-            // Revalidate expiry/signature without the account-registration side effects of Auth.
-            let keys = self.state.jwks(false).await.map_err(ApiError::internal)?;
-            if self
-                .state
-                .app()
-                .verify_access_token_locally(&keys, &self.caller.token)
-                .is_err()
-            {
-                self.end().await;
-                return Ok(json!({"type":"reconnect","reason":"authentication_refresh"}));
+            if self.auth_checked.elapsed() >= Duration::from_secs(10) {
+                crate::auth::active(&self.state,&self.caller.token,&self.caller.uuid).await?;
+                self.caller.organizations = Default::default();
+                self.auth_checked = Instant::now();
             }
             let (doc, role) = access::require_doc(
                 &self.state,
@@ -373,7 +369,7 @@ impl Session {
                 self.room = current;
                 if joined {
                     let account = accounts::one(&self.state, &self.caller.uuid).await?;
-                    let id = self.room.inner.lock().await.join(account);
+                    let id = self.room.inner.lock().await.join(account, self.caller.clone());
                     self.presence = Some(Presence {
                         room: self.room.clone(),
                         id,

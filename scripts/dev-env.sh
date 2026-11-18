@@ -19,5 +19,7 @@ export WRITE_ACCOUNTS_WEBHOOK_SECRET="$(_app_field write webhook_secret)"
 export WRITE_TICKET_SECRET="${WRITE_TICKET_SECRET:-local-development-ticket-secret-0123456789abcdef}"
 export WRITE_DATA_DIR="${WRITE_DATA_DIR:-$PWD/.dev/data}"
 export WRITE_TING_URL="${WRITE_TING_URL-http://127.0.0.1:4372}"
+export WRITE_CONTACTS_URL="${WRITE_CONTACTS_URL:-http://127.0.0.1:4374}"
+export WRITE_ORGANIZATIONS_URL="${WRITE_ORGANIZATIONS_URL:-http://127.0.0.1:4375}"
 export WRITE_TING_APP_ID=ting
 export TING_STUB_SECRET="$(_app_field ting secret)"

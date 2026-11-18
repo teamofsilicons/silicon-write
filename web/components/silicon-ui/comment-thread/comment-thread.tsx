@@ -6,9 +6,11 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import type { Transition, Variants } from "motion/react";
 import { Check, ChevronRight, CornerDownRight, RotateCcw, SmilePlus, X } from "lucide-react";
 import { motionTokens } from "../lib/motion-tokens";
+import { fuzzy } from "@/lib/write/fuzzy";
 import styles from "./comment-thread.module.css";
 
 export interface CommentAuthor {
+  mentionId?: string;
   id: string;
   name: string;
   /** Square image URL. Initials are shown without one. */
@@ -227,7 +229,7 @@ function Avatar({ author, size = 28 }: { author: CommentAuthor; size?: number })
 /** Highlights "@Full Name" for known people. */
 function Body({ text, people }: { text: string; people: CommentAuthor[] }) {
   const parts = useMemo(() => {
-    const names = people.map(person => person.name).sort((a, b) => b.length - a.length).map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const names = people.map(person => person.mentionId ?? person.name).sort((a, b) => b.length - a.length).map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     if (!names.length) return [text];
     return text.split(new RegExp(`(@(?:${names.join("|")}))`, "g"));
   }, [people, text]);
@@ -327,7 +329,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
   const suggestions = useMemo(() => {
     if (!query) return [];
     const term = query.term.toLowerCase();
-    return people.filter(person => person.name.toLowerCase().split(" ").some(part => part.startsWith(term)) || person.name.toLowerCase().startsWith(term)).slice(0, 5);
+    return people.filter(person => fuzzy(term,person.name,person.id)).slice(0, 5);
   }, [people, query]);
   const open = !!query && suggestions.length > 0;
 
@@ -340,7 +342,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
   }, [autoFocus, focusKey]);
 
   const readQuery = (value: string, caret: number) => {
-    const match = /(^|\s)@([\p{L}]*)$/u.exec(value.slice(0, caret));
+    const match = /(^|\s)@([\p{L}\p{N}:_.-]*)$/u.exec(value.slice(0, caret));
     setQuery(match ? { start: caret - match[2]!.length - 1, term: match[2]! } : null);
     setActive(0);
   };
@@ -349,8 +351,9 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
     const node = field.current;
     if (!node || !query) return;
     const caret = node.selectionStart ?? text.length;
-    const next = `${text.slice(0, query.start)}@${person.name} ${text.slice(caret)}`;
-    const at = query.start + person.name.length + 2;
+    const handle = person.mentionId ?? person.name;
+    const next = `${text.slice(0, query.start)}@${handle} ${text.slice(caret)}`;
+    const at = query.start + handle.length + 2;
     setText(next);
     setQuery(null);
     requestAnimationFrame(() => { node.focus(); node.setSelectionRange(at, at); });
@@ -402,7 +405,7 @@ function Composer({ people, initial = "", placeholder, submitLabel, autoFocus, f
           initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={reduced ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, height: 0, transition: { duration: motionTokens.duration.instant, ease: standard } }} transition={reduced ? { duration: 0 } : { height: HEIGHT, opacity: { duration: motionTokens.duration.fast, ease: enter } }}>
           {suggestions.map((person, index) => <li key={person.id} id={`${uid}-person-${index}`} role="option" aria-selected={index === active} className={styles.suggestion}
             onPointerDown={event => event.preventDefault()} onPointerMove={() => setActive(index)} onClick={() => insert(person)}>
-            <Avatar author={person} size={20} />{person.name}
+            <Avatar author={person} size={20} />{person.name}{person.mentionId && person.name !== person.mentionId ? ` · ${person.mentionId}` : ""}
           </li>)}
         </motion.ul>}
       </AnimatePresence>

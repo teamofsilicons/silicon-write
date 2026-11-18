@@ -818,10 +818,10 @@ describe("Suggestions", TIMEOUT, () => {
     assert.ok(s.inserted.length > 0 && s.deleted.length > 0, JSON.stringify(s));
     const versions = ok(await owner.api.get(`/v1/docs/${doc.id}/versions`)).versions;
     assert.equal(versions[0].summary, `${silicon.id} suggested changes to the doc`);
-    const ting = await waitFor("a write.suggestion.created ting for the owner", async () => {
+    const ting = await waitFor("a write.suggestionCreated ting for the owner", async () => {
       const r = await fetch(`${env.ting}/_tings?for=${owner.uuid}`);
       const items = (await r.json()).items ?? [];
-      return items.find(t => t.type === "write.suggestion.created" && t.data?.suggestion_id === s.id);
+      return items.find(t => t.type === "write.suggestionCreated" && t.data?.suggestion_id === s.id);
     }, 30_000, 500);
     assert.equal(ting.data.doc.id, doc.id);
     assert.equal(ting.data.by.id, silicon.id);

@@ -17,7 +17,7 @@ test("Suggester invitation, inline accept and reject, and persisted normal text"
     await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();
     await page.getByRole('button', { name: 'Share', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Share', exact: true });
-    await dialog.getByRole('textbox', { name: 'Who to share with' }).fill(runAccounts().friend.id);
+    await dialog.getByRole('combobox', { name: 'Who to share with' }).fill(runAccounts().friend.id);
     await dialog.getByRole('combobox', { name: 'Role', exact: true }).click();
     await page.getByRole('option', { name: 'Suggester', exact: true }).click();
     await expect(dialog).toContainText('Can comment and suggest changes');

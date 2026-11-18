@@ -69,6 +69,7 @@ fn now_ms() -> u64 {
 pub struct Conn {
     pub tx: mpsc::UnboundedSender<WsMessage>,
     pub account: Option<Account>,
+    caller: Option<crate::auth::Caller>,
     pub role: Role,
     /// Awareness client ids this connection announced.
     pub awareness: HashSet<u64>,
@@ -84,7 +85,7 @@ pub struct RoomState {
     pub conns: HashMap<u64, Conn>,
     awareness: HashMap<u64, (u32, String)>,
     /// Authenticated HTTP event streams that explicitly joined the document.
-    joined: HashMap<u64, Account>,
+    joined: HashMap<u64, (Account, crate::auth::Caller)>,
     pub events: crate::events::journal::Journal,
     last_used: Instant,
     pub deleted: bool,
@@ -196,12 +197,8 @@ impl Rooms {
         inner.deleted = doc.deleted_at.is_some();
         let mut closed = vec![];
         for (id, conn) in inner.conns.iter_mut() {
-            let caller = conn.account.as_ref().map(|a| crate::auth::Caller {
-                uuid: a.uuid.clone(),
-                id: a.id.clone(),
-                kind: a.kind.clone(),
-                token: String::new(),
-            });
+            let mut caller = conn.caller.clone();
+            if let Some(c) = &mut caller { c.organizations = Default::default(); }
             match crate::access::doc_role(state, caller.as_ref(), &doc).await {
                 Ok(Some(role)) => {
                     if role != conn.role {
@@ -227,15 +224,10 @@ impl Rooms {
         let joined: Vec<_> = inner
             .joined
             .iter()
-            .map(|(id, a)| (*id, a.clone()))
+            .map(|(id, (_, caller))| (*id, caller.clone()))
             .collect();
-        for (id, account) in joined {
-            let caller = crate::auth::Caller {
-                uuid: account.uuid,
-                id: account.id,
-                kind: account.kind,
-                token: String::new(),
-            };
+        for (id, mut caller) in joined {
+            caller.organizations = Default::default();
             if !matches!(
                 crate::access::doc_role(state, Some(&caller), &doc).await,
                 Ok(Some(_))
@@ -288,7 +280,7 @@ impl Rooms {
         let mut closed = vec![];
         for (id, conn) in &inner.conns {
             let caller = conn.account.as_ref().map(|a| crate::auth::Caller {
-                uuid: a.uuid.clone(), id: a.id.clone(), kind: a.kind.clone(), token: String::new(),
+                uuid: a.uuid.clone(), id: a.id.clone(), kind: a.kind.clone(), ..Default::default()
             });
             if crate::visitors::ensure(state, caller.as_ref(), &doc, &axum::http::HeaderMap::new(), false).await.is_err() {
                 let _ = conn.tx.send(WsMessage::Binary(event_message(&json!({"type":"email_required"})).into()));
@@ -381,7 +373,7 @@ async fn load(state: &AppState, doc_id: &str) -> ApiResult<Room> {
 
 impl RoomState {
     /// An actual stream owns this presence; editing through HTTP never creates one.
-    pub fn join(&mut self, account: Account) -> u64 {
+    pub fn join(&mut self, account: Account, caller: crate::auth::Caller) -> u64 {
         let id = loop {
             let id = ids::new_client_id();
             if !self.awareness.contains_key(&id)
@@ -392,7 +384,7 @@ impl RoomState {
             }
         };
         let value = json!({"user": {"uuid": account.uuid, "id": account.id, "name": if account.display_name.is_empty() {&account.id} else {&account.display_name}, "kind": account.kind, "pfp_url": account.pfp_url, "color": colour_for(&account.uuid)}}).to_string();
-        self.joined.insert(id, account);
+        self.joined.insert(id, (account, caller));
         self.awareness.insert(id, (1, value.clone()));
         self.send_awareness(id, 1, &value);
         self.last_used = Instant::now();
@@ -422,7 +414,7 @@ impl RoomState {
         let mut people: Vec<Value> = self
             .joined
             .iter()
-            .map(|(id, account)| json!({"connection_id":id.to_string(),"account":account}))
+            .map(|(id, (account, _))| json!({"connection_id":id.to_string(),"account":account}))
             .collect();
         for (id, conn) in &self.conns {
             // Only a currently announced browser presence has a known selection.
@@ -1008,6 +1000,7 @@ pub async fn serve(
     state: AppState,
     doc_id: String,
     account: Option<Account>,
+    mut caller: Option<crate::auth::Caller>,
     role: Role,
     socket: WebSocket,
 ) {
@@ -1056,6 +1049,7 @@ pub async fn serve(
             Conn {
                 tx: tx.clone(),
                 account: account.clone(),
+                caller: caller.clone(),
                 role,
                 awareness: HashSet::new(),
             },
@@ -1073,7 +1067,30 @@ pub async fn serve(
         }
     });
 
-    while let Some(Ok(message)) = stream.next().await {
+    let mut recheck = tokio::time::interval(Duration::from_secs(30));
+    recheck.tick().await;
+    loop {
+        let message = tokio::select! {
+            msg = stream.next() => match msg { Some(Ok(msg)) => msg, _ => break },
+            _ = recheck.tick(), if caller.is_some() => {
+                let c = caller.as_mut().unwrap();
+                c.organizations = Default::default();
+                let allowed = async {
+                    crate::auth::active(&state,&c.token,&c.uuid).await?;
+                    crate::access::require_doc(&state,Some(c),&doc_id,Role::Viewer).await
+                }.await;
+                match allowed {
+                    Ok((_,current)) => {
+                        if let Some(conn) = room.inner.lock().await.conns.get_mut(&conn_id) && conn.role != current {
+                            conn.role = current;
+                            let _ = tx.send(WsMessage::Binary(event_message(&json!({"type":"role","role":current})).into()));
+                        }
+                    }
+                    Err(_) => break,
+                }
+                continue;
+            }
+        };
         match message {
             WsMessage::Binary(bytes) => {
                 if let Err(e) = handle(&state, &room, conn_id, &bytes).await {

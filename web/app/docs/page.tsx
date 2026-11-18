@@ -24,6 +24,7 @@ export default async function DocsPage() {
     <>
       <SiteHeader signedIn={signedIn} path="/docs" />
       <main id="main" className={styles.main}>
+        <div className={styles.article}><a href="/docs/interfaces">Interface API and standalone frontend guide</a></div>
         <article className={styles.article} dangerouslySetInnerHTML={{ __html: html }} />
       </main>
       <SiteFooter />

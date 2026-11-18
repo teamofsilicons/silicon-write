@@ -110,9 +110,9 @@ test("the same text changed differently: the doc keeps its text and the Silicon'
   assert.equal(listed[0].author?.id, silicon.id);
   assert.match((await read(ownerApi, id, "critic")).markdown, /\{--.*\{\+\+|\{\+\+.*\{--/s);
   const tings = await eventually(async () => {
-    const found = await tingsFor(owner.uuid, "write.suggestion.created", id);
+    const found = await tingsFor(owner.uuid, "write.suggestionCreated", id);
     return found.length ? found : null;
-  }, "the owner's write.suggestion.created ting");
+  }, "the owner's write.suggestionCreated ting");
   assert.equal(tings.length, 1);
   assert.equal(tings[0].data.suggestion_id, conflict.suggestion);
   assert.equal(tings[0].data.by.id, silicon.id);

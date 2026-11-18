@@ -10,3 +10,6 @@
 .article pre code { background: none; border: 0; padding: 0; }
 .article table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 .article th, .article td { border-bottom: 1px solid var(--border); padding: .5em .6em; text-align: left; vertical-align: top; }
+
+.article td { overflow-wrap: anywhere; }
+.article table code { white-space: normal; }

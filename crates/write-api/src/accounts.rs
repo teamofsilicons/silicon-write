@@ -10,7 +10,7 @@ use crate::auth::Caller;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
 pub struct Account {
     pub uuid: String,
     pub id: String,
@@ -123,8 +123,7 @@ pub async fn refresh(state: &AppState, uuid: &str) -> ApiResult<Account> {
     sqlx::query(
         "insert into accounts (uuid, kind, public_id, display_name, pfp_url, refreshed_at) values ($1, $2, $3, $4, $5, now())
          on conflict (uuid) do update set kind = $2, public_id = $3,
-            display_name = case when $4 = '' then accounts.display_name else $4 end,
-            pfp_url = case when $5 = '' then accounts.pfp_url else $5 end,
+            display_name = excluded.display_name, pfp_url = excluded.pfp_url,
             refreshed_at = now()",
     )
     .bind(uuid)
@@ -143,8 +142,8 @@ pub fn is_public_id(id: &str) -> bool {
     let Some((prefix, handle)) = id.split_once(':') else { return false };
     matches!(prefix, "c" | "si")
         && !handle.is_empty()
-        && handle.len() <= 64
-        && handle.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+        && handle.split('.').count() <= 2
+        && handle.split('.').all(|part| !part.is_empty() && part.len() <= 64 && part.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-'))
 }
 
 /// Looks an account up by its c:/si: id.

@@ -36,7 +36,7 @@ export function robotsTxt(origin: string): string {
 }
 
 export function sitemapXml(origin: string, modified: string): string {
-  const urls = [`${origin}/`, `${origin}/llms.txt`];
+  const urls = [`${origin}/`, `${origin}/llms.txt`, `${origin}/docs`, `${origin}/docs/interfaces`];
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
@@ -69,6 +69,7 @@ export function llmsTxt(origin: string): string {
     "",
     "## Links",
     "",
+    `- [Interface API](${origin}/docs/interfaces)`,
     `- [Docs](${links.docs})`,
     `- [${name} in the Silicon Apps store](${links.store})`,
     `- [Home page](${origin}/)`,

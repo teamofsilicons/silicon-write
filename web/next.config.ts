@@ -76,6 +76,12 @@ const nextConfig: NextConfig = {
   experimental: {
     ...(distDir === ".next" ? {} : { turbopackFileSystemCacheForBuild: false }),
   },
+  async redirects() {
+    return [
+      { source: "/reference/api.yaml", destination: "https://api.write.teamofsilicons.com/openapi.json", permanent: false },
+      { source: "/reference/cli.yaml", destination: "/docs", permanent: false },
+    ];
+  },
   async headers() {
     return [
       // The font files never change in place (a new cut gets a new name).

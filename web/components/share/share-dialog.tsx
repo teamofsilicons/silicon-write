@@ -7,7 +7,7 @@
  */
 import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Globe, Link2, LockKeyhole, Mail, UserMinus } from "lucide-react";
+import { ChevronRight, Globe, Link2, LockKeyhole, Mail, UserMinus, Users } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/silicon-ui/dialog/dialog";
 import { Button } from "@/components/silicon-ui/button/button";
 import { Avatar } from "@/components/silicon-ui/avatar/avatar";
@@ -20,6 +20,9 @@ import { notify, notifyError } from "@/lib/notify";
 import { keys, useSharing } from "@/lib/write/queries";
 import { displayName, type Member, type PublicAccess } from "@/lib/write/types";
 import styles from "./share.module.css";
+import { Recipient } from "./recipient";
+import { ContactsButton } from "./contacts";
+import { selectedPerson, mergePeople, photo, usePeople, useOrganizations, type Group, type OrgSettings } from "@/lib/write/people";
 
 const ROLES = [
   { value: "editor", label: "Editor" },
@@ -49,6 +52,15 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
   const me = useSessionView().account?.uuid;
   const isOwner = data?.role === "owner";
   const canInvite = data?.role === "owner" || data?.role === "editor";
+  const directory = usePeople(open && !linkOnly);
+  const orgs = useOrganizations(open && canInvite);
+  const people = mergePeople(directory.data?.items ?? [], [data?.owner,...(data?.members ?? []).map(m=>m.account)]);
+  const personal = (a: NonNullable<Member["account"]>) => people.find(p=>p.uuid===a.uuid) ?? a;
+  const [groupRole,setGroupRole] = useState<{key:string;org:string} | null>(null);
+  const defaults = useQuery({queryKey:["write-org-settings",me,groupRole?.org],enabled:!!groupRole && open,
+    queryFn:({signal})=>api.get<OrgSettings>(`/v1/organizations/${seg(groupRole!.org)}/settings`,{signal})});
+  const chooseGroup = (g: Group) => setGroupRole({key:`${g.type}:${g.id}`,org:g.org_id});
+  const selectedRole = groupRole && groupRole.key === to ? defaults.data?.default_role ?? "viewer" : role;
   const refresh = () => Promise.all([
     client.invalidateQueries({ queryKey: keys.sharing(kind, id) }),
     client.invalidateQueries({ queryKey: ["library"] }),
@@ -58,11 +70,11 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
 
   const invite = async (event: React.FormEvent) => {
     event.preventDefault();
-    const target = to.trim();
+    const target = selectedPerson(to, people)?.id ?? to.trim();
     if (!target) return;
     setInviting(true);
     try {
-      await api.post(`/v1/${kind}/${seg(id)}/sharing`, { to: target, role });
+      await api.post(`/v1/${kind}/${seg(id)}/sharing`, { to: target, role: selectedRole });
       notify.success(target.includes("@") && !target.startsWith("@") ? `Invited ${target}` : `Shared with ${target}`, target.includes("@") ? "They get access when they sign in with this email." : undefined);
       setTo("");
       refresh();
@@ -107,10 +119,11 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
 
   const transfer = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!transferTo.trim()) return;
+    const recipient = selectedPerson(transferTo, people)?.id ?? transferTo.trim();
+    if (!recipient) return;
     try {
-      await api.post(`/v1/${kind}/${seg(id)}/transfer`, { to: transferTo.trim() });
-      notify.success(`Asked ${transferTo.trim()} to take it over`, "It moves once they accept.");
+      await api.post(`/v1/${kind}/${seg(id)}/transfer`, { to: recipient });
+      notify.success(`Asked ${recipient} to take it over`, "It moves once they accept.");
       setTransferTo("");
     } catch (error) {
       notifyError(error, "Couldn't start the transfer");
@@ -137,19 +150,21 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
             <form className={styles.invite} onSubmit={invite}>
               <label htmlFor={inviteId} className={styles.sectionLabel}>Who to share with</label>
               <div className={styles.inviteRow}>
-                <input id={inviteId} className={styles.inviteInput} value={to} onChange={e => setTo(e.target.value)} placeholder="c:id, si:id or email" aria-label="Who to share with" autoFocus />
+                <Recipient id={inviteId} label="Who to share with" value={to} onChange={v=>{setTo(v); setGroupRole(null);}} onGroup={chooseGroup} autoFocus
+                  placeholder="Name, ID, team or email" people={people} groups={orgs.data?.share_targets}/>
                 <div className={styles.roleField}>
-                  <Select label="Role" options={ROLES} value={role} onValueChange={setRole} className={styles.roleSelect} />
+                  <Select label="Role" options={ROLES} value={selectedRole} onValueChange={v=>{setGroupRole(null); setRole(v);}} className={styles.roleSelect} />
                 </div>
-                <Button type="submit" variant="primary" size="md" loading={inviting} disabled={!to.trim()} className={styles.shareButton}>
+                <Button type="submit" variant="primary" size="md" loading={inviting} disabled={!to.trim() || (!!groupRole && !defaults.data)} className={styles.shareButton}>
                   Share
                 </Button>
               </div>
-              {role === "commenter" ? <p className={styles.note}>Can comment and suggest changes. Editors accept or reject them.</p> : null}
+              {selectedRole === "commenter" ? <p className={styles.note}>Can comment and suggest changes. Editors accept or reject them.</p> : null}
             </form>
           ) : data ? (
             <p className={styles.note}>Only the owner and editors can share this.</p>
           ) : null}
+          {canInvite && <div><ContactsButton/>{directory.data?.status === "unavailable" && <span role="status"> Saved contacts are temporarily unavailable.</span>}</div>}
           {isLoading ? <p className={styles.note} role="status">Loading access…</p> : null}
           {error && !linkOnly ? <p className={styles.note} role="alert">Couldn’t load sharing. Close this dialog and try again.</p> : null}
           {data && !linkOnly ? (
@@ -158,9 +173,9 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
               <ul className={styles.people} aria-label="People with access">
                 {data.owner ? (
                   <li className={styles.person}>
-                    <Avatar name={displayName(data.owner)} src={data.owner.pfp_url || undefined} size="sm" />
+                    <Avatar name={displayName(personal(data.owner))} src={photo(personal(data.owner))} size="sm" />
                     <span className={styles.who}>
-                      <span>{displayName(data.owner)}</span>
+                      <span>{displayName(personal(data.owner))}</span>
                       <span className={styles.id}>{data.owner.id}</span>
                     </span>
                     <span className={styles.role}>Owner</span>
@@ -168,21 +183,21 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
                 ) : null}
                 {direct.map(member => (
                   <li key={member.id} className={styles.person}>
-                    {member.account ? <Avatar name={displayName(member.account)} src={member.account.pfp_url || undefined} size="sm" /> : <span className={styles.mailIcon}><Mail size={14} aria-hidden="true" /></span>}
+                    {member.account ? <Avatar name={displayName(personal(member.account))} src={photo(personal(member.account))} size="sm" /> : <span className={styles.mailIcon}>{member.group ? <Users size={14}/> : <Mail size={14} aria-hidden="true"/>}</span>}
                     <span className={styles.who}>
-                      <span>{member.account ? displayName(member.account) : member.email}</span>
-                      <span className={styles.id}>{member.account ? member.account.id : "Invited, not signed in yet"}</span>
+                      <span>{member.account ? displayName(personal(member.account)) : member.group?.name ?? member.email}</span>
+                      <span className={styles.id}>{member.account ? member.account.id : member.group?.key ?? "Invited, not signed in yet"}</span>
                     </span>
                     <div className={styles.memberActions}>
                       {isOwner ? (
                         <div className={styles.roleField}>
-                          <Select label={`Role of ${member.account?.id ?? member.email}`} options={ROLES} value={member.role} onValueChange={v => void change(member, v)} className={styles.roleSelectSmall} />
+                          <Select label={`Role of ${member.account?.id ?? member.group?.key ?? member.email}`} options={ROLES} value={member.role} onValueChange={v => void change(member, v)} className={styles.roleSelectSmall} />
                         </div>
                       ) : (
                         <span className={styles.role}>{member.role === "commenter" ? "Suggester" : member.role[0].toUpperCase() + member.role.slice(1)}</span>
                       )}
                       {isOwner || (me && member.account?.uuid === me) ? (
-                        <button type="button" className={styles.remove} aria-label={member.account?.uuid === me ? "Leave" : `Remove ${member.account?.id ?? member.email}`} onClick={() => void remove(member)}>
+                        <button type="button" className={styles.remove} aria-label={member.account?.uuid === me ? "Leave" : `Remove ${member.account?.id ?? member.group?.key ?? member.email}`} onClick={() => void remove(member)}>
                           <UserMinus size={15} aria-hidden="true" />
                         </button>
                       ) : null}
@@ -191,11 +206,11 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
                 ))}
                 {inherited.map(member => (
                   <li key={`via-${member.id}`} className={styles.person}>
-                    {member.account ? <Avatar name={displayName(member.account)} src={member.account.pfp_url || undefined} size="sm" /> : <span className={styles.mailIcon}><Mail size={14} aria-hidden="true" /></span>}
+                    {member.account ? <Avatar name={displayName(personal(member.account))} src={photo(personal(member.account))} size="sm" /> : <span className={styles.mailIcon}>{member.group ? <Users size={14}/> : <Mail size={14} aria-hidden="true"/>}</span>}
                     <span className={styles.who}>
-                      <span>{member.account ? displayName(member.account) : member.email}</span>
+                      <span>{member.account ? displayName(personal(member.account)) : member.group?.name ?? member.email}</span>
                       <span className={styles.id}>
-                        {member.account?.id ?? member.email} · {typeof member.via === "object" && member.via.folder ? `through the folder “${member.via.folder.name}”` : "through a folder above it"}
+                        {member.account?.id ?? member.group?.key ?? member.email} · {typeof member.via === "object" && member.via.folder ? `through the folder “${member.via.folder.name}”` : "through a folder above it"}
                       </span>
                     </span>
                     <span className={styles.role}>{member.role === "commenter" ? "Suggester" : member.role[0].toUpperCase() + member.role.slice(1)}</span>
@@ -240,7 +255,7 @@ export function ShareDialog({ kind, id, title, open, onOpenChange }: { kind: "do
               <div className={styles.transferBody}>
                 <p className={styles.note}>They must accept before ownership changes.</p>
                 <form className={styles.transferForm} onSubmit={transfer}>
-                  <input className={styles.inviteInput} value={transferTo} onChange={e => setTransferTo(e.target.value)} placeholder="c:id or si:id" aria-label="Transfer to" />
+                  <Recipient label="Transfer to" value={transferTo} onChange={setTransferTo} people={people} placeholder="c:id or si:id" />
                   <Button type="submit" variant="secondary" size="sm" disabled={!transferTo.trim()}>Transfer</Button>
                 </form>
               </div>

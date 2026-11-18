@@ -30,8 +30,8 @@ pub fn mentions(body: &str) -> Vec<String> {
             let rest: String = chars[i + 1..].iter().collect();
             for prefix in ["c:", "si:"] {
                 if let Some(after) = rest.strip_prefix(prefix) {
-                    let handle: String = after.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect();
-                    let handle = handle.to_lowercase();
+                    let handle: String = after.chars().take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-'|'.')).collect();
+                    let handle = handle.trim_end_matches('.').to_lowercase();
                     if handle.len() >= 3 {
                         let id = format!("{prefix}{handle}");
                         if !found.contains(&id) {
@@ -73,7 +73,7 @@ pub async fn comment(
         if let Ok(account) = accounts::by_public_id(state, &id).await
             && notified.insert(account.uuid.clone()) {
                 // Only people who can open the doc hear about it.
-                let caller = crate::auth::Caller { uuid: account.uuid.clone(), id: account.id.clone(), kind: account.kind.clone(), token: String::new() };
+                let caller = crate::auth::Caller { uuid: account.uuid.clone(), id: account.id.clone(), kind: account.kind.clone(), ..Default::default() };
                 if crate::access::doc_role(state, Some(&caller), doc).await?.is_some() {
                     ting::queue(state, "write.mentionReceived", &account.uuid, &format!("mention:{comment_id}:{}", account.uuid), base.clone()).await?;
                 }
@@ -103,7 +103,7 @@ pub async fn comment(
 }
 
 pub async fn can_read(state: &AppState, doc: &DocRow, uuid: &str) -> ApiResult<bool> {
-    let caller = crate::auth::Caller { uuid: uuid.to_owned(), id: String::new(), kind: String::new(), token: String::new() };
+    let caller = crate::auth::Caller { uuid: uuid.to_owned(), id: String::new(), kind: String::new(), ..Default::default() };
     Ok(crate::access::doc_role(state, Some(&caller), doc).await?.is_some())
 }
 

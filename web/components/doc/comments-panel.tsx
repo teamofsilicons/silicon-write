@@ -31,12 +31,12 @@ function scrollBehavior(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-function toThreadComments(thread: Thread): ThreadComment[] {
+function toThreadComments(thread: Thread, people: { id: string; name: string; avatar?: string }[]): ThreadComment[] {
   const [first, ...rest] = thread.comments;
   if (!first) return [];
   const map = (c: Thread["comments"][number]): ThreadComment => ({
     id: c.id,
-    author: { id: c.author.id || c.author.uuid, name: displayName(c.author), avatar: c.author.pfp_url || undefined },
+    author: { id: c.author.id || c.author.uuid, name: people.find(p=>p.id===c.author.id)?.name ?? displayName(c.author), avatar: people.find(p=>p.id===c.author.id)?.avatar ?? (c.author.pfp_url || undefined) },
     body: c.body,
     attachment: c.voice && !c.deleted ? <VoicePlayer recording={c.voice} /> : undefined,
     createdAt: formatRelative(c.created_at),
@@ -60,7 +60,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
   const client = useQueryClient();
   const ref = useRef<HTMLDivElement>(null);
   useThreadRead(docId, thread, ref);
-  const comments = useMemo(() => toThreadComments(thread), [thread]);
+  const comments = useMemo(() => toThreadComments(thread, people), [thread, people]);
   const [replySending, setReplySending] = useState(false);
   const replyDraft = useCommentDraft(account.uuid, docId, `reply:${thread.id}`);
   const voice = useVoiceDraft(thread.status === "open" ? replyDraft.key : null, docId, replyDraft.appendTranscript);
@@ -123,7 +123,7 @@ export function ThreadCard({ thread, active, account, people, onActivate, docId,
         replyDraft={replyDraft.value.text}
         onReplyDraftChange={text => replyDraft.setValue({ text, mentions: [] })}
         currentUser={{ id: account.id || account.uuid, name: displayName(account), avatar: account.pfp_url || undefined }}
-        people={people.map(p => ({ id: p.id, name: p.id, avatar: p.avatar }))}
+        people={people.map(p => ({ ...p, mentionId: p.id }))}
         resolved={thread.status === "resolved"}
         onResolvedChange={async resolved => {
           try {

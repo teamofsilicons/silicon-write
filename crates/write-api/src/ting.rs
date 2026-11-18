@@ -238,6 +238,15 @@ async fn send_due(state: &AppState) -> anyhow::Result<()> {
     ensure_types(state).await?;
     let proof = send_proof(state).await?;
     for item in due {
+        if item.kind == "write.transferOffered" {
+            let pending: bool = sqlx::query_scalar("select exists(select 1 from transfers where id=$1 and to_uuid=$2 and status='pending')")
+                .bind(item.data["transfer_id"].as_str()).bind(&item.for_uuid).fetch_one(&state.db).await?;
+            if !pending {
+                sqlx::query("update ting_outbox set status='failed',last_error='The transfer is no longer pending.' where id=$1")
+                    .bind(item.id).execute(&state.db).await?;
+                continue;
+            }
+        }
         // Access may have changed while a notification waited for registration or a retry.
         if let Some(doc_id) = item.data.pointer("/doc/id").and_then(Value::as_str) {
             let allowed = match crate::access::load_doc(state, doc_id).await {

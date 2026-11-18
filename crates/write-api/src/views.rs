@@ -55,11 +55,11 @@ pub struct FolderView {
 /// The folders above, top first, limited to the ones the viewer can see: walking up from the
 /// nearest folder, it stops at the first one the viewer neither owns nor has through a share on
 /// it or on a folder above it. However deep the folders go, the path is whole.
-async fn visible_path(state: &AppState, folder_id: Option<&str>, viewer: Option<&str>) -> ApiResult<Vec<PathPart>> {
+async fn visible_path(state: &AppState, folder_id: Option<&str>, viewer: Option<&crate::auth::Caller>) -> ApiResult<Vec<PathPart>> {
     let (Some(folder_id), Some(viewer)) = (folder_id, viewer) else { return Ok(vec![]) };
     // The chain up from the folder, nearest first, each with whether it is shared with the viewer.
     // A folder already seen ends the walk, so it ends even if the folders ever went round in a loop.
-    let chain: Vec<(String, String, String, bool)> = sqlx::query_as(
+    let chain: Vec<(String, String, String, bool, Vec<String>)> = sqlx::query_as(
         "with recursive chain as (
             select id, parent_id, owner_uuid, name, 0 as depth, array[id] as seen from folders where id = $1
             union all
@@ -67,31 +67,35 @@ async fn visible_path(state: &AppState, folder_id: Option<&str>, viewer: Option<
             from folders f join chain c on f.id = c.parent_id
             where not f.id = any(c.seen)
          )
-         select id, name, owner_uuid, exists (select 1 from shares s where s.account_uuid = $2 and s.folder_id = chain.id)
+         select id, name, owner_uuid, exists (select 1 from shares s where s.account_uuid = $2 and s.folder_id = chain.id),
+         array(select s.group_key from shares s where s.folder_id=chain.id and s.group_key is not null)
          from chain order by depth",
     )
     .bind(folder_id)
-    .bind(viewer)
+    .bind(&viewer.uuid)
     .fetch_all(&state.db)
     .await?;
     // Whether a share on the folder or on any folder above it reaches the viewer.
+    let groups = if chain.iter().any(|(_,_,owner,_,keys)| owner != &viewer.uuid && !keys.is_empty()) {
+        crate::organizations::context(state,viewer).await?.groups.as_slice()
+    } else { &[] };
     let mut reached = vec![false; chain.len()];
     let mut above = false;
-    for (i, (_, _, _, shared)) in chain.iter().enumerate().rev() {
-        above |= *shared;
+    for (i, (_, _, _, shared, keys)) in chain.iter().enumerate().rev() {
+        above |= *shared || keys.iter().any(|key| groups.contains(key));
         reached[i] = above;
     }
     let mut parts: Vec<PathPart> = chain
         .into_iter()
         .zip(reached)
-        .take_while(|((_, _, owner, _), reached)| owner == viewer || *reached)
-        .map(|((id, name, _, _), _)| PathPart { id, name })
+        .take_while(|((_, _, owner, _, _), reached)| owner == &viewer.uuid || *reached)
+        .map(|((id, name, _, _, _), _)| PathPart { id, name })
         .collect();
     parts.reverse();
     Ok(parts)
 }
 
-pub async fn doc_view(state: &AppState, doc: &DocRow, role: Role, viewer: Option<&str>) -> ApiResult<DocView> {
+pub async fn doc_view(state: &AppState, doc: &DocRow, role: Role, viewer: Option<&crate::auth::Caller>) -> ApiResult<DocView> {
     let people = accounts::many(state, &[doc.owner_uuid.clone(), doc.created_by.clone()]).await?;
     Ok(DocView {
         id: doc.id.clone(),
@@ -108,12 +112,12 @@ pub async fn doc_view(state: &AppState, doc: &DocRow, role: Role, viewer: Option
         created_at: doc.created_at,
         updated_at: doc.updated_at,
         deleted_at: doc.deleted_at,
-        archived: crate::archive::is_archived(state, viewer, &doc.id, false).await?,
+        archived: crate::archive::is_archived(state, viewer.map(|v|v.uuid.as_str()), &doc.id, false).await?,
         url: state.config.doc_url(&doc.id),
     })
 }
 
-pub async fn folder_view(state: &AppState, folder: &FolderRow, role: Role, viewer: Option<&str>) -> ApiResult<FolderView> {
+pub async fn folder_view(state: &AppState, folder: &FolderRow, role: Role, viewer: Option<&crate::auth::Caller>) -> ApiResult<FolderView> {
     Ok(FolderView {
         id: folder.id.clone(),
         name: folder.name.clone(),
@@ -123,7 +127,7 @@ pub async fn folder_view(state: &AppState, folder: &FolderRow, role: Role, viewe
         role,
         created_at: folder.created_at,
         deleted_at: folder.deleted_at,
-        archived: crate::archive::is_archived(state, viewer, &folder.id, true).await?,
+        archived: crate::archive::is_archived(state, viewer.map(|v|v.uuid.as_str()), &folder.id, true).await?,
     })
 }
 
@@ -132,7 +136,7 @@ pub async fn doc_views(state: &AppState, docs: Vec<DocRow>, viewer: &crate::auth
     let mut out = Vec::with_capacity(docs.len());
     for doc in docs {
         if let Some(role) = access::doc_role(state, Some(viewer), &doc).await? {
-            out.push(doc_view(state, &doc, role, Some(&viewer.uuid)).await?);
+            out.push(doc_view(state, &doc, role, Some(viewer)).await?);
         }
     }
     Ok(out)
@@ -142,7 +146,7 @@ pub async fn folder_views(state: &AppState, folders: Vec<FolderRow>, viewer: &cr
     let mut out = Vec::with_capacity(folders.len());
     for folder in folders {
         if let Some(role) = access::folder_role(state, viewer, &folder).await? {
-            out.push(folder_view(state, &folder, role, Some(&viewer.uuid)).await?);
+            out.push(folder_view(state, &folder, role, Some(viewer)).await?);
         }
     }
     Ok(out)

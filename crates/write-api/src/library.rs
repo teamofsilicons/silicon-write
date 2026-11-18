@@ -157,7 +157,7 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
             crate::archive::filter(&state, &caller, &mut folders, &mut docs, true).await?;
         }
         return Ok(Json(json!({
-            "folder": views::folder_view(&state, &folder, role, Some(&caller.uuid)).await?,
+            "folder": views::folder_view(&state, &folder, role, Some(&caller)).await?,
             "folders": views::folder_views(&state, folders, &caller).await?,
             "docs": views::doc_views(&state, docs, &caller).await?,
         })));
@@ -166,16 +166,18 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
         "shared" => (
             sqlx::query_as(sqlx::AssertSqlSafe(format!(
                 "select {FOLDER_COLUMNS} from folders where deleted_at is null and owner_uuid <> $1
-                 and id in (select folder_id from shares where account_uuid = $1) order by lower(name)"
+                 and id in (select folder_id from shares where account_uuid = $1 or group_key=any($2)) order by lower(name)"
             )))
             .bind(&caller.uuid)
+            .bind(crate::organizations::library_groups(&state,&caller).await?)
             .fetch_all(&state.db)
             .await?,
             sqlx::query_as(sqlx::AssertSqlSafe(format!(
                 "select {DOC_COLUMNS} from docs where deleted_at is null and owner_uuid <> $1
-                 and id in (select doc_id from shares where account_uuid = $1) order by updated_at desc"
+                 and id in (select doc_id from shares where account_uuid = $1 or group_key=any($2)) order by updated_at desc"
             )))
             .bind(&caller.uuid)
+            .bind(crate::organizations::library_groups(&state,&caller).await?)
             .fetch_all(&state.db)
             .await?,
         ),
@@ -210,7 +212,7 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
         "recent" => (
             vec![],
             {
-                let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
+                let ids = access::accessible_doc_ids(&state, &caller).await?;
                 sqlx::query_as(sqlx::AssertSqlSafe(format!("select {DOC_COLUMNS} from docs where id = any($1) order by updated_at desc")))
                     .bind(&ids)
                     .fetch_all(&state.db)
@@ -245,7 +247,7 @@ pub async fn library(State(state): State<AppState>, Auth(caller): Auth, Query(q)
 }
 
 pub async fn all_docs(State(state): State<AppState>, Auth(caller): Auth) -> ApiResult<Json<Value>> {
-    let ids = access::accessible_doc_ids(&state, &caller.uuid).await?;
+    let ids = access::accessible_doc_ids(&state, &caller).await?;
     let docs: Vec<DocRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {DOC_COLUMNS} from docs where id = any($1) order by lower(title), created_at")))
         .bind(&ids)
         .fetch_all(&state.db)
@@ -254,7 +256,7 @@ pub async fn all_docs(State(state): State<AppState>, Auth(caller): Auth) -> ApiR
 }
 
 pub async fn all_folders(State(state): State<AppState>, Auth(caller): Auth) -> ApiResult<Json<Value>> {
-    let ids = access::accessible_folder_ids(&state, &caller.uuid).await?;
+    let ids = access::accessible_folder_ids(&state, &caller).await?;
     let folders: Vec<FolderRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!("select {FOLDER_COLUMNS} from folders where id = any($1) order by lower(name)")))
         .bind(&ids)
         .fetch_all(&state.db)
@@ -334,12 +336,12 @@ pub async fn new_doc(State(state): State<AppState>, Auth(caller): Auth, Json(bod
     let content = body.markdown.as_deref().filter(|m| !m.trim().is_empty()).map(write_doc::from_markdown);
     let doc = create_doc(&state, &caller, body.title.as_deref().unwrap_or(""), body.folder_id.as_deref(), content, "doc", Origin::Create).await?;
     let role = access::doc_role(&state, Some(&caller), &doc).await?.unwrap_or(Role::Editor);
-    Ok((StatusCode::CREATED, Json(views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?)))
+    Ok((StatusCode::CREATED, Json(views::doc_view(&state, &doc, role, Some(&caller)).await?)))
 }
 
 pub async fn get_doc(State(state): State<AppState>, MaybeAuth(caller): MaybeAuth, Path(id): Path<String>) -> ApiResult<Json<DocView>> {
     let (doc, role) = access::require_doc(&state, caller.as_ref(), &id, Role::Viewer).await?;
-    Ok(Json(views::doc_view(&state, &doc, role, caller.as_ref().map(|c| c.uuid.as_str())).await?))
+    Ok(Json(views::doc_view(&state, &doc, role, caller.as_ref()).await?))
 }
 
 #[derive(Deserialize)]
@@ -365,7 +367,7 @@ pub async fn patch_doc(State(state): State<AppState>, Auth(caller): Auth, Path(i
         move_doc(&state, &caller, &id, folder).await?;
     }
     let (doc, role) = access::require_doc(&state, Some(&caller), &id, Role::Viewer).await?;
-    Ok(Json(views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?))
+    Ok(Json(views::doc_view(&state, &doc, role, Some(&caller)).await?))
 }
 
 /// A doc the caller may rename: they edit it, and it isn't in the trash.
@@ -523,7 +525,7 @@ pub async fn restore_doc(State(state): State<AppState>, Auth(caller): Auth, Path
     }
     restore_doc_inner(&state, &caller, &id).await?;
     let (doc, role) = access::require_doc(&state, Some(&caller), &id, Role::Viewer).await?;
-    Ok(Json(views::doc_view(&state, &doc, role, Some(&caller.uuid)).await?))
+    Ok(Json(views::doc_view(&state, &doc, role, Some(&caller)).await?))
 }
 
 pub async fn restore_doc_inner(state: &AppState, caller: &Caller, id: &str) -> ApiResult<()> {
@@ -683,7 +685,7 @@ pub async fn copy_doc(State(state): State<AppState>, Auth(caller): Auth, Path(id
     };
     activity::record_change(&state, About::Doc(&new.id), &[(Some(&new.id), None)], &caller.uuid, "doc.copied", json!({ "from": id, "seq": body.seq })).await?;
     let role = access::doc_role(&state, Some(&caller), &new).await?.unwrap_or(Role::Owner);
-    Ok((StatusCode::CREATED, Json(views::doc_view(&state, &new, role, Some(&caller.uuid)).await?)))
+    Ok((StatusCode::CREATED, Json(views::doc_view(&state, &new, role, Some(&caller)).await?)))
 }
 
 // ------------------------------------------------------------------------------------------
@@ -721,12 +723,12 @@ pub async fn new_folder(State(state): State<AppState>, Auth(caller): Auth, Json(
     histories.extend(parent.as_deref().map(|p| (None, Some(p))));
     activity::record_change(&state, About::Folder(&id), &histories, &caller.uuid, "folder.created", json!({ "folder": id, "name": name })).await?;
     let (folder, role) = access::require_folder(&state, &caller, &id, Role::Viewer).await?;
-    Ok((StatusCode::CREATED, Json(serde_json::to_value(views::folder_view(&state, &folder, role, Some(&caller.uuid)).await?).unwrap())))
+    Ok((StatusCode::CREATED, Json(serde_json::to_value(views::folder_view(&state, &folder, role, Some(&caller)).await?).unwrap())))
 }
 
 pub async fn get_folder(State(state): State<AppState>, Auth(caller): Auth, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     let (folder, role) = access::require_folder(&state, &caller, &id, Role::Viewer).await?;
-    Ok(Json(serde_json::to_value(views::folder_view(&state, &folder, role, Some(&caller.uuid)).await?).unwrap()))
+    Ok(Json(serde_json::to_value(views::folder_view(&state, &folder, role, Some(&caller)).await?).unwrap()))
 }
 
 #[derive(Deserialize)]
@@ -1082,11 +1084,16 @@ async fn start_transfer(state: &AppState, caller: &Caller, doc: Option<&DocRow>,
     if target.uuid == caller.uuid {
         return Err(ApiError::invalid("You already own this."));
     }
+    let (kind, item_id) = match (doc,folder) {
+        (Some(d),_) => ("doc",d.id.as_str()), (_,Some(f)) => ("folder",f.id.as_str()), _ => return Err(ApiError::invalid("There is nothing to transfer."))
+    };
+    let mut tx = state.db.begin().await?;
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1,13))").bind(item_id).execute(&mut *tx).await?;
     let id = ids::new_id("x");
     sqlx::query("update transfers set status = 'cancelled', decided_at = now() where status = 'pending' and (doc_id = $1 or folder_id = $2)")
         .bind(doc.map(|d| d.id.clone()))
         .bind(folder.map(|f| f.id.clone()))
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
     sqlx::query("insert into transfers (id, doc_id, folder_id, from_uuid, to_uuid) values ($1, $2, $3, $4, $5)")
         .bind(&id)
@@ -1094,8 +1101,12 @@ async fn start_transfer(state: &AppState, caller: &Caller, doc: Option<&DocRow>,
         .bind(folder.map(|f| f.id.clone()))
         .bind(&caller.uuid)
         .bind(&target.uuid)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
+    let payload = json!({"transfer_id":id,"item_id":item_id,"kind":kind,"url":format!("{}/library",state.config.web_url.trim_end_matches('/'))});
+    sqlx::query("insert into ting_outbox(type,for_uuid,key,data,from_uuid) values('write.transferOffered',$1,$2,$3,$4)")
+        .bind(&target.uuid).bind(format!("transfer:{id}")).bind(payload).bind(&caller.uuid).execute(&mut *tx).await?;
+    tx.commit().await?;
     let about = match (doc, folder) {
         (Some(doc), _) => About::Doc(&doc.id),
         (_, Some(folder)) => About::Folder(&folder.id),

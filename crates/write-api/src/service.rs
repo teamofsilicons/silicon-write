@@ -10,6 +10,13 @@ use crate::accounts;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
+pub async fn openapi() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE,"application/json")], include_str!("../../../docs/openapi.json"))
+}
+pub async fn interface_guide() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE,"text/markdown; charset=utf-8")], include_str!("../../../docs/api.md"))
+}
+
 pub async fn healthz() -> &'static str {
     "ok"
 }

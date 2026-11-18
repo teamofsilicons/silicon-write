@@ -18,6 +18,8 @@ import { api, seg } from "@/lib/client/api";
 import { useSessionView } from "@/lib/client/session";
 import { notify, notifyError } from "@/lib/notify";
 import { formatRelative } from "@/lib/format";
+import { ContactsButton } from "@/components/share/contacts";
+import { OrganizationSettings } from "@/components/share/organization-settings";
 import { useLibrary, useRefreshLibrary, useTransfers } from "@/lib/write/queries";
 import { atLeast, type Doc, type Folder, type Transfer } from "@/lib/write/types";
 import { homeLibrary } from "@/lib/write/library-home";
@@ -211,6 +213,7 @@ export function Library({ view, folderId }: { view: LibraryView; folderId?: stri
               <FolderPlus size={16} aria-hidden="true" /> New folder
             </Button>
             <ImportFiles folderId={folderId} onImported={openDocs} />
+            {!folderId && <><ContactsButton/><OrganizationSettings/></>}
             {folder && atLeast(folder.role, "editor") ? (
               <Button variant="ghost" size="sm" onClick={() => setDialog({ kind: "share", type: "folders", id: folder.id, title: folder.name })}>
                 <Users size={16} aria-hidden="true" /> Share folder

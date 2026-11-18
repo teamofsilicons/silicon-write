@@ -28,6 +28,16 @@
 .inviteInput::placeholder { color: var(--text-muted); }
 .inviteInput:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .roleField { min-width: 0; }
+.recipient { position: relative; min-width: 0; align-self: start; }
+.inviteRow, .transferForm { align-items: start; }
+.options { position: absolute; top: 40px; left: 0; z-index: 5; width: max(100%, min(280px, 75vw)); max-height: 220px; overflow: auto; overscroll-behavior: contain; margin: 2px 0; padding: 4px; list-style: none; background: var(--surface-raised); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-floating); }
+.options li, .previewPerson { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px; font-size: 13px; }
+.options li { cursor: pointer; border-radius: 6px; }
+.options li[aria-selected="true"] { background: var(--surface-muted); }
+.options small, .contactForm label { display: block; }
+.options small, .previewPerson { color: var(--text-secondary); overflow-wrap: anywhere; }
+.contactForm { display: grid; gap: 10px; font: 400 14px/1.45 var(--font-body); }
+.contactForm label > :is(input:not([type="checkbox"]),select) { margin-top: 4px; }
 .roleField > div { gap: 0; }
 /* Select's label belongs to its wrapper, while className belongs to the trigger. Keep the native label for AT. */
 .roleField label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

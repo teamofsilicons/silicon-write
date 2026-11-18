@@ -6,11 +6,13 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import type { Transition } from "motion/react";
 import { Hash } from "lucide-react";
 import { motionTokens } from "../lib/motion-tokens";
+import { fuzzy } from "@/lib/write/fuzzy";
 import styles from "./mention-input.module.css";
 
 export type MentionKind = "person" | "channel";
 
 export interface MentionPerson {
+  trust?: number;
   id: string;
   name: string;
   /** One short line under the name, such as a job title. */
@@ -200,7 +202,7 @@ export const MentionInput = forwardRef<MentionInputHandle, MentionInputProps>(fu
     if (!trigger) return [];
     const query = trigger.query.toLowerCase().trim();
     const scored: { entry: Suggestion; score: number }[] = trigger.kind === "person"
-      ? (people ?? []).map(item => ({ entry: { kind: "person" as const, item }, score: rank(item.name, item.role ?? "", query) }))
+      ? (people ?? []).map(item => ({ entry: { kind: "person" as const, item }, score: fuzzy(query,item.id,item.name,item.role) ? 10 * (item.trust ?? 0) + Math.max(1,rank(item.name, item.role ?? "", query)) : 0 }))
       : (channels ?? []).map(item => ({ entry: { kind: "channel" as const, item }, score: rank(item.name, item.description ?? "", query) }));
     return scored.filter(entry => entry.score > 0).sort((a, b) => b.score - a.score).slice(0, maxSuggestions).map(entry => entry.entry);
   }, [channels, maxSuggestions, people, trigger]);
