@@ -1,19 +1,21 @@
 {
-  "recorded_at": "2026-11-10T14:09:33.468718+00:00",
+  "recorded_at": "2026-11-18T02:34:30.712845+00:00",
   "web": {
     "url": "https://write.teamofsilicons.com",
     "provider": "vercel",
     "project": "silicon-write-web",
-    "deployment_id": "dpl_AiYehjHLoMQkNtr5d7n6DQr2sFyt",
+    "deployment_id": "dpl_HN9uiJYPWT6kEeYP98FPxSDxcwkC",
     "public_https": true,
     "public_routes_verified": [
       "/",
       "/docs",
       "/robots.txt",
-      "/llms.txt"
+      "/llms.txt",
+      "/docs/interfaces",
+      "/reference/api.yaml"
     ],
     "interactive_production_browser_verified": true,
-    "revision": "e3738bfe5e97a0383e453c9280dba1560b5e9dfc",
+    "revision": "4b3f10978e14479014f7b4d46d9190d063a2e221",
     "browser_checks": [
       "Neutral Silicon UI surfaces and text-colored caret verified live",
       "Formatting toolbar visible by default and workspace plus retained without arrow buttons",
@@ -28,13 +30,13 @@
       "Optional public-file email gate verified signed out and signed in; owner-only viewer history records entered and account emails with visit timestamps"
     ],
     "custom_domain_verified": true,
-    "deployment_url": "https://silicon-write-bhbm69c1h-saketdev12-5675s-projects.vercel.app"
+    "deployment_url": "https://silicon-write-1hq5bno1m-saketdev12-5675s-projects.vercel.app"
   },
   "api": {
     "url": "https://api.write.teamofsilicons.com",
-    "revision": "3bb28198751fdd20635ef6a1bbf9abaa3076eeb6",
-    "archive_sha256": "413563e798d1ab3326c074e2be94737c0a60d4d6ba22438ec45aab697f64214f",
-    "install_ssm_command": "63e3a4cf-9ea1-4190-8e85-c4da972e89b5",
+    "revision": "d578cc41dc63a5adbeb85b5c06d2073220faac14",
+    "archive_sha256": "d1d7b3be1f31c7086fcb8fa5fb8d6e61a71b25198b69a0aa1b86f95ee63ddae9",
+    "install_ssm_command": "98bb5ac5-5613-4961-9489-aebc0182a046",
     "readiness": true,
     "private_document_journey": [
       "ordinary device sign-in authorizes production API",
@@ -104,7 +106,7 @@
       "existing_docx_export_bytes": 10470,
       "fixture_moved_to_trash": true
     },
-    "predeploy_backup": "predeploy-20261110T140128Z"
+    "predeploy_backup": "predeploy-20261118T022301Z"
   },
   "infrastructure": {
     "aws_account": "234951665042",
@@ -153,7 +155,8 @@
   },
   "limitations": [
     "Invitation sender authorization and mail delivery unverified; no test email sent.",
-    "Durable notification delivery to another account was not exercised in the Ting sessions release; ephemeral receiver delivery was verified."
+    "Durable notification delivery to another account was not exercised in the Ting sessions release; ephemeral receiver delivery was verified.",
+    "The Apps listing requires a Write author to register the new interface documentation URL. Production org-admin and team membership mutations were covered on the local integration stack."
   ],
   "secrets_included": false,
   "backup_verification": {
@@ -225,5 +228,6 @@
   "content_cache_verification": "deploy/verification-content-cache-20261023.json",
   "public_email_verification": "deploy/verification-public-email-20261024.json",
   "archive_selection_verification": "deploy/verification-archive-selection-20261029.json",
-  "ting_sessions_verification": "verification-ting-sessions-20261110.json"
+  "ting_sessions_verification": "verification-ting-sessions-20261110.json",
+  "interfaces_contacts_organizations_release_receipt": "deploy/verification-interfaces-contacts-organizations-20261118.json"
 }

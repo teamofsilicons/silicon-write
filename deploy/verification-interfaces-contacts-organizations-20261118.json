@@ -1,0 +1,138 @@
+{
+  "recorded_at": "2026-11-18T02:34:30.712845+00:00",
+  "revision": "d578cc41dc63a5adbeb85b5c06d2073220faac14",
+  "source_branch": "codex/write-interfaces-contacts",
+  "interface_guide": "https://write.teamofsilicons.com/docs/interfaces",
+  "openapi": "https://api.write.teamofsilicons.com/openapi.json",
+  "openapi_sha256": "356fba636a03ba11d080075226274fda508a8551917118d43de9e869e9c1cf36",
+  "public_api_paths": 83,
+  "public_api_operations": 100,
+  "web": {
+    "revision": "4b3f10978e14479014f7b4d46d9190d063a2e221",
+    "url": "https://write.teamofsilicons.com",
+    "vercel_id": "dpl_HN9uiJYPWT6kEeYP98FPxSDxcwkC",
+    "deployment_url": "https://silicon-write-1hq5bno1m-saketdev12-5675s-projects.vercel.app",
+    "custom_domain_verified": true
+  },
+  "api": {
+    "revision": "d578cc41dc63a5adbeb85b5c06d2073220faac14",
+    "url": "https://api.write.teamofsilicons.com",
+    "archive_sha256": "d1d7b3be1f31c7086fcb8fa5fb8d6e61a71b25198b69a0aa1b86f95ee63ddae9",
+    "install_command_id": "98bb5ac5-5613-4961-9489-aebc0182a046",
+    "verified_predeploy_backup": "predeploy-20261118T022301Z",
+    "ready": true
+  },
+  "production_verification": {
+    "when": "2026-11-18T02:33:58.561Z",
+    "identity": "si:saket-agents",
+    "checks": {
+      "ready": 200,
+      "guide": 200,
+      "documentedOperations": 100,
+      "authenticated": true,
+      "organizations": 0,
+      "teamTargets": 0,
+      "connectedContacts": true,
+      "accountPhotoLookup": true,
+      "separateBrowserCreate": true,
+      "versionedEdit": true,
+      "staleEditRefused": true,
+      "signedOutPrivateRead": 401,
+      "styledPdf": true,
+      "yjsWebSocket": true,
+      "tingSocket": "wss://api.write.teamofsilicons.com/v1/ting/live",
+      "tingReady": true,
+      "tingBound": true,
+      "liveTingWithoutHook": true,
+      "testFileTrashed": true
+    },
+    "passed": true
+  },
+  "production_guide_layout": [
+    {
+      "viewport": 390,
+      "documentWidth": 390,
+      "linkedSchema": true
+    },
+    {
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "linkedSchema": true
+    }
+  ],
+  "ting_catalog_types": [
+    "write.commentCreated",
+    "write.commentReplied",
+    "write.docShared",
+    "write.documentChanged",
+    "write.mentionReceived",
+    "write.suggestionCreated",
+    "write.threadResolved",
+    "write.transferOffered"
+  ],
+  "catalog": {
+    "app": "write",
+    "url": "https://apps.teamofsilicons.com/apps/write",
+    "authenticated_as": "si:saket-agents",
+    "author_update_status": 403,
+    "error": "author_required",
+    "registered_documentation_url": null,
+    "authors": [
+      "c:saket"
+    ]
+  },
+  "local_verification": {
+    "rust_tests_passed": 139,
+    "web_unit": {
+      "tests": 128,
+      "pass": 128,
+      "fail": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "web_typecheck": "passed",
+    "web_lint": "passed",
+    "web_production_build": "passed",
+    "public_route_and_schema_checks": 2,
+    "deployment_tests": 12,
+    "focused_api_including_hosted_work_account": {
+      "tests": 9,
+      "pass": 9,
+      "fail": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "focused_browser_including_hosted_login": {
+      "passed": 5
+    },
+    "work_account_checks": {
+      "actualWorkCarbon": true,
+      "actualWorkSilicon": true,
+      "adminSettings": true,
+      "teamDefaultRole": true,
+      "linkedPersonalAccountDenied": true,
+      "qualifiedIdLookup": true
+    },
+    "broad_api_before_lease_fix": {
+      "tests": 1492,
+      "pass": 1478,
+      "fail": 12,
+      "skipped": 1,
+      "todo": 1
+    },
+    "broad_browser_before_lease_fix": {
+      "passed": 124,
+      "failed": 24,
+      "did not run": 2
+    },
+    "browser_retest_on_released_api": {
+      "passed": 5,
+      "failed": 19
+    }
+  },
+  "scope": [
+    "The production agent has no organization memberships. Real linked work and personal accounts, admin and team operations were exercised against local Accounts and Organizations.",
+    "A real production private document generated a hook-free session hint. Durable cross-account transfer delivery used local accounts and the Ting test receiver.",
+    "The full regression suites still report failures, including older expectations about presence after API edits, comment limits, media and library controls. The released lease fix passed targeted delivery tests locally and in production."
+  ]
+}
